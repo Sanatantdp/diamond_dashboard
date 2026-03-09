@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diamond Price Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --card: #1a1a26;
+      --border: #2a2a3e;
+      --accent: #c9a84c;
+      --accent2: #7c6fcd;
+      --green: #3ecf8e;
+      --red: #f87171;
+      --orange: #fb923c;
+      --yellow: #fbbf24;
+      --text: #e8e8f0;
+      --muted: #6b6b8a;
+      --font-mono: "DM Mono", monospace;
+      --font-display: "Playfair Display", serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; }
+
+    /* ── LOADING OVERLAY ──────────────────────────── */
+    #loadingOverlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; z-index: 9999; gap: 20px; transition: opacity 0.4s;
+    }
+    #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-family: var(--font-display); font-size: 1.2rem; color: var(--accent); }
+    .loading-sub { font-size: 0.72rem; color: var(--muted); }
+
+    /* ── TOAST ────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      padding: 12px 20px; border-radius: 8px;
+      font-size: 0.78rem; z-index: 9998; max-width: 380px;
+      transform: translateY(80px); opacity: 0;
+      transition: all 0.3s cubic-bezier(.16,1,.3,1);
+      display: flex; align-items: center; gap: 10px;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { background: color-mix(in srgb, var(--green) 15%, var(--card)); border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); color: var(--green); }
+    #toast.error   { background: color-mix(in srgb, var(--red) 15%, var(--card));   border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);   color: var(--red); }
+    #toast.info    { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+
+    /* ── TOP BAR ──────────────────────────────────── */
+    .topbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 40px; display: flex; align-items: center;
+      gap: 16px; flex-wrap: wrap;
+    }
+    .topbar-section { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .topbar label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+    .sep { color: var(--border); }
+
+    /* Shared input style */
+    .inp {
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); font-family: var(--font-mono); font-size: 0.78rem;
+      padding: 7px 12px; border-radius: 6px; outline: none;
+      transition: border-color 0.2s;
+    }
+    .inp:focus { border-color: var(--accent); }
+    .inp::placeholder { color: var(--muted); }
+
+    /* File select dropdown */
+    #fileSelect { min-width: 220px; cursor: pointer; }
+    #fileSelect option { background: var(--card); }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 1px dashed var(--border); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; font-size: 0.75rem;
+      color: var(--muted); transition: all 0.2s; white-space: nowrap;
+    }
+    .upload-zone:hover { border-color: var(--accent); color: var(--accent); }
+    #csvFileInput { display: none; }
+
+    /* Buttons */
+    .btn { border: none; padding: 7px 16px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
+    .btn-gold  { background: var(--accent); color: var(--bg); }
+    .btn-gold:hover  { opacity: 0.85; }
+    .btn-ghost { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 5px 12px; font-size: 0.7rem; }
+
+    /* Loaded indicator */
+    .loaded-indicator { font-size: 0.7rem; color: var(--green); display: flex; align-items: center; gap: 6px; }
+    .loaded-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+
+    /* ── HEADER ───────────────────────────────────── */
+    .header {
+      padding: 28px 40px 22px;
+      background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    }
+    .header h1 { font-family: var(--font-display); font-size: 2rem; color: var(--accent); letter-spacing: -0.02em; }
+    .header p  { color: var(--muted); font-size: 0.74rem; margin-top: 4px; }
+    .stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .stat-pill {
+      background: var(--card); border: 1px solid var(--border);
+      padding: 8px 16px; border-radius: 8px; text-align: center; min-width: 110px;
+    }
+    .stat-pill .val { color: var(--accent); font-size: 1.15rem; font-weight: 500; display: block; }
+    .stat-pill .lbl { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; }
+
+    /* ── CONTROLS ─────────────────────────────────── */
+    .controls {
+      padding: 16px 40px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;
+    }
+    .control-group { display: flex; flex-direction: column; gap: 6px; }
+    .control-group label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+
+    /* ── MAIN ─────────────────────────────────────── */
+    .main { padding: 28px 40px; }
+    .section-title {
+      font-family: var(--font-display); font-size: 1.05rem; color: var(--accent);
+      margin-bottom: 18px; display: flex; align-items: center; gap: 12px;
+    }
+    .section-title::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── BUCKETS ──────────────────────────────────── */
+    .buckets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 36px; }
+    .bucket-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px;
+      cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .bucket-card::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--bucket-color, var(--accent));
+    }
+    .bucket-card:hover { border-color: var(--bucket-color, var(--accent)); transform: translateY(-2px); }
+    .bucket-card.active {
+      border-color: var(--bucket-color, var(--accent));
+      background: color-mix(in srgb, var(--bucket-color, var(--accent)) 10%, var(--card));
+    }
+    .bucket-range  { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+    .bucket-count  { font-size: 1.9rem; font-weight: 500; color: var(--text); line-height: 1; }
+    .bucket-pct    { font-size: 0.7rem; margin-top: 4px; }
+    .bucket-bar    { height: 4px; background: var(--border); border-radius: 2px; margin-top: 12px; }
+    .bucket-bar-fill { height: 100%; border-radius: 2px; background: var(--bucket-color, var(--accent)); transition: width 0.5s ease; }
+
+    /* ── TABLE ────────────────────────────────────── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+    .tab {
+      padding: 7px 16px; border-radius: 6px; font-size: 0.74rem; cursor: pointer;
+      border: 1px solid var(--border); color: var(--muted); background: transparent;
+      font-family: var(--font-mono); transition: all 0.2s;
+    }
+    .tab.active   { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 500; }
+    .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    thead th {
+      background: var(--surface); padding: 11px 14px; text-align: left;
+      font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); border-bottom: 1px solid var(--border);
+      white-space: nowrap; position: sticky; top: 0; z-index: 1;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.12s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface); }
+    tbody td { padding: 9px 14px; white-space: nowrap; }
+    .cert  { color: var(--muted); font-size: 0.7rem; }
+    .price { color: var(--text); }
+    .pct-pos  { color: var(--red); }
+    .pct-neg  { color: var(--green); }
+    .pct-zero { color: var(--muted); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.63rem; font-weight: 500; letter-spacing: 0.05em; }
+
+    /* Pagination */
+    .pagination { display: flex; gap: 5px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+    .page-btn {
+      padding: 5px 11px; border-radius: 4px; font-size: 0.7rem;
+      cursor: pointer; border: 1px solid var(--border); color: var(--muted);
+      background: var(--card); font-family: var(--font-mono); transition: all 0.15s;
+    }
+    .page-btn.active  { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .page-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+    .empty-state { text-align: center; padding: 60px; color: var(--muted); }
+    .empty-state .icon { font-size: 2.2rem; margin-bottom: 14px; }
+    .empty-state h3 { font-family: var(--font-display); font-size: 1.2rem; color: var(--text); margin-bottom: 8px; }
+
+    @media (max-width: 768px) {
+      .header, .controls, .main, .topbar { padding: 14px 16px; }
+      .controls { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">💎 Diamond Dashboard</div>
+  <div class="loading-sub" id="loadingMsg">Starting up…</div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- TOP BAR (file management) -->
+<div class="topbar">
+  <!-- Select existing JSON -->
+  <div class="topbar-section">
+    <label>Dataset</label>
+    <select id="fileSelect" class="inp" onchange="loadSelectedFile()">
+      <option value="">— select a file —</option>
+    </select>
+    <button class="btn btn-gold btn-sm" onclick="refreshFileList()">↻ Refresh</button>
+  </div>
+
+  <span class="sep">|</span>
+
+  <!-- Upload CSV -->
+  <div class="topbar-section">
+    <label>Upload CSV</label>
+    <div class="upload-zone" onclick="document.getElementById('csvFileInput').click()">
+      ⬆ Choose CSV file
+    </div>
+    <input type="file" id="csvFileInput" accept=".csv" onchange="uploadAndConvert(event)" />
+  </div>
+
+  <span class="sep">|</span>
+
+  <!-- Convert by filename -->
+  <div class="topbar-section">
+    <label>Convert existing CSV</label>
+    <input type="text" id="csvNameInput" class="inp" placeholder="filename.csv" style="width:200px" />
+    <button class="btn btn-gold btn-sm" onclick="convertByName()">Convert</button>
+  </div>
+
+  <!-- Loaded status -->
+  <div class="loaded-indicator" id="loadedIndicator" style="display:none; margin-left:auto">
+    <div class="loaded-dot"></div>
+    <span id="loadedLabel">—</span>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <h1>💎 Diamond Price Dashboard</h1>
+    <p>loose-grown · brilliance · TDP — percentage range analysis</p>
+  </div>
+  <div class="stats-row">
+    <div class="stat-pill"><span class="val" id="totalCount">—</span><span class="lbl">Total Records</span></div>
+    <div class="stat-pill"><span class="val" id="matchedCount">—</span><span class="lbl">After Filters</span></div>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <div class="control-group">
+    <label>Compare Mode</label>
+    <select id="modeSelect" class="inp" onchange="onModeChange()">
+      <option value="lg">loose-grown vs TDP %</option>
+      <option value="br">brilliance vs TDP %</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>TDP Price Range</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="number" id="priceMin" class="inp" placeholder="Min $" style="width:100px" />
+      <span style="color:var(--muted)">—</span>
+      <input type="number" id="priceMax" class="inp" placeholder="Max $" style="width:100px" />
+      <button class="btn btn-gold btn-sm" onclick="applyPriceFilter()">Apply</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearPriceFilter()">Clear</button>
+    </div>
+  </div>
+  <div class="control-group">
+    <label>Search Certificate</label>
+    <input type="text" id="certSearch" class="inp" placeholder="e.g. 655414064" style="width:180px" oninput="onSearch()" />
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="section-title">
+    % Range Buckets
+    <span style="font-size:0.68rem;color:var(--muted)">click to filter</span>
+  </div>
+  <div class="buckets-grid" id="bucketsGrid">
+    <div class="empty-state" style="grid-column:1/-1">
+      <div class="icon">💎</div>
+      <h3>No data loaded</h3>
+      <p style="font-size:0.78rem;margin-top:6px">Select a dataset or upload a CSV above</p>
+    </div>
+  </div>
+
+  <div class="section-title">
+    Records
+    <span id="tableCount" style="font-size:0.7rem;color:var(--muted)"></span>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="setTableMode('all')">All</button>
+    <button class="tab" onclick="setTableMode('filtered')">Filtered Bucket</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Certificate</th>
+          <th>TDP Price</th>
+          <th>TDP -30%</th>
+          <th>LG Price</th>
+          <th>LG -30%</th>
+          <th>Brilliance Price</th>
+          <th>Brilliance -30%</th>
+          <th>LG vs TDP %</th>
+          <th>Brilliance vs TDP %</th>
+          <th>% Range</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────
+const API_BASE = "";   // same origin — FastAPI serves both
+
+const BUCKETS = [
+  { label: "0 – 200%",    min: 0,    max: 200,      color: "#3ecf8e" },
+  { label: "200 – 300%",  min: 200,  max: 300,      color: "#c9a84c" },
+  { label: "300 – 400%",  min: 300,  max: 400,      color: "#fb923c" },
+  { label: "400 – 500%",  min: 400,  max: 500,      color: "#f87171" },
+  { label: "500 – 600%",  min: 500,  max: 600,      color: "#e879f9" },
+  { label: "600%+",       min: 600,  max: Infinity,  color: "#818cf8" },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────
+let ALL_DATA     = [];
+let filteredData = [];
+let activeBucket = null;
+let tableMode    = "all";
+let currentPage  = 1;
+const PAGE_SIZE  = 50;
+let priceMin = null, priceMax = null;
+
+// ── TOAST ─────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, type = "info", duration = 3500) {
+  const el = document.getElementById("toast");
+  el.className = `show ${type}`;
+  el.textContent = type === "success" ? "✓  " + msg : type === "error" ? "✗  " + msg : "ℹ  " + msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), duration);
+}
+
+// ── LOADING ───────────────────────────────────────────────────────
+function showLoading(msg) {
+  document.getElementById("loadingMsg").textContent = msg || "Loading…";
+  document.getElementById("loadingOverlay").classList.remove("hidden");
+}
+function hideLoading() {
+  document.getElementById("loadingOverlay").classList.add("hidden");
+}
+function markLoaded(label) {
+  const ind = document.getElementById("loadedIndicator");
+  document.getElementById("loadedLabel").textContent = label;
+  ind.style.display = "flex";
+}
+
+// ── API CALLS ─────────────────────────────────────────────────────
+async function api(method, path, body = null, isForm = false) {
+  const opts = { method, headers: {} };
+  if (body) {
+    if (isForm) {
+      opts.body = body;   // FormData — no Content-Type header needed
+    } else {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+  }
+  const res = await fetch(API_BASE + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// ── FILE LIST ─────────────────────────────────────────────────────
+async function refreshFileList() {
+  try {
+    const data  = await api("GET", "/api/files");
+    const sel   = document.getElementById("fileSelect");
+    const prev  = sel.value;
+    sel.innerHTML = `<option value="">— select a file —</option>`;
+    data.files.forEach(f => {
+      const opt = document.createElement("option");
+      opt.value       = f.filename;
+      opt.textContent = `${f.filename}  (${f.size_kb} KB · ${f.last_modified})`;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+    toast(`${data.count} file(s) found in compare/`, "info");
+  } catch(e) {
+    toast("Could not load file list: " + e.message, "error");
+  }
+}
+
+async function loadSelectedFile() {
+  const filename = document.getElementById("fileSelect").value;
+  if (!filename) return;
+  showLoading("Loading " + filename + "…");
+  try {
+    const data = await api("GET", `/api/data/${filename}`);
+    ingestData(data, filename);
+  } catch(e) {
+    hideLoading();
+    toast("Failed to load: " + e.message, "error");
+  }
+}
+
+// ── UPLOAD CSV → JSON ─────────────────────────────────────────────
+async function uploadAndConvert(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  showLoading("Uploading & converting " + file.name + "…");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    const result = await api("POST", "/api/upload", form, true);
+    toast(`Converted ${file.name} → ${result.file}  (${result.rows.toLocaleString()} rows)`, "success");
+    await refreshFileList();
+
+    // Auto-load the freshly converted file
+    document.getElementById("fileSelect").value = result.file;
+    await loadSelectedFile();
+  } catch(e) {
+    hideLoading();
+    toast("Upload failed: " + e.message, "error");
+  }
+  event.target.value = "";
+}
+
+// ── CONVERT BY FILENAME ───────────────────────────────────────────
+async function convertByName() {
+  const name = document.getElementById("csvNameInput").value.trim();
+  if (!name) { toast("Enter a CSV filename first", "error"); return; }
+  showLoading("Converting " + name + "…");
+
+  const form = new FormData();
+  form.append("csv_filename", name);
+
+  try {
+    const result = await api("POST", "/api/convert", form, true);
+    toast(result.message + ` (${result.rows.toLocaleString()} rows)`, "success");
+    await refreshFileList();
+    document.getElementById("fileSelect").value = result.file;
+    await loadSelectedFile();
+  } catch(e) {
+    hideLoading();
+    toast("Convert failed: " + e.message, "error");
+  }
+}
+
+// ── DATA INGESTION ────────────────────────────────────────────────
+function ingestData(json, label = "") {
+  if (!Array.isArray(json)) {
+    hideLoading();
+    toast("Expected a JSON array", "error");
+    return;
+  }
+  ALL_DATA     = json;
+  activeBucket = null;
+  tableMode    = "all";
+  currentPage  = 1;
+  priceMin = priceMax = null;
+  document.getElementById("priceMin").value   = "";
+  document.getElementById("priceMax").value   = "";
+  document.getElementById("certSearch").value = "";
+  render();
+  hideLoading();
+  markLoaded(label + "  (" + json.length.toLocaleString() + " rows)");
+  toast(`Loaded ${json.length.toLocaleString()} records`, "success");
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+
+// Dynamically find % diff column
+// Handles both old names ("loose-grown vs pc", "brilliance vs pc %")
+// and new names ("loose-grown vs TDP %", "brilliance vs TDP %")
+function getPctColName(row, mode) {
+  const keys = Object.keys(row);
+  if (mode === "lg") {
+    return keys.find(k => /loose/i.test(k) && k.includes("%"))
+        || keys.find(k => /loose/i.test(k) && /vs/i.test(k))
+        || null;
+  }
+  return keys.find(k => /brilliance/i.test(k) && k.includes("%"))
+      || keys.find(k => /brilliance/i.test(k) && /vs/i.test(k))
+      || null;
+}
+
+function getPct(row, mode) {
+  const col = getPctColName(row, mode);
+  if (!col) return null;
+  const val = row[col];
+  // "" and null = missing. 0 is a valid % diff.
+  if (val === null || val === undefined || val === "") return null;
+  const n = Number(val);
+  return isNaN(n) ? null : n;
+}
+
+function getBucket(pct) {
+  if (pct === null) return null;
+  return BUCKETS.find(b => pct >= b.min && pct < b.max) || BUCKETS[BUCKETS.length - 1];
+}
+
+// null/undefined/empty = "—" | valid number including 0 = show it
+function fmtPct(v) {
+  if (v === null || v === undefined) return "—";
+  return Number(v).toFixed(2) + "%";
+}
+
+// 0 or empty = vendor doesn't have this cert → show "—"
+function fmtUSD(v) {
+  if (v === null || v === undefined || v === "" || Number(v) === 0) return "—";
+  return "$" + Number(v).toLocaleString();
+}
+
+function pctClass(v) {
+  if (v === null || v === undefined) return "pct-zero";
+  return v > 0 ? "pct-pos" : v < 0 ? "pct-neg" : "pct-zero";
+}
+
+// Dynamically find any vendor price column by fragment
+function getCol(row, fragment, suffix) {
+  return Object.keys(row).find(k => k.toLowerCase().includes(fragment.toLowerCase()) && k.includes(suffix)) || null;
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────
+function applyFiltersLocal() {
+  const cert = document.getElementById("certSearch").value.trim();
+  filteredData = ALL_DATA.filter(row => {
+    const tdp = row["TDP Price USD"];
+    if (priceMin !== null && tdp < priceMin) return false;
+    if (priceMax !== null && tdp > priceMax) return false;
+    if (cert && !String(row["certificate_number"]).includes(cert)) return false;
+    return true;
+  });
+}
+function applyPriceFilter() {
+  const mn = document.getElementById("priceMin").value;
+  const mx = document.getElementById("priceMax").value;
+  priceMin = mn ? parseFloat(mn) : null;
+  priceMax = mx ? parseFloat(mx) : null;
+  activeBucket = null; currentPage = 1; render();
+}
+function clearPriceFilter() {
+  priceMin = priceMax = null;
+  document.getElementById("priceMin").value = "";
+  document.getElementById("priceMax").value = "";
+  activeBucket = null; currentPage = 1; render();
+}
+
+// ── BUCKETS ───────────────────────────────────────────────────────
+function renderBuckets(data, mode) {
+  if (!data.length) {
+    document.getElementById("bucketsGrid").innerHTML =
+      `<div class="empty-state" style="grid-column:1/-1"><div class="icon">🔍</div><h3>No records</h3><p style="font-size:.78rem;margin-top:6px">Try adjusting your filters</p></div>`;
+    return;
+  }
+  const counts  = BUCKETS.map(b => data.filter(r => { const p = getPct(r,mode); return p!==null && p>=b.min && p<b.max; }).length);
+  const maxCount = Math.max(...counts, 1);
+  document.getElementById("bucketsGrid").innerHTML = BUCKETS.map((b, i) => `
+    <div class="bucket-card ${activeBucket===i ? "active" : ""}" style="--bucket-color:${b.color}" onclick="toggleBucket(${i})">
+      <div class="bucket-range">${b.label}</div>
+      <div class="bucket-count">${counts[i].toLocaleString()}</div>
+      <div class="bucket-pct" style="color:${b.color}">${((counts[i]/data.length)*100).toFixed(1)}% of total</div>
+      <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${((counts[i]/maxCount)*100).toFixed(1)}%"></div></div>
+    </div>`).join("");
+}
+
+// ── TABLE ─────────────────────────────────────────────────────────
+function renderTable(data, mode) {
+  let rows = (tableMode === "filtered" && activeBucket !== null)
+    ? data.filter(r => { const p=getPct(r,mode); if(p===null)return false; const b=BUCKETS[activeBucket]; return p>=b.min && p<b.max; })
+    : data;
+
+  document.getElementById("tableCount").textContent = `— ${rows.length.toLocaleString()} records`;
+  document.getElementById("matchedCount").textContent = rows.length.toLocaleString();
+
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+  currentPage = Math.min(currentPage, totalPages || 1);
+  const pageRows = rows.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+
+  if (!pageRows.length) {
+    document.getElementById("tableBody").innerHTML =
+      `<tr><td colspan="10"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+    document.getElementById("pagination").innerHTML = "";
+    return;
+  }
+
+  document.getElementById("tableBody").innerHTML = pageRows.map(r => {
+    const lgPct     = getPct(r, "lg");
+    const brPct     = getPct(r, "br");
+    const activePct = getPct(r, mode);
+    const bkt       = getBucket(activePct);
+    const badgeHtml = bkt
+      ? `<span class="badge" style="background:color-mix(in srgb,${bkt.color} 15%,transparent);color:${bkt.color};border:1px solid color-mix(in srgb,${bkt.color} 40%,transparent)">${bkt.label}</span>`
+      : `<span class="badge" style="background:color-mix(in srgb,var(--muted) 15%,transparent);color:var(--muted);border:1px solid var(--border)">N/A</span>`;
+    return `<tr>
+      <td class="cert">${r["certificate_number"]}</td>
+      <td class="price">${fmtUSD(r["TDP Price USD"])}</td>
+      <td class="price">${fmtUSD(r["TDP -30% USD"])}</td>
+      <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
+      <td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td>
+      <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
+      <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
+      <td class="${pctClass(lgPct)}">${fmtPct(lgPct)}</td>
+      <td class="${pctClass(brPct)}">${fmtPct(brPct)}</td>
+      <td>${badgeHtml}</td>
+    </tr>`;
+  }).join("");
+
+  // Pagination
+  const delta = 2;
+  let pages = "";
+  for (let p = 1; p <= totalPages; p++) {
+    if (p===1 || p===totalPages || (p>=currentPage-delta && p<=currentPage+delta)) {
+      pages += `<button class="page-btn ${p===currentPage ? "active" : ""}" onclick="goPage(${p})">${p}</button>`;
+    } else if (p===currentPage-delta-1 || p===currentPage+delta+1) {
+      pages += `<span style="color:var(--muted);padding:6px 4px;font-size:.72rem">…</span>`;
+    }
+  }
+  document.getElementById("pagination").innerHTML = pages;
+}
+
+// ── INTERACTIONS ──────────────────────────────────────────────────
+function toggleBucket(i) {
+  activeBucket = activeBucket === i ? null : i;
+  tableMode    = activeBucket !== null ? "filtered" : "all";
+  currentPage  = 1; render();
+}
+function setTableMode(m) {
+  tableMode = m; currentPage = 1;
+  document.querySelectorAll(".tab").forEach((t,i) =>
+    t.classList.toggle("active", (i===0 && m==="all") || (i===1 && m==="filtered")));
+  render();
+}
+function goPage(p) { currentPage = p; render(); }
+function onModeChange() { activeBucket = null; currentPage = 1; render(); }
+let searchTimer;
+function onSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(() => { currentPage=1; render(); }, 200); }
+
+// ── MAIN RENDER ───────────────────────────────────────────────────
+function render() {
+  const mode = document.getElementById("modeSelect").value;
+  applyFiltersLocal();
+  document.getElementById("totalCount").textContent = ALL_DATA.length.toLocaleString();
+  renderBuckets(filteredData, mode);
+  renderTable(filteredData, mode);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────
+(async () => {
+  showLoading("Connecting to API…");
+  try {
+    const health = await api("GET", "/api/health");
+    await refreshFileList();
+
+    if (health.default_dataset) {
+      // compare/compare.json exists — load it automatically
+      showLoading("Loading compare.json…");
+      const data = await api("GET", "/api/compare");
+      ingestData(data, "compare.json");
+      document.getElementById("fileSelect").value = "compare.json";
+    } else {
+      hideLoading();
+      toast("No compare.json found — run diamond_compare.py or upload a CSV", "info", 6000);
+    }
+  } catch(e) {
+    hideLoading();
+    toast("API not reachable — run: uvicorn main:app --reload", "error", 8000);
+  }
+})();
+</script>
+</body>
+</html>
