@@ -18,8 +18,6 @@
         --accent2: #7c6fcd;
         --green: #3ecf8e;
         --red: #f87171;
-        --orange: #fb923c;
-        --yellow: #fbbf24;
         --text: #e8e8f0;
         --muted: #6b6b8a;
         --font-mono: "DM Mono", monospace;
@@ -39,12 +37,276 @@
         min-height: 100vh;
       }
 
-      /* ── LOADING OVERLAY ──────────────────────────── */
+      /* LOGIN */
+      #loginOverlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 10, 15, 0.97);
+        backdrop-filter: blur(14px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        transition: opacity 0.5s ease;
+      }
+      #loginOverlay.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loginOverlay.hidden {
+        display: none;
+      }
+      .login-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 48px 44px;
+        width: 100%;
+        max-width: 420px;
+        position: relative;
+        overflow: hidden;
+        box-shadow:
+          0 0 80px rgba(201, 168, 76, 0.08),
+          0 32px 64px rgba(0, 0, 0, 0.6);
+        animation: loginIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      @keyframes loginIn {
+        from {
+          opacity: 0;
+          transform: translateY(28px) scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      .login-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent),
+          var(--accent2),
+          var(--accent),
+          transparent
+        );
+        background-size: 200% 100%;
+        animation: shimmer 2.4s linear infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+      .login-card::after {
+        content: "💎";
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        font-size: 1.5rem;
+        opacity: 0.12;
+      }
+      .login-gem {
+        text-align: center;
+        font-size: 2.8rem;
+        margin-bottom: 8px;
+        animation: float 3s ease-in-out infinite;
+      }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      .login-title {
+        font-family: var(--font-display);
+        font-size: 1.7rem;
+        color: var(--accent);
+        text-align: center;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+      }
+      .login-sub {
+        font-size: 0.7rem;
+        color: var(--muted);
+        text-align: center;
+        margin-bottom: 36px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .login-field {
+        position: relative;
+        margin-bottom: 20px;
+      }
+      .login-field label {
+        display: block;
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 8px;
+      }
+      .login-field input {
+        width: 100%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.88rem;
+        padding: 12px 44px 12px 44px;
+        border-radius: 8px;
+        outline: none;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+        letter-spacing: 0.08em;
+      }
+      .login-field input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
+      }
+      .login-field input.error {
+        border-color: var(--red);
+        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+        animation: shake 0.35s ease;
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        20% {
+          transform: translateX(-6px);
+        }
+        40% {
+          transform: translateX(6px);
+        }
+        60% {
+          transform: translateX(-4px);
+        }
+        80% {
+          transform: translateX(4px);
+        }
+      }
+      .login-field-icon {
+        position: absolute;
+        left: 14px;
+        bottom: 13px;
+        color: var(--muted);
+        font-size: 1rem;
+        pointer-events: none;
+      }
+      .eye-btn {
+        position: absolute;
+        right: 12px;
+        bottom: 11px;
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 1.05rem;
+        padding: 2px 4px;
+        transition: color 0.2s;
+      }
+      .eye-btn:hover {
+        color: var(--accent);
+      }
+      .login-error {
+        font-size: 0.7rem;
+        color: var(--red);
+        margin-bottom: 16px;
+        min-height: 18px;
+        text-align: center;
+      }
+      .login-btn {
+        width: 100%;
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: 8px;
+        padding: 13px;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+        text-transform: uppercase;
+        transition: all 0.2s;
+      }
+      .login-btn:hover {
+        opacity: 0.88;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(201, 168, 76, 0.3);
+      }
+      .login-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .login-btn.success-state {
+        background: var(--green);
+        pointer-events: none;
+      }
+      .login-success-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: var(--card);
+        border-radius: 16px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+      }
+      .login-success-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .success-check {
+        font-size: 3.5rem;
+        animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      @keyframes popIn {
+        from {
+          transform: scale(0);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .success-text {
+        font-family: var(--font-display);
+        font-size: 1.3rem;
+        color: var(--green);
+      }
+      .success-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+      }
+
+      /* LOADING */
       #loadingOverlay {
         position: fixed;
         inset: 0;
         background: var(--bg);
-        display: flex;
+        display: none;
         flex-direction: column;
         align-items: center;
         justify-content: center;
@@ -79,7 +341,7 @@
         color: var(--muted);
       }
 
-      /* ── TOAST ────────────────────────────────────── */
+      /* TOAST */
       #toast {
         position: fixed;
         bottom: 24px;
@@ -116,7 +378,7 @@
         color: var(--accent);
       }
 
-      /* ── TOP BAR ──────────────────────────────────── */
+      /* TOPBAR */
       .topbar {
         background: var(--surface);
         border-bottom: 1px solid var(--border);
@@ -142,7 +404,6 @@
       .sep {
         color: var(--border);
       }
-
       .inp {
         background: var(--card);
         border: 1px solid var(--border);
@@ -160,7 +421,6 @@
       .inp::placeholder {
         color: var(--muted);
       }
-
       #fileSelect {
         min-width: 220px;
         cursor: pointer;
@@ -168,7 +428,6 @@
       #fileSelect option {
         background: var(--card);
       }
-
       .upload-zone {
         border: 1px dashed var(--border);
         border-radius: 6px;
@@ -186,7 +445,6 @@
       #csvFileInput {
         display: none;
       }
-
       .btn {
         border: none;
         padding: 7px 16px;
@@ -218,7 +476,6 @@
         padding: 5px 12px;
         font-size: 0.7rem;
       }
-
       .loaded-indicator {
         font-size: 0.7rem;
         color: var(--green);
@@ -245,7 +502,7 @@
         }
       }
 
-      /* ── HEADER ───────────────────────────────────── */
+      /* HEADER */
       .header {
         padding: 28px 40px 22px;
         background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
@@ -293,7 +550,7 @@
         letter-spacing: 0.08em;
       }
 
-      /* ── CONTROLS ─────────────────────────────────── */
+      /* CONTROLS */
       .controls {
         padding: 16px 40px;
         background: var(--surface);
@@ -315,7 +572,7 @@
         letter-spacing: 0.1em;
       }
 
-      /* ── MAIN ─────────────────────────────────────── */
+      /* MAIN */
       .main {
         padding: 28px 40px;
       }
@@ -335,7 +592,7 @@
         background: var(--border);
       }
 
-      /* ── BUCKETS ──────────────────────────────────── */
+      /* BUCKETS */
       .buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -403,7 +660,7 @@
         transition: width 0.5s ease;
       }
 
-      /* ── TABLE ────────────────────────────────────── */
+      /* TABLE */
       .tabs {
         display: flex;
         gap: 4px;
@@ -430,7 +687,6 @@
         border-color: var(--accent);
         color: var(--accent);
       }
-
       .table-wrap {
         overflow-x: auto;
         border-radius: 10px;
@@ -483,27 +739,17 @@
       }
       .pct-pos {
         color: var(--green);
-      } /* vendor more expensive than PC → green (PC wins) */
+      }
       .pct-neg {
         color: var(--red);
-      } /* vendor cheaper than PC → red (PC loses) */
+      }
       .pct-zero {
         color: var(--muted);
       }
       .pc-cheaper {
-        /* PC price cell blue when PC is more expensive */
         color: #60a5fa;
         font-weight: 600;
       }
-      .badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.63rem;
-        font-weight: 500;
-        letter-spacing: 0.05em;
-      }
-
       .pagination {
         display: flex;
         gap: 5px;
@@ -531,7 +777,6 @@
         border-color: var(--accent);
         color: var(--accent);
       }
-
       .empty-state {
         text-align: center;
         padding: 60px;
@@ -548,7 +793,7 @@
         margin-bottom: 8px;
       }
 
-      /* ── STATS PANEL ─────────────────────────────── */
+      /* STATS PANEL */
       .stats-panel {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -638,23 +883,60 @@
         .controls {
           flex-direction: column;
         }
+        .login-card {
+          padding: 32px 24px;
+          margin: 16px;
+        }
       }
     </style>
   </head>
   <body>
-    <!-- LOADING -->
-    <div id="loadingOverlay">
+    <!-- LOGIN OVERLAY -->
+    <div id="loginOverlay">
+      <div class="login-card">
+        <div class="login-success-overlay" id="loginSuccess">
+          <div class="success-check">✓</div>
+          <div class="success-text">Access Granted</div>
+          <div class="success-sub">Loading dashboard…</div>
+        </div>
+        <div class="login-gem">💎</div>
+        <div class="login-title">Diamond Dashboard</div>
+        <div class="login-sub">Secure Access Required</div>
+        <div class="login-field">
+          <label>Password</label>
+          <input
+            type="password"
+            id="loginPassword"
+            placeholder="Enter password"
+            autocomplete="current-password"
+            onkeydown="if (event.key === 'Enter') attemptLogin();"
+          />
+          <span class="login-field-icon">🔒</span>
+          <button
+            class="eye-btn"
+            id="eyeBtn"
+            onclick="toggleEye()"
+            type="button"
+          >
+            👁
+          </button>
+        </div>
+        <div class="login-error" id="loginError"></div>
+        <button class="login-btn" id="loginBtn" onclick="attemptLogin()">
+          Unlock Dashboard
+        </button>
+      </div>
+    </div>
+
+    <div id="loadingOverlay" style="display: none">
       <div class="spinner"></div>
       <div class="loading-text">💎 Diamond Dashboard</div>
       <div class="loading-sub" id="loadingMsg">Starting up…</div>
     </div>
-
-    <!-- TOAST -->
     <div id="toast"></div>
 
     <!-- TOP BAR -->
     <div class="topbar">
-      <!-- Select existing JSON -->
       <div class="topbar-section">
         <label>Dataset</label>
         <select id="fileSelect" class="inp" onchange="loadSelectedFile()">
@@ -664,13 +946,9 @@
           ↻ Refresh
         </button>
       </div>
-
       <span class="sep">|</span>
-
-      <!-- Upload CSV or JSON -->
       <div class="topbar-section">
         <label>Upload File</label>
-        <!-- ✦ CHANGED: accept both .csv and .json -->
         <div
           class="upload-zone"
           onclick="document.getElementById('csvFileInput').click()"
@@ -687,10 +965,7 @@
           >(.csv or .json)</span
         >
       </div>
-
       <span class="sep">|</span>
-
-      <!-- Convert by filename -->
       <div class="topbar-section">
         <label>Convert existing CSV</label>
         <input
@@ -704,10 +979,7 @@
           Convert
         </button>
       </div>
-
       <span class="sep">|</span>
-
-      <!-- Run Compare pipeline -->
       <div class="topbar-section">
         <label>Pipeline</label>
         <button
@@ -722,8 +994,6 @@
           style="font-size: 0.68rem; color: var(--muted)"
         ></span>
       </div>
-
-      <!-- Loaded status -->
       <div
         class="loaded-indicator"
         id="loadedIndicator"
@@ -758,7 +1028,6 @@
 
     <!-- CONTROLS -->
     <div class="controls">
-      <!-- hidden — keeps JS references intact -->
       <select id="datasetSelect" style="display: none">
         <option value="compare.json" selected>compare.json</option>
       </select>
@@ -766,7 +1035,6 @@
         <option value="lg" selected>lg</option>
       </select>
       <div id="vendorCompareGroup" style="display: none"></div>
-
       <div class="control-group">
         <label>PC Price Range</label>
         <div style="display: flex; gap: 8px; align-items: center">
@@ -808,7 +1076,6 @@
 
     <!-- MAIN -->
     <div class="main">
-      <!-- ── VENDOR STATS PANEL ──────────────────────────── -->
       <div class="section-title" style="margin-bottom: 12px">
         Vendor Statistics
         <span
@@ -832,11 +1099,9 @@
           <div class="stats-card-sub">Run the pipeline to see vendor stats</div>
         </div>
       </div>
-
       <div class="section-title">
-        % Range Buckets
-        <span style="font-size: 0.68rem; color: var(--muted)"
-          >click to filter · based on active Vendor Compare</span
+        % Range Buckets<span style="font-size: 0.68rem; color: var(--muted)"
+          >click to filter</span
         >
       </div>
       <div class="buckets-grid" id="bucketsGrid">
@@ -848,7 +1113,6 @@
           </p>
         </div>
       </div>
-
       <div class="section-title">
         Records
         <span
@@ -858,7 +1122,6 @@
       </div>
       <div class="tabs">
         <button class="tab active" onclick="setTableMode('all')">All</button>
-
         <button class="tab" id="commonTab" onclick="toggleCommonOnly()">
           ⬡ Common Only
         </button>
@@ -892,6 +1155,82 @@
     <script>
       const API_BASE = "";
 
+      // ─── LOGIN ────────────────────────────────────────────────────────────────
+      // Password is validated by POST /api/login in main.py
+      // To change the password: edit DASHBOARD_PASSWORD in main.py — that's the ONLY place.
+
+      function toggleEye() {
+        const inp = document.getElementById("loginPassword");
+        const btn = document.getElementById("eyeBtn");
+        inp.type = inp.type === "password" ? "text" : "password";
+        btn.textContent = inp.type === "password" ? "👁" : "🙈";
+      }
+
+      async function attemptLogin() {
+        const pw = document.getElementById("loginPassword").value;
+        const inp = document.getElementById("loginPassword");
+        const err = document.getElementById("loginError");
+        const btn = document.getElementById("loginBtn");
+
+        if (!pw) {
+          inp.classList.remove("error");
+          void inp.offsetWidth;
+          inp.classList.add("error");
+          err.textContent = "Please enter the password.";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Checking…";
+        err.textContent = "";
+
+        try {
+          // Validated server-side — password lives only in main.py: DASHBOARD_PASSWORD
+          const res = await fetch(API_BASE + "/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pw }),
+          });
+
+          if (res.ok) {
+            inp.classList.remove("error");
+            btn.classList.add("success-state");
+            btn.textContent = "✓ Access Granted";
+            document.getElementById("loginSuccess").classList.add("show");
+            setTimeout(() => {
+              const ov = document.getElementById("loginOverlay");
+              ov.classList.add("fade-out");
+              setTimeout(() => {
+                ov.classList.add("hidden");
+                startDashboard();
+              }, 500);
+            }, 1200);
+          } else {
+            const data = await res.json().catch(() => ({}));
+            inp.classList.remove("error");
+            void inp.offsetWidth;
+            inp.classList.add("error");
+            err.textContent =
+              res.status === 401
+                ? "Incorrect password. Please try again."
+                : data.detail || "Login failed. Please try again.";
+            inp.value = "";
+            inp.focus();
+            btn.disabled = false;
+            btn.textContent = "Unlock Dashboard";
+          }
+        } catch (e) {
+          err.textContent = "Cannot reach server — is the API running?";
+          btn.disabled = false;
+          btn.textContent = "Unlock Dashboard";
+        }
+      }
+
+      window.addEventListener("load", () =>
+        setTimeout(() => document.getElementById("loginPassword").focus(), 300),
+      );
+
+      // ─── DASHBOARD ────────────────────────────────────────────────────────────
       let ALL_DATA = [],
         _RAW_DATA = [],
         filteredData = [],
@@ -900,8 +1239,8 @@
       let currentPage = 1,
         PAGE_SIZE = 20,
         priceMin = null,
-        priceMax = null;
-      let activeBucket = null;
+        priceMax = null,
+        activeBucket = null;
 
       const BUCKETS = [
         { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
@@ -914,7 +1253,7 @@
       ];
 
       let toastTimer;
-      function toast(msg, type = "info", duration = 3500) {
+      function toast(msg, type = "info", dur = 3500) {
         const el = document.getElementById("toast");
         el.className = `show ${type}`;
         el.textContent =
@@ -924,15 +1263,20 @@
               ? "✗  " + msg
               : "ℹ  " + msg;
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => el.classList.remove("show"), duration);
+        toastTimer = setTimeout(() => el.classList.remove("show"), dur);
       }
-
       function showLoading(msg) {
+        const ov = document.getElementById("loadingOverlay");
+        ov.style.display = "flex";
         document.getElementById("loadingMsg").textContent = msg || "Loading…";
-        document.getElementById("loadingOverlay").classList.remove("hidden");
+        ov.classList.remove("hidden");
       }
       function hideLoading() {
-        document.getElementById("loadingOverlay").classList.add("hidden");
+        const ov = document.getElementById("loadingOverlay");
+        ov.classList.add("hidden");
+        setTimeout(() => {
+          ov.style.display = "none";
+        }, 450);
       }
       function markLoaded(label) {
         document.getElementById("loadedLabel").textContent = label;
@@ -977,7 +1321,6 @@
           toast("Could not load file list: " + e.message, "error");
         }
       }
-
       async function loadSelectedFile() {
         const filename = document.getElementById("fileSelect").value;
         if (!filename) return;
@@ -990,31 +1333,25 @@
           toast("Failed to load: " + e.message, "error");
         }
       }
-
-      // ── UPLOAD CSV or JSON ──────────────────────────────────────────
       async function uploadAndConvert(event) {
         const file = event.target.files[0];
         if (!file) return;
-
         const isJSON = file.name.toLowerCase().endsWith(".json");
         showLoading(
           (isJSON ? "Uploading JSON " : "Uploading & converting ") +
             file.name +
             "…",
         );
-
         const form = new FormData();
         form.append("file", file);
-
         try {
-          const result = await api("POST", "/api/upload", form, true);
-          const typeLabel = isJSON ? "JSON" : "CSV→JSON";
+          const r = await api("POST", "/api/upload", form, true);
           toast(
-            `[${typeLabel}] ${file.name} → ${result.file}  (${result.rows.toLocaleString()} rows)`,
+            `[${isJSON ? "JSON" : "CSV→JSON"}] ${file.name} → ${r.file}  (${r.rows.toLocaleString()} rows)`,
             "success",
           );
           await refreshFileList();
-          document.getElementById("fileSelect").value = result.file;
+          document.getElementById("fileSelect").value = r.file;
           await loadSelectedFile();
         } catch (e) {
           hideLoading();
@@ -1022,7 +1359,6 @@
         }
         event.target.value = "";
       }
-
       async function convertByName() {
         const name = document.getElementById("csvNameInput").value.trim();
         if (!name) {
@@ -1033,27 +1369,23 @@
         const form = new FormData();
         form.append("csv_filename", name);
         try {
-          const result = await api("POST", "/api/convert", form, true);
-          toast(
-            result.message + ` (${result.rows.toLocaleString()} rows)`,
-            "success",
-          );
+          const r = await api("POST", "/api/convert", form, true);
+          toast(r.message + ` (${r.rows.toLocaleString()} rows)`, "success");
           await refreshFileList();
-          document.getElementById("fileSelect").value = result.file;
+          document.getElementById("fileSelect").value = r.file;
           await loadSelectedFile();
         } catch (e) {
           hideLoading();
           toast("Convert failed: " + e.message, "error");
         }
       }
-
       function ingestData(json, label = "") {
         if (!Array.isArray(json)) {
           hideLoading();
           toast("Expected a JSON array", "error");
           return;
         }
-        _RAW_DATA = json; // keep full raw copy for vendor re-filtering
+        _RAW_DATA = json;
         ALL_DATA = [...json];
         activeBucket = null;
         tableMode = "all";
@@ -1069,7 +1401,6 @@
       }
 
       function getPctColName(row, mode) {
-        // MUST match "vs" AND "%" to avoid matching "-30% USD" price columns
         const keys = Object.keys(row);
         if (mode === "lg")
           return (
@@ -1100,18 +1431,22 @@
         return isNaN(n) ? null : n;
       }
       function fmtPct(v) {
-        if (v === null || v === undefined) return "—";
-        return Number(v).toFixed(2) + "%";
+        return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
       }
       function fmtUSD(v) {
-        if (v === null || v === undefined || v === "" || Number(v) === 0)
-          return "—";
-        return "$" + Number(v).toLocaleString();
+        return v === null || v === undefined || v === "" || Number(v) === 0
+          ? "—"
+          : "$" + Number(v).toLocaleString();
       }
       function pctClass(v) {
-        if (v === null || v === undefined) return "pct-zero";
-        return v > 0 ? "pct-pos" : v < 0 ? "pct-neg" : "pct-zero";
-      } // pct-neg=blue(PC costlier) pct-pos=red(PC cheaper)
+        return v === null || v === undefined
+          ? "pct-zero"
+          : v > 0
+            ? "pct-pos"
+            : v < 0
+              ? "pct-neg"
+              : "pct-zero";
+      }
 
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
@@ -1122,39 +1457,37 @@
           if (priceMax !== null && PC > priceMax) return false;
           if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
-          // Bucket filter — only when a bucket is clicked
           if (activeBucket !== null) {
-            const p = getPct(row, mode);
-            const b = BUCKETS[activeBucket];
+            const p = getPct(row, mode),
+              b = BUCKETS[activeBucket];
             if (p === null || p < b.min || p >= b.max) return false;
           }
-          // Common Only: every price column must have a real non-zero value
           if (commonOnly) {
-            const priceCols = Object.keys(row).filter((k) =>
-              k.includes("Price USD"),
-            );
-            const allPresent = priceCols.every((k) => {
-              const v = row[k];
-              return (
-                v !== null && v !== undefined && v !== "" && Number(v) !== 0
-              );
-            });
-            if (!allPresent) return false;
+            const pc = Object.keys(row).filter((k) => k.includes("Price USD"));
+            if (
+              !pc.every((k) => {
+                const v = row[k];
+                return (
+                  v !== null && v !== undefined && v !== "" && Number(v) !== 0
+                );
+              })
+            )
+              return false;
           }
           return true;
         });
       }
-
       function toggleCommonOnly() {
         commonOnly = !commonOnly;
-        const btn = document.getElementById("commonTab");
-        btn.classList.toggle("active", commonOnly);
+        document
+          .getElementById("commonTab")
+          .classList.toggle("active", commonOnly);
         currentPage = 1;
         render();
       }
       function applyPriceFilter() {
-        const mn = document.getElementById("priceMin").value;
-        const mx = document.getElementById("priceMax").value;
+        const mn = document.getElementById("priceMin").value,
+          mx = document.getElementById("priceMax").value;
         priceMin = mn ? parseFloat(mn) : null;
         priceMax = mx ? parseFloat(mx) : null;
         currentPage = 1;
@@ -1168,81 +1501,55 @@
         render();
       }
 
-      function renderTable(data, mode) {
-        let rows = data;
-
+      function renderTable(data) {
+        const mode = document.getElementById("modeSelect").value;
         document.getElementById("tableCount").textContent =
-          `— ${rows.length.toLocaleString()} records`;
+          `— ${data.length.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent =
-          rows.length.toLocaleString();
-
-        const totalPages = Math.ceil(rows.length / PAGE_SIZE);
-        currentPage = Math.min(currentPage, totalPages || 1);
-        const pageRows = rows.slice(
+          data.length.toLocaleString();
+        const tp = Math.ceil(data.length / PAGE_SIZE);
+        currentPage = Math.min(currentPage, tp || 1);
+        const pr = data.slice(
           (currentPage - 1) * PAGE_SIZE,
           currentPage * PAGE_SIZE,
         );
-
-        if (!pageRows.length) {
+        if (!pr.length) {
           document.getElementById("tableBody").innerHTML =
             `<tr><td colspan="15"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
           document.getElementById("pagination").innerHTML = "";
           return;
         }
-
-        document.getElementById("tableBody").innerHTML = pageRows
+        document.getElementById("tableBody").innerHTML = pr
           .map((r) => {
-            const lgPct = getPct(r, "lg");
-            const brPct = getPct(r, "br");
-            const shape = r["shape"] || r["Shape"] || "—";
-            const color = r["color"] || r["Color"] || "—";
-            const clarity = r["clarity"] || r["Clarity"] || "—";
-            const cut = r["cut"] || r["Cut"] || "—";
-            const carat = r["carat"] || r["Carat"] || "—";
-
-            // Blue PC cells = PC is more expensive than vendor (vendor % is negative)
-            const pcIsExpensive =
-              (lgPct !== null && lgPct < 0) || (brPct !== null && brPct < 0);
-            const pcCls = pcIsExpensive ? "price pc-cheaper" : "price";
-            // Ensure carat shows as number not empty
-            const caratDisplay =
-              carat === "" || carat === "nan" || carat === "Na" ? "—" : carat;
-
-            return `<tr>
-            <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
-            <td class="attr">${shape}</td><td class="attr">${color}</td>
-            <td class="attr">${clarity}</td><td class="attr">${cut}</td><td class="attr">${caratDisplay}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
-            <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
-            <td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td>
-            <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
-            <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
-            <td class="${pctClass(lgPct)}">${fmtPct(lgPct)}</td>
-            <td class="${pctClass(brPct)}">${fmtPct(brPct)}</td>
-          </tr>`;
+            const lgP = getPct(r, "lg"),
+              brP = getPct(r, "br");
+            const sh = r["shape"] || r["Shape"] || "—",
+              co = r["color"] || r["Color"] || "—",
+              cl = r["clarity"] || r["Clarity"] || "—",
+              cu = r["cut"] || r["Cut"] || "—",
+              ca = r["carat"] || r["Carat"] || "—";
+            const pcCls =
+              (lgP !== null && lgP < 0) || (brP !== null && brP < 0)
+                ? "price pc-cheaper"
+                : "price";
+            const caD = ca === "" || ca === "nan" || ca === "Na" ? "—" : ca;
+            return `<tr><td class="cert">${String(r["certificate_number"] ?? "—")}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td></tr>`;
           })
           .join("");
-
-        const delta = 2;
+        const d = 2;
         let pages = "";
-        for (let p = 1; p <= totalPages; p++) {
+        for (let p = 1; p <= tp; p++) {
           if (
             p === 1 ||
-            p === totalPages ||
-            (p >= currentPage - delta && p <= currentPage + delta)
-          ) {
+            p === tp ||
+            (p >= currentPage - d && p <= currentPage + d)
+          )
             pages += `<button class="page-btn ${p === currentPage ? "active" : ""}" onclick="goPage(${p})">${p}</button>`;
-          } else if (
-            p === currentPage - delta - 1 ||
-            p === currentPage + delta + 1
-          ) {
+          else if (p === currentPage - d - 1 || p === currentPage + d + 1)
             pages += `<span style="color:var(--muted);padding:6px 4px;font-size:.72rem">…</span>`;
-          }
         }
         document.getElementById("pagination").innerHTML = pages;
       }
-
       function setTableMode(m) {
         tableMode = m;
         currentPage = 1;
@@ -1260,48 +1567,22 @@
         currentPage = p;
         render();
       }
-      function onModeChange() {
-        const filename = document.getElementById("datasetSelect").value;
-        if (filename === "compare_partial.json") applyVendorFilter();
-        currentPage = 1;
-        render();
-      }
-      let searchTimer;
+      let sTimer;
       function onSearch() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => {
+        clearTimeout(sTimer);
+        sTimer = setTimeout(() => {
           currentPage = 1;
           render();
         }, 200);
       }
 
-      async function switchDataset() {
-        const filename = document.getElementById("datasetSelect").value;
-        const isPartial = filename === "compare_partial.json";
-        // Show Vendor Compare only for partial dataset
-        document.getElementById("vendorCompareGroup").style.display = isPartial
-          ? ""
-          : "none";
-        showLoading("Loading " + filename + "…");
-        try {
-          const data = await api("GET", `/api/data/${filename}`);
-          ingestData(data, filename);
-          document.getElementById("fileSelect").value = filename;
-          // After loading partial, apply vendor filter immediately
-          if (isPartial) applyVendorFilter();
-        } catch (e) {
-          hideLoading();
-          toast("Failed to load " + filename + ": " + e.message, "error");
-        }
-      }
-
-      function renderBuckets(data, mode) {
-        const grid = document.getElementById("bucketsGrid");
+      function renderBuckets() {
+        const mode = document.getElementById("modeSelect").value,
+          grid = document.getElementById("bucketsGrid");
         if (!ALL_DATA.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
           return;
         }
-        // Always count from ALL_DATA (pre-bucket-filter) so counts stay stable when clicking
         const counts = BUCKETS.map(
           (b) =>
             ALL_DATA.filter((r) => {
@@ -1309,104 +1590,88 @@
               return p !== null && p >= b.min && p < b.max;
             }).length,
         );
-        const total = ALL_DATA.length;
-        const maxCount = Math.max(...counts, 1);
+        const total = ALL_DATA.length,
+          maxC = Math.max(...counts, 1);
         grid.innerHTML = BUCKETS.map((b, i) => {
-          const cnt = counts[i];
-          const isEmpty = cnt === 0;
-          const isActive = activeBucket === i;
-          const pct = ((cnt / total) * 100).toFixed(1);
-          const barW = ((cnt / maxCount) * 100).toFixed(1);
-          return `
-          <div class="bucket-card ${isActive ? "active" : ""} ${isEmpty ? "bucket-empty" : ""}"
-               style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}"
-               onclick="toggleBucket(${i}, ${cnt})">
-            <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
-            <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
-            <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
-            <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div>
-          </div>`;
+          const cnt = counts[i],
+            isEmpty = cnt === 0,
+            isActive = activeBucket === i,
+            pct = ((cnt / total) * 100).toFixed(1),
+            barW = ((cnt / maxC) * 100).toFixed(1);
+          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="toggleBucket(${i},${cnt})"><div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div><div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div><div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div><div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
         }).join("");
       }
-
       function toggleBucket(i, count) {
-        if (count === 0) return; // ignore empty buckets
-        activeBucket = activeBucket === i ? null : i; // click same = deselect
+        if (count === 0) return;
+        activeBucket = activeBucket === i ? null : i;
         currentPage = 1;
         render();
       }
 
-      // Filter partial dataset to only rows where selected vendor + PC both have prices
       function applyVendorFilter() {
         const mode = document.getElementById("modeSelect").value;
-        const vendorPriceCol =
+        const col =
           mode === "lg"
             ? "loose-grown Price USD"
             : mode === "br"
               ? "brilliance Price USD"
               : "luvansh Price USD";
-        // Keep only rows that have both vendor price and PC price
         ALL_DATA = _RAW_DATA.filter((row) => {
-          const vendorPrice = row[vendorPriceCol];
-          const pcPrice = row["PC Price USD"];
-          const hasVendor =
-            vendorPrice !== null &&
-            vendorPrice !== undefined &&
-            vendorPrice !== "" &&
-            Number(vendorPrice) !== 0;
-          const hasPC =
-            pcPrice !== null &&
-            pcPrice !== undefined &&
-            pcPrice !== "" &&
-            Number(pcPrice) !== 0;
-          return hasVendor && hasPC;
+          const vp = row[col],
+            pp = row["PC Price USD"];
+          return (
+            vp !== null &&
+            vp !== undefined &&
+            vp !== "" &&
+            Number(vp) !== 0 &&
+            pp !== null &&
+            pp !== undefined &&
+            pp !== "" &&
+            Number(pp) !== 0
+          );
         });
         currentPage = 1;
       }
 
       function render() {
-        const mode = document.getElementById("modeSelect").value;
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
-        renderBuckets(ALL_DATA, mode); // buckets always reflect full dataset counts
-        renderTable(filteredData, mode); // table respects bucket + other filters
+        renderBuckets();
+        renderTable(filteredData);
       }
 
       async function runComparePipeline() {
-        const btn = document.getElementById("runCompareBtn");
-        const status = document.getElementById("runCompareStatus");
+        const btn = document.getElementById("runCompareBtn"),
+          st = document.getElementById("runCompareStatus");
         btn.disabled = true;
         btn.textContent = "⏳ Running…";
-        status.textContent = "Building compare files…";
-        status.style.color = "var(--accent)";
+        st.textContent = "Building compare files…";
+        st.style.color = "var(--accent)";
         try {
-          const result = await api("POST", "/api/run-compare");
-          if (result.status === "ok") {
-            status.textContent = `✓ Done — ${result.rows.toLocaleString()} rows`;
-            status.style.color = "var(--green)";
+          const r = await api("POST", "/api/run-compare");
+          if (r.status === "ok") {
+            st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`;
+            st.style.color = "var(--green)";
             toast(
-              `Compare pipeline complete — ${result.rows.toLocaleString()} records`,
+              `Compare pipeline complete — ${r.rows.toLocaleString()} records`,
               "success",
               5000,
             );
             await refreshFileList();
-            loadStats(); // refresh stats after pipeline run
+            loadStats();
             showLoading("Reloading compare.json…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
-            if (document.getElementById("datasetSelect"))
-              document.getElementById("datasetSelect").value = "compare.json";
           } else {
-            status.textContent = `✗ Error (code ${result.returncode})`;
-            status.style.color = "var(--red)";
+            st.textContent = `✗ Error (code ${r.returncode})`;
+            st.style.color = "var(--red)";
             toast("Pipeline error — check server logs", "error", 6000);
-            console.error("Pipeline stderr:", result.stderr);
           }
         } catch (e) {
-          status.textContent = "✗ Failed";
-          status.style.color = "var(--red)";
+          st.textContent = "✗ Failed";
+          st.style.color = "var(--red)";
           toast("Pipeline failed: " + e.message, "error");
         } finally {
           btn.disabled = false;
@@ -1414,23 +1679,14 @@
         }
       }
 
-      // ── BOOT ──────────────────────────────────────────────────────────
-      // ── STATS PANEL ──────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
-        panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6">
-          <div class="stats-card-title">Loading stats…</div>
-          <div class="stats-card-sub">Fetching diamond_status.json</div>
-        </div>`;
+        panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
         try {
           const s = await api("GET", "/api/status");
           renderStats(s);
         } catch (e) {
-          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)">
-            <div class="stats-card-title" style="color:var(--muted)">No stats yet</div>
-            <div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div>
-            <div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div>
-          </div>`;
+          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div><div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div></div>`;
         }
       }
 
@@ -1438,110 +1694,50 @@
         const panel = document.getElementById("statsPanel");
         if (!s) {
           panel.innerHTML =
-            '<div class="stats-card"><div class="stats-card-sub">No stats available — run pipeline first</div></div>';
+            '<div class="stats-card"><div class="stats-card-sub">No stats available</div></div>';
           return;
         }
-
         document.getElementById("statsLastRun").textContent = s.generated_at
           ? "· last run " + s.generated_at
           : "";
-
-        const pcTotal = s.pc_total || 0;
-        const vendors = s.pc_vs_vendors || {};
-        const datasets = s.dataset_counts || {};
-        const vendorTotals = s.vendor_totals || {};
-
+        const pcTotal = s.pc_total || 0,
+          vendors = s.pc_vs_vendors || {},
+          datasets = s.dataset_counts || {},
+          vTotals = s.vendor_totals || {};
         const COLORS = {
           "loose-grown": "#3ecf8e",
           brilliance: "#60a5fa",
           luvansh: "#c9a84c",
           PC: "#e879f9",
         };
-
-        let html = "";
-
-        // PC total card
-        html += `<div class="stats-card" style="--card-color:${COLORS["PC"] || "#e879f9"}">
-          <div class="stats-card-title">💠 PC (Precious Carbon)</div>
-          <div class="stats-card-value">${pcTotal.toLocaleString()}</div>
-          <div class="stats-card-sub">Total diamonds in master list</div>
-          <div class="stats-row-grid" style="margin-top:10px">
-            <div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div>
-            <div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div>
-          </div>
-        </div>`;
-
-        // Per-vendor cards
+        let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 PC (Precious Carbon)</div><div class="stats-card-value">${pcTotal.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div></div></div>`;
         for (const [name, v] of Object.entries(vendors)) {
-          const color = COLORS[name] || "var(--accent2)";
-          const matched = v.matched || 0;
-          const vTotal = v.vendor_total || vendorTotals[name] || 0;
-          const notInPC = v.vendor_not_in_pc || 0;
-          const rate = v.match_rate_pct || 0;
-          const barW = pcTotal
-            ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
-            : 0;
-
-          const unmatched = v.unmatched_in_pc || 0;
-          html += `<div class="stats-card" style="--card-color:${color}">
-            <div class="stats-card-title" style="color:${color}">${name}</div>
-            <div class="stats-card-value">${vTotal.toLocaleString()}</div>
-            <div class="stats-card-sub">Total in vendor CSV</div>
-            <div class="stats-row-grid" style="margin-top:12px">
-              <div class="stats-row-item">
-                <span class="label">✓ Matched in PC</span>
-                <span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span>
-              </div>
-              <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div>
-              <div class="stats-row-item">
-                <span class="label">✗ Not in PC (vendor only)</span>
-                <span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span>
-              </div>
-              <div class="stats-row-item">
-                <span class="label">◌ In PC but no vendor price</span>
-                <span class="val" style="color:var(--muted)">${unmatched.toLocaleString()}</span>
-              </div>
-            </div>
-          </div>`;
+          const color = COLORS[name] || "var(--accent2)",
+            matched = v.matched || 0,
+            vTotal = v.vendor_total || vTotals[name] || 0,
+            notInPC = v.vendor_not_in_pc || 0,
+            rate = v.match_rate_pct || 0,
+            barW = pcTotal
+              ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
+              : 0,
+            unmatched = v.unmatched_in_pc || 0;
+          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div><div class="stats-row-item"><span class="label">◌ In PC, no vendor price</span><span class="val" style="color:var(--muted)">${unmatched.toLocaleString()}</span></div></div></div>`;
         }
-
-        // Dataset summary card
-        html += `<div class="stats-card" style="--card-color:var(--accent)">
-          <div class="stats-card-title">📊 Dataset Sizes</div>
-          <div class="stats-row-grid" style="margin-top:8px">
-            <div class="stats-row-item">
-              <span class="label">⬡ Common (LG + Brilliance + PC)</span>
-              <span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span>
-            </div>
-            <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div>
-            <div class="stats-row-item">
-              <span class="label">◑ Partial (any 2+ vendors)</span>
-              <span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span>
-            </div>
-            <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div>
-            <div class="stats-row-item">
-              <span class="label">◉ All PC certs</span>
-              <span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span>
-            </div>
-          </div>
-        </div>`;
-
+        html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
         panel.innerHTML = html;
       }
 
-      async function initDashboard() {
+      async function startDashboard() {
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/api/health");
           await refreshFileList();
-          loadStats(); // load stats in background — non-blocking
+          loadStats();
           if (health.default_dataset) {
             showLoading("Loading compare.json…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
-            if (document.getElementById("datasetSelect"))
-              document.getElementById("datasetSelect").value = "compare.json";
           } else {
             hideLoading();
             toast(
@@ -1559,10 +1755,6 @@
           );
         }
       }
-
-      (async () => {
-        initDashboard();
-      })();
     </script>
   </body>
 </html>
