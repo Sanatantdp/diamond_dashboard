@@ -46,7 +46,7 @@ PC_EXTRA_COLS = {
     "COLOR":     "color",
     "CLARITY":   "clarity",
     "CUT":       "cut",
-    "CARAT":     "carat",
+    "CARAT":     "caratWeight",
 }
 
 def load_PC(csv_path):
@@ -104,13 +104,12 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
     for name in vendor_names:
         price_col = f"{name} Price USD"
         if price_col not in combined.columns:
-            pc_vs[name] = {"matched": 0, "unmatched_in_pc": 0, "vendor_total": vendor_totals.get(name, 0)}
+            pc_vs[name] = {"matched": 0,  "vendor_total": vendor_totals.get(name, 0)}
             continue
         matched   = int(combined[price_col].notna().sum())
         unmatched = int(combined[price_col].isna().sum())
         pc_vs[name] = {
             "matched":            matched,
-            "unmatched_in_pc":    unmatched,
             "vendor_total":       vendor_totals.get(name, 0),
             "vendor_not_in_pc":   vendor_totals.get(name, 0) - matched,
             "match_rate_pct":     round(matched / pc_total * 100, 2) if pc_total else 0,
@@ -132,6 +131,31 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
         json.dump(status, f, ensure_ascii=False, indent=2)
     log.info(f"Saved diamond_status.json → {DIAMOND_STATUS_JSON}")
 
+
+def load_vendors_from_env():
+    vendor_defaults = [
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV", "env_cert": "LOOSE_GROWN_CERT_COL", "env_price": "LOOSE_GROWN_PRICE_COL", "env_disc": "LOOSE_GROWN_DISCOUNT", "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",                "default_price": "price",            "default_disc": "0.70"},
+        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",  "env_cert": "BRILLIANCE_CERT_COL",  "env_price": "BRILLIANCE_PRICE_COL",  "env_disc": "BRILLIANCE_DISCOUNT",  "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber",       "default_price": "price",            "default_disc": "0.70"},
+        {"name": "luvansh",     "env_csv": "LUVANSH_CSV",     "env_cert": "LUVANSH_CERT_COL",     "env_price": "LUVANSH_PRICE_COL",     "env_disc": "LUVANSH_DISCOUNT",     "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
+    ]
+
+    vendors = []
+    for v in vendor_defaults:
+        csv_name  = get_env(v["env_csv"],   v["default_csv"])
+        cert_col  = get_env(v["env_cert"],  v["default_cert"])
+        price_col = get_env(v["env_price"], v["default_price"])
+        discount  = float(get_env(v["env_disc"], v["default_disc"]))
+        vendors.append({
+            "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
+            "cert_col": cert_col, "price_col": price_col, "discount": discount,
+        })
+        log.debug(f"Vendor '{v['name']}': csv={csv_name}, cert={cert_col}, price={price_col}, discount={discount}")
+
+    PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
+    PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
+    PC_discount = float(get_env("PC_DISCOUNT", "0.70"))
+
+    return vendors, PC_csv, PC_discount
 
 def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     """
@@ -623,45 +647,6 @@ def check_file_age(filepath: str, label: str) -> dict:
         "status": status, "last_modified": mod_dt.strftime("%Y-%m-%d %H:%M:%S"),
         "age_days": age_days, "ok": is_fresh,
     }
-
-
-def load_vendors_from_env():
-    vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV", "env_cert": "LOOSE_GROWN_CERT_COL", "env_price": "LOOSE_GROWN_PRICE_COL", "env_disc": "LOOSE_GROWN_DISCOUNT", "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",                "default_price": "price",            "default_disc": "0.70"},
-        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",  "env_cert": "BRILLIANCE_CERT_COL",  "env_price": "BRILLIANCE_PRICE_COL",  "env_disc": "BRILLIANCE_DISCOUNT",  "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber",       "default_price": "price",            "default_disc": "0.70"},
-        {"name": "luvansh",     "env_csv": "LUVANSH_CSV",     "env_cert": "LUVANSH_CERT_COL",     "env_price": "LUVANSH_PRICE_COL",     "env_disc": "LUVANSH_DISCOUNT",     "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
-    ]
-
-    # Vendors whose discount is always fixed regardless of .env
-    FIXED_DISCOUNTS = {
-        "loose-grown": 0.70,  # always 30% cut — loose-grown price has no pre-applied discount
-        "brilliance":  0.70,  # always 30% cut
-        "PC":          0.70,  # always 30% cut
-        # luvansh uses discounted_price already, so 1.00 (no extra cut)
-    }
-
-    vendors = []
-    for v in vendor_defaults:
-        csv_name  = get_env(v["env_csv"],   v["default_csv"])
-        cert_col  = get_env(v["env_cert"],  v["default_cert"])
-        price_col = get_env(v["env_price"], v["default_price"])
-        # Use fixed discount if defined, else fall back to .env / default
-        if v["name"] in FIXED_DISCOUNTS:
-            discount = FIXED_DISCOUNTS[v["name"]]
-            log.info(f"Vendor '{v['name']}': using fixed discount {discount} (30% cut)")
-        else:
-            discount = float(get_env(v["env_disc"], v["default_disc"]))
-        vendors.append({
-            "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
-            "cert_col": cert_col, "price_col": price_col, "discount": discount,
-        })
-        log.debug(f"Vendor '{v['name']}': csv={csv_name}, cert={cert_col}, price={price_col}, discount={discount}")
-
-    PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
-    PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
-    PC_discount = float(get_env("PC_DISCOUNT", "0.70"))
-
-    return vendors, PC_csv, PC_discount
 
 
 def check_all_files_and_run():

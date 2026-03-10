@@ -1139,7 +1139,6 @@
               <th>PC Price</th>
               <th>PC -30%</th>
               <th>LG Price</th>
-              <th>LG -30%</th>
               <th>Brilliance Price</th>
               <th>Brilliance -30%</th>
               <th>LG vs PC %</th>
@@ -1533,7 +1532,7 @@
                 ? "price pc-cheaper"
                 : "price";
             const caD = ca === "" || ca === "nan" || ca === "Na" ? "—" : ca;
-            return `<tr><td class="cert">${String(r["certificate_number"] ?? "—")}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td></tr>`;
+            return `<tr><td class="cert">${String(r["certificate_number"] ?? "—")}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td></tr>`;
           })
           .join("");
         const d = 2;
@@ -1721,7 +1720,7 @@
               ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
               : 0,
             unmatched = v.unmatched_in_pc || 0;
-          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div><div class="stats-row-item"><span class="label">◌ In PC, no vendor price</span><span class="val" style="color:var(--muted)">${unmatched.toLocaleString()}</span></div></div></div>`;
+          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div></div></div>`;
         }
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
         panel.innerHTML = html;
