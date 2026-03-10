@@ -37,26 +37,50 @@ def load_vendor(csv_path, cert_col, price_col, name):
     return df
 
 
-def load_tdp(csv_path):
-    log.debug(f"Loading TDP from {csv_path}")
+# Extra diamond attribute columns pulled from the PC (PC) CSV
+PC_EXTRA_COLS = {
+    "SHAPE":     "shape",
+    "COLOR":     "color",
+    "CLARITY":   "clarity",
+    "CUT":       "cut",
+    "CARAT":     "carat",
+}
+
+def load_PC(csv_path):
+    log.debug(f"Loading PC from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
-    df = df.rename(columns={"CERTIFICATE_NO": "certificate_number", "TOTAL_PRICE": "TDP Price USD"})
+    df = df.rename(columns={"certificateNumber": "certificate_number", "finalPriceUsd": "PC Price USD"})
     df["certificate_number"] = df["certificate_number"].astype(str).str.strip()
-    df["TDP Price USD"] = pd.to_numeric(df["TDP Price USD"], errors="coerce")
-    log.info(f"Loaded TDP: {len(df):,} rows")
-    return df[["certificate_number", "TDP Price USD"]]
+    df["PC Price USD"] = pd.to_numeric(df["PC Price USD"], errors="coerce")
+
+    # Pull extra attribute columns if they exist in the CSV
+    for src_col, dest_col in PC_EXTRA_COLS.items():
+        # try uppercase, lowercase, and title-case variants
+        for variant in [src_col, src_col.lower(), src_col.title()]:
+            if variant in df.columns:
+                df[dest_col] = df[variant].astype(str).str.strip().str.title()
+                log.debug(f"  PC extra col: {variant} → {dest_col}")
+                break
+
+    keep = ["certificate_number", "PC Price USD"] + [
+        dest for dest in PC_EXTRA_COLS.values() if dest in df.columns
+    ]
+    log.info(f"Loaded PC: {len(df):,} rows | extra cols: {[c for c in keep if c not in ('certificate_number','PC Price USD')]}")
+    return df[keep]
 
 
 # ══════════════════════════════════════════════════════════════
 # STEP 1 — BUILD compare.csv + compare.json
-#           Only certificates present in AT LEAST 2 vendors
+#           Only certificates present in PC are kept.
+#           Vendor rows with no matching PC cert ID are excluded.
 # ══════════════════════════════════════════════════════════════
 
 def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     """
-    1. Outer-join all vendor DataFrames on certificate_number.
+    1. Use PC as the master key — LEFT JOIN all vendors onto PC.
+       Any vendor cert ID that does NOT exist in PC is excluded.
     2. Keep only rows where at least 2 vendors have a price (vendor_count >= 2).
-    3. Add discounted price columns and % diff vs TDP.
+    3. Add discounted price columns and % diff vs PC.
     4. Add vendors_matched column showing which vendors share each cert.
     5. Save to compare/compare.csv and compare/compare.json.
     Returns the filtered combined DataFrame.
@@ -65,19 +89,36 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     log.info("STEP 1 — Building compare.csv / compare.json")
     log.info(f"Vendors loaded: {list(loaded.keys())}")
 
-    # ── Step A: outer join ALL vendors ───────────────────────
-    combined = None
-    for name, df in loaded.items():
-        combined = df if combined is None else pd.merge(
-            combined, df, on="certificate_number", how="outer"
-        )
+    # ── Step A: PC-first left join — only PC cert IDs are kept ──
+    if "PC" not in loaded:
+        log.warning("PC not loaded — falling back to outer join (no PC filter applied)")
+        combined = None
+        for name, df in loaded.items():
+            combined = df if combined is None else pd.merge(
+                combined, df, on="certificate_number", how="outer"
+            )
+    else:
+        # Start from PC as the master list
+        combined = loaded["PC"].copy()
+        log.info(f"PC master list: {len(combined):,} cert IDs")
+
+        for name, df in loaded.items():
+            if name == "PC":
+                continue
+            before_vendor = len(df)
+            combined = pd.merge(combined, df, on="certificate_number", how="left")
+            matched = combined[f"{name} Price USD"].notna().sum()
+            excluded = before_vendor - matched
+            log.info(f"  '{name}': {matched:,} cert IDs matched PC  |  {excluded:,} excluded (not in PC)")
+
+        log.info("PC-first left join complete — only certs present in PC are retained")
 
     if combined is None or combined.empty:
         log.error("No data loaded at all — aborting.")
         return pd.DataFrame()
 
     combined = combined.reset_index(drop=True)
-    log.info(f"After outer join: {len(combined):,} total unique certificate numbers")
+    log.info(f"After join: {len(combined):,} total certificate numbers (all from PC)")
 
     # ── Step B: count how many vendors have a price per cert ─
     price_cols = [
@@ -117,27 +158,45 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
             combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
             combined[disc_col]  = (combined[price_col] * disc).round(0)
 
-    # ── Step E: add % diff columns vs TDP ────────────────────
-    if "TDP" in discounts and "TDP Price USD" in combined.columns:
-        tdp_disc     = discounts["TDP"]
-        tdp_label    = f"-{round((1 - tdp_disc) * 100)}%"
-        tdp_disc_col = f"TDP {tdp_label} USD"
+    # ── Step E: add % diff columns vs PC ────────────────────
+    # Correct formula: ((Vendor -X% price - PC -X% price) / PC -X% price) * 100
+    # Example: LG=$284, PC=$244 → ((284-244)/244)*100 = +16.39%  NOT 284.00%
+    if "PC" in discounts and "PC Price USD" in combined.columns:
+        PC_disc     = discounts["PC"]
+        PC_label    = f"-{round((1 - PC_disc) * 100)}%"
+        PC_disc_col = f"PC {PC_label} USD"
 
-        for name in discounts:
-            if name == "TDP":
-                continue
-            disc     = discounts[name]
-            label    = f"-{round((1 - disc) * 100)}%"
-            disc_col = f"{name} {label} USD"
-            pct_col  = f"{name} vs TDP %"
+        if PC_disc_col not in combined.columns:
+            log.error(f"PC discounted column '{PC_disc_col}' missing — cannot compute % diffs.")
+            log.error(f"Available columns: {[c for c in combined.columns if 'PC' in c]}")
+        else:
+            for name in discounts:
+                if name == "PC":
+                    continue
+                disc     = discounts[name]
+                label    = f"-{round((1 - disc) * 100)}%"
+                disc_col = f"{name} {label} USD"
+                pct_col  = f"{name} vs PC %"
 
-            if disc_col in combined.columns and tdp_disc_col in combined.columns:
+                if disc_col not in combined.columns:
+                    log.error(f"Vendor discounted column '{disc_col}' missing — skipping % diff for '{name}'.")
+                    log.error(f"Available columns: {[c for c in combined.columns if name in c]}")
+                    continue
+
+                # Both prices must be non-null and non-zero for a valid % diff
+                vendor_price = pd.to_numeric(combined[disc_col], errors="coerce").replace(0, float("nan"))
+                PC_price     = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
+
                 combined[pct_col] = (
-                    (combined[disc_col] - combined[tdp_disc_col])
-                    / combined[tdp_disc_col].replace(0, float("nan"))
-                    * 100
+                    (vendor_price - PC_price) / PC_price * 100
                 ).round(2)
-                log.info(f"Added % diff column: {pct_col}")
+
+                valid_count = combined[pct_col].notna().sum()
+                log.info(f"Added % diff column: {pct_col}  ({valid_count:,} valid rows)")
+                # Log a sample so you can verify correctness in the logs
+                sample = combined[[disc_col, PC_disc_col, pct_col]].dropna().head(2)
+                for _, r in sample.iterrows():
+                    log.debug(f"  Check: ({r[disc_col]} - {r[PC_disc_col]}) / {r[PC_disc_col]} * 100 = {r[pct_col]}%")
 
     # ── Step F: add vendors_matched helper column ─────────────
     def vendor_list(row):
@@ -148,23 +207,39 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     combined["vendors_matched"] = combined.apply(vendor_list, axis=1)
 
     # ── Step G: reorder columns neatly ───────────────────────
-    base_cols   = ["certificate_number", "vendors_matched"]
+    # Diamond attribute cols (from PC CSV) come first after cert
+    attr_cols   = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
+    base_cols   = ["certificate_number", "vendors_matched"] + attr_cols
     vendor_cols = []
     for name in loaded.keys():
         disc  = discounts.get(name, 0.70)
         label = f"-{round((1 - disc) * 100)}%"
-        for col in [f"{name} Price USD", f"{name} {label} USD", f"{name} vs TDP %"]:
+        for col in [f"{name} Price USD", f"{name} {label} USD", f"{name} vs PC %"]:
             if col in combined.columns:
                 vendor_cols.append(col)
     other_cols = [c for c in combined.columns if c not in base_cols + vendor_cols]
     combined   = combined[base_cols + vendor_cols + other_cols]
+    log.info(f"Diamond attribute columns included: {attr_cols if attr_cols else 'none (check PC CSV column names)'}")
 
     # ── Step H: save CSV ──────────────────────────────────────
     combined.to_csv(COMPARE_CSV, index=False)
     log.info(f"Saved compare.csv → {COMPARE_CSV}  ({len(combined):,} rows × {len(combined.columns)} cols)")
 
     # ── Step I: save JSON ─────────────────────────────────────
-    records = combined.fillna("").to_dict(orient="records")
+    # Price/discount cols: replace 0.0 (= vendor missing this cert) with None → JSON null
+    json_df = combined.copy()
+    price_cols = [c for c in json_df.columns if "Price USD" in c or c.endswith("USD")]
+    for col in price_cols:
+        json_df[col] = pd.to_numeric(json_df[col], errors="coerce")
+        json_df[col] = json_df[col].where(json_df[col].notna() & (json_df[col] != 0), other=None)
+
+    # % diff cols: replace NaN with None (0.0 diffs are valid and kept)
+    pct_cols = [c for c in json_df.columns if c.endswith("%")]
+    for col in pct_cols:
+        json_df[col] = pd.to_numeric(json_df[col], errors="coerce")
+        json_df[col] = json_df[col].where(json_df[col].notna(), other=None)
+
+    records = json_df.where(json_df.notna(), other=None).to_dict(orient="records")
     with open(COMPARE_JSON, "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=2)
     log.info(f"Saved compare.json → {COMPARE_JSON}  ({len(records):,} records)")
@@ -303,7 +378,7 @@ def compare_all_three_from_combined(combined: pd.DataFrame, discounts: dict, nam
     return True
 
 
-def compare_all_vendors(vendors, tdp_csv=None, tdp_discount=0.70, default_discount=0.70):
+def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount=0.70):
     log.info("=" * 50)
     log.info("Starting vendor comparison pipeline")
 
@@ -315,9 +390,9 @@ def compare_all_vendors(vendors, tdp_csv=None, tdp_discount=0.70, default_discou
         loaded[v["name"]]    = load_vendor(v["csv"], v["cert_col"], v["price_col"], v["name"])
         discounts[v["name"]] = v.get("discount", default_discount)
 
-    if tdp_csv:
-        loaded["TDP"]    = load_tdp(tdp_csv)
-        discounts["TDP"] = tdp_discount
+    if PC_csv:
+        loaded["PC"]    = load_PC(PC_csv)
+        discounts["PC"] = PC_discount
 
     # ── STEP 1: build compare.csv + compare.json ─────────────
     combined = build_compare_files(loaded, discounts)
@@ -372,7 +447,7 @@ def compare_all_vendors(vendors, tdp_csv=None, tdp_discount=0.70, default_discou
 
         # ── A vs B vs C sheet ─────────────────────────────────
         try:
-            vendor_names = [n for n in names if n != "TDP"]
+            vendor_names = [n for n in names if n != "PC"]
             trio         = vendor_names[:3] if len(vendor_names) >= 3 else names[:3]
             if len(trio) >= 3:
                 ok = compare_all_three_from_combined(combined, discounts, trio, writer)
@@ -443,19 +518,19 @@ def load_vendors_from_env():
         })
         log.debug(f"Vendor '{v['name']}': csv={csv_name}, cert={cert_col}, price={price_col}, discount={discount}")
 
-    tdp_csv_name = get_env("TDP_CSV", "PC_diamonds.csv")
-    tdp_csv      = os.path.join(DIAMOND_FILES_DIR, tdp_csv_name)
-    tdp_discount = float(get_env("TDP_DISCOUNT", "0.70"))
+    PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
+    PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
+    PC_discount = float(get_env("PC_DISCOUNT", "0.70"))
 
-    return vendors, tdp_csv, tdp_discount
+    return vendors, PC_csv, PC_discount
 
 
 def check_all_files_and_run():
     log.info("=" * 50)
     log.info("FILE AGE CHECK")
 
-    vendors, tdp_csv, tdp_discount = load_vendors_from_env()
-    all_files  = [(v["csv"], v["name"]) for v in vendors] + [(tdp_csv, "TDP")]
+    vendors, PC_csv, PC_discount = load_vendors_from_env()
+    all_files  = [(v["csv"], v["name"]) for v in vendors] + [(PC_csv, "PC")]
     statuses   = []
     stale_warn = []
 
@@ -485,7 +560,7 @@ def check_all_files_and_run():
         log.error(f"ABORT: missing files: {[m['file'] for m in missing]}")
         return None
 
-    return compare_all_vendors(vendors=vendors, tdp_csv=tdp_csv, tdp_discount=tdp_discount)
+    return compare_all_vendors(vendors=vendors, PC_csv=PC_csv, PC_discount=PC_discount)
 
 
 if __name__ == "__main__":
