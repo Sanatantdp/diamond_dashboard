@@ -335,74 +335,6 @@
         background: var(--border);
       }
 
-      /* ── BUCKETS ──────────────────────────────────── */
-      .buckets-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 12px;
-        margin-bottom: 36px;
-      }
-      .bucket-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 18px 20px;
-        cursor: pointer;
-        transition: all 0.2s;
-        position: relative;
-        overflow: hidden;
-      }
-      .bucket-card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: var(--bucket-color, var(--accent));
-      }
-      .bucket-card:hover {
-        border-color: var(--bucket-color, var(--accent));
-        transform: translateY(-2px);
-      }
-      .bucket-card.active {
-        border-color: var(--bucket-color, var(--accent));
-        background: color-mix(
-          in srgb,
-          var(--bucket-color, var(--accent)) 10%,
-          var(--card)
-        );
-      }
-      .bucket-range {
-        font-size: 0.68rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 6px;
-      }
-      .bucket-count {
-        font-size: 1.9rem;
-        font-weight: 500;
-        color: var(--text);
-        line-height: 1;
-      }
-      .bucket-pct {
-        font-size: 0.7rem;
-        margin-top: 4px;
-      }
-      .bucket-bar {
-        height: 4px;
-        background: var(--border);
-        border-radius: 2px;
-        margin-top: 12px;
-      }
-      .bucket-bar-fill {
-        height: 100%;
-        border-radius: 2px;
-        background: var(--bucket-color, var(--accent));
-        transition: width 0.5s ease;
-      }
-
       /* ── TABLE ────────────────────────────────────── */
       .tabs {
         display: flex;
@@ -659,8 +591,9 @@
       <div>
         <h1>💎 Diamond Price Dashboard</h1>
         <p>
-          loose-grown · brilliance · PC — % vs PC price analysis (&lt;0% =
-          vendor cheaper)
+          loose-grown · brilliance · luvansh · PC — use
+          <strong style="color: var(--accent)">Vendor Compare</strong> to switch
+          % column &amp; buckets
         </p>
       </div>
       <div class="stats-row">
@@ -678,10 +611,19 @@
     <!-- CONTROLS -->
     <div class="controls">
       <div class="control-group">
-        <label>Compare Mode</label>
+        <label>Dataset Filter</label>
+        <select id="datasetSelect" class="inp" onchange="switchDataset()">
+          <option value="compare.json">⬡ Common Only (all vendors)</option>
+          <option value="compare_partial.json">◑ Partial (2+ vendors)</option>
+          <option value="compare_all.json">◉ All PC Certs</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Vendor Compare</label>
         <select id="modeSelect" class="inp" onchange="onModeChange()">
           <option value="lg">loose-grown vs PC %</option>
           <option value="br">brilliance vs PC %</option>
+          <option value="lu">luvansh vs PC %</option>
         </select>
       </div>
       <div class="control-group">
@@ -726,22 +668,6 @@
     <!-- MAIN -->
     <div class="main">
       <div class="section-title">
-        % Range Buckets
-        <span style="font-size: 0.68rem; color: var(--muted)"
-          >click to filter</span
-        >
-      </div>
-      <div class="buckets-grid" id="bucketsGrid">
-        <div class="empty-state" style="grid-column: 1/-1">
-          <div class="icon">💎</div>
-          <h3>No data loaded</h3>
-          <p style="font-size: 0.78rem; margin-top: 6px">
-            Select a dataset, upload a CSV or JSON above
-          </p>
-        </div>
-      </div>
-
-      <div class="section-title">
         Records
         <span
           id="tableCount"
@@ -750,8 +676,9 @@
       </div>
       <div class="tabs">
         <button class="tab active" onclick="setTableMode('all')">All</button>
-        <button class="tab" onclick="setTableMode('filtered')">
-          Filtered Bucket
+
+        <button class="tab" id="commonTab" onclick="toggleCommonOnly()">
+          ⬡ Common Only
         </button>
       </div>
       <div class="table-wrap">
@@ -772,7 +699,6 @@
               <th>Brilliance -30%</th>
               <th>LG vs PC %</th>
               <th>Brilliance vs PC %</th>
-              <th>% Range</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -784,20 +710,10 @@
     <script>
       const API_BASE = "";
 
-      const BUCKETS = [
-        { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
-        { label: "0 – 199%", min: 0, max: 200, color: "#60a5fa" },
-        { label: "200 – 299%", min: 200, max: 300, color: "#c9a84c" },
-        { label: "300 – 399%", min: 300, max: 400, color: "#fb923c" },
-        { label: "400 – 499%", min: 400, max: 500, color: "#f87171" },
-        { label: "500 – 599%", min: 500, max: 600, color: "#e879f9" },
-        { label: "600%+", min: 600, max: Infinity, color: "#818cf8" },
-      ];
-
       let ALL_DATA = [],
         filteredData = [],
-        activeBucket = null,
-        tableMode = "all";
+        tableMode = "all",
+        commonOnly = false;
       let currentPage = 1,
         PAGE_SIZE = 20,
         priceMin = null,
@@ -944,7 +860,6 @@
           return;
         }
         ALL_DATA = json;
-        activeBucket = null;
         tableMode = "all";
         currentPage = 1;
         priceMin = priceMax = null;
@@ -966,11 +881,19 @@
               (k) => /loose/i.test(k) && /vs/i.test(k) && k.includes("%"),
             ) || null
           );
-        return (
-          keys.find(
-            (k) => /brilliance/i.test(k) && /vs/i.test(k) && k.includes("%"),
-          ) || null
-        );
+        if (mode === "br")
+          return (
+            keys.find(
+              (k) => /brilliance/i.test(k) && /vs/i.test(k) && k.includes("%"),
+            ) || null
+          );
+        if (mode === "lu")
+          return (
+            keys.find(
+              (k) => /luvansh/i.test(k) && /vs/i.test(k) && k.includes("%"),
+            ) || null
+          );
+        return null;
       }
       function getPct(row, mode) {
         const col = getPctColName(row, mode);
@@ -979,13 +902,6 @@
         if (val === null || val === undefined || val === "") return null;
         const n = Number(val);
         return isNaN(n) ? null : n;
-      }
-      function getBucket(pct) {
-        if (pct === null) return null;
-        return (
-          BUCKETS.find((b) => pct >= b.min && pct < b.max) ||
-          BUCKETS[BUCKETS.length - 1]
-        );
       }
       function fmtPct(v) {
         if (v === null || v === undefined) return "—";
@@ -1007,17 +923,37 @@
           const PC = row["PC Price USD"];
           if (priceMin !== null && PC < priceMin) return false;
           if (priceMax !== null && PC > priceMax) return false;
-          if (cert && !String(row["certificate_number"]).includes(cert))
+          if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
+          // Common Only: every price column must have a real non-zero value
+          if (commonOnly) {
+            const priceCols = Object.keys(row).filter((k) =>
+              k.includes("Price USD"),
+            );
+            const allPresent = priceCols.every((k) => {
+              const v = row[k];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            });
+            if (!allPresent) return false;
+          }
           return true;
         });
+      }
+
+      function toggleCommonOnly() {
+        commonOnly = !commonOnly;
+        const btn = document.getElementById("commonTab");
+        btn.classList.toggle("active", commonOnly);
+        currentPage = 1;
+        render();
       }
       function applyPriceFilter() {
         const mn = document.getElementById("priceMin").value;
         const mx = document.getElementById("priceMax").value;
         priceMin = mn ? parseFloat(mn) : null;
         priceMax = mx ? parseFloat(mx) : null;
-        activeBucket = null;
         currentPage = 1;
         render();
       }
@@ -1025,46 +961,12 @@
         priceMin = priceMax = null;
         document.getElementById("priceMin").value = "";
         document.getElementById("priceMax").value = "";
-        activeBucket = null;
         currentPage = 1;
         render();
       }
 
-      function renderBuckets(data, mode) {
-        if (!data.length) {
-          document.getElementById("bucketsGrid").innerHTML =
-            `<div class="empty-state" style="grid-column:1/-1"><div class="icon">🔍</div><h3>No records</h3><p style="font-size:.78rem;margin-top:6px">Try adjusting your filters</p></div>`;
-          return;
-        }
-        const counts = BUCKETS.map(
-          (b) =>
-            data.filter((r) => {
-              const p = getPct(r, mode);
-              return p !== null && p >= b.min && p < b.max;
-            }).length,
-        );
-        const maxCount = Math.max(...counts, 1);
-        document.getElementById("bucketsGrid").innerHTML = BUCKETS.map(
-          (b, i) => `
-          <div class="bucket-card ${activeBucket === i ? "active" : ""}" style="--bucket-color:${b.color}" onclick="toggleBucket(${i})">
-            <div class="bucket-range">${b.label}</div>
-            <div class="bucket-count">${counts[i].toLocaleString()}</div>
-            <div class="bucket-pct" style="color:${b.color}">${((counts[i] / data.length) * 100).toFixed(1)}% of total</div>
-            <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${((counts[i] / maxCount) * 100).toFixed(1)}%"></div></div>
-          </div>`,
-        ).join("");
-      }
-
       function renderTable(data, mode) {
-        let rows =
-          tableMode === "filtered" && activeBucket !== null
-            ? data.filter((r) => {
-                const p = getPct(r, mode);
-                if (p === null) return false;
-                const b = BUCKETS[activeBucket];
-                return p >= b.min && p < b.max;
-              })
-            : data;
+        let rows = data;
 
         document.getElementById("tableCount").textContent =
           `— ${rows.length.toLocaleString()} records`;
@@ -1089,11 +991,6 @@
           .map((r) => {
             const lgPct = getPct(r, "lg");
             const brPct = getPct(r, "br");
-            const activePct = getPct(r, mode);
-            const bkt = getBucket(activePct);
-            const badgeHtml = bkt
-              ? `<span class="badge" style="background:color-mix(in srgb,${bkt.color} 15%,transparent);color:${bkt.color};border:1px solid color-mix(in srgb,${bkt.color} 40%,transparent)">${bkt.label}</span>`
-              : `<span class="badge" style="background:color-mix(in srgb,var(--muted) 15%,transparent);color:var(--muted);border:1px solid var(--border)">N/A</span>`;
             const shape = r["shape"] || r["Shape"] || "—";
             const color = r["color"] || r["Color"] || "—";
             const clarity = r["clarity"] || r["Clarity"] || "—";
@@ -1104,11 +1001,14 @@
             const pcIsExpensive =
               (lgPct !== null && lgPct < 0) || (brPct !== null && brPct < 0);
             const pcCls = pcIsExpensive ? "price pc-cheaper" : "price";
+            // Ensure carat shows as number not empty
+            const caratDisplay =
+              carat === "" || carat === "nan" || carat === "Na" ? "—" : carat;
 
             return `<tr>
-            <td class="cert">${r["certificate_number"]}</td>
+            <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
             <td class="attr">${shape}</td><td class="attr">${color}</td>
-            <td class="attr">${clarity}</td><td class="attr">${cut}</td><td class="attr">${carat}</td>
+            <td class="attr">${clarity}</td><td class="attr">${cut}</td><td class="attr">${caratDisplay}</td>
             <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td>
             <td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
@@ -1117,7 +1017,6 @@
             <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
             <td class="${pctClass(lgPct)}">${fmtPct(lgPct)}</td>
             <td class="${pctClass(brPct)}">${fmtPct(brPct)}</td>
-            <td>${badgeHtml}</td>
           </tr>`;
           })
           .join("");
@@ -1141,12 +1040,6 @@
         document.getElementById("pagination").innerHTML = pages;
       }
 
-      function toggleBucket(i) {
-        activeBucket = activeBucket === i ? null : i;
-        tableMode = activeBucket !== null ? "filtered" : "all";
-        currentPage = 1;
-        render();
-      }
       function setTableMode(m) {
         tableMode = m;
         currentPage = 1;
@@ -1165,7 +1058,6 @@
         render();
       }
       function onModeChange() {
-        activeBucket = null;
         currentPage = 1;
         render();
       }
@@ -1178,12 +1070,24 @@
         }, 200);
       }
 
+      async function switchDataset() {
+        const filename = document.getElementById("datasetSelect").value;
+        showLoading("Loading " + filename + "…");
+        try {
+          const data = await api("GET", `/api/data/${filename}`);
+          ingestData(data, filename);
+          document.getElementById("fileSelect").value = filename;
+        } catch (e) {
+          hideLoading();
+          toast("Failed to load " + filename + ": " + e.message, "error");
+        }
+      }
+
       function render() {
         const mode = document.getElementById("modeSelect").value;
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
-        renderBuckets(filteredData, mode);
         renderTable(filteredData, mode);
       }
 
@@ -1209,6 +1113,8 @@
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
+            if (document.getElementById("datasetSelect"))
+              document.getElementById("datasetSelect").value = "compare.json";
           } else {
             status.textContent = `✗ Error (code ${result.returncode})`;
             status.style.color = "var(--red)";
@@ -1236,6 +1142,8 @@
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
+            if (document.getElementById("datasetSelect"))
+              document.getElementById("datasetSelect").value = "compare.json";
           } else {
             hideLoading();
             toast(

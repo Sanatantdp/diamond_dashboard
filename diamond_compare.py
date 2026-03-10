@@ -12,12 +12,14 @@ load_dotenv()
 log = get_logger("comparator")
 
 # ── Directories ────────────────────────────────────────────────
-DIAMOND_FILES_DIR = os.path.join(os.getcwd(), "diamond_files")
-COMPARE_DIR       = os.path.join(os.getcwd(), "compare")
-FILE_STATUS_JSON  = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
-COMPARE_CSV       = os.path.join(COMPARE_DIR, "compare.csv")
-COMPARE_JSON      = os.path.join(COMPARE_DIR, "compare.json")
-MAX_AGE_DAYS      = 7
+DIAMOND_FILES_DIR    = os.path.join(os.getcwd(), "diamond_files")
+COMPARE_DIR          = os.path.join(os.getcwd(), "compare")
+FILE_STATUS_JSON     = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
+COMPARE_CSV          = os.path.join(COMPARE_DIR, "compare.csv")           # common only CSV
+COMPARE_JSON         = os.path.join(COMPARE_DIR, "compare.json")          # ← DEFAULT: all vendors matched (common)
+COMPARE_PARTIAL_JSON = os.path.join(COMPARE_DIR, "compare_partial.json")  # 2+ vendors matched
+COMPARE_ALL_JSON     = os.path.join(COMPARE_DIR, "compare_all.json")      # everything in PC
+MAX_AGE_DAYS         = 7
 
 os.makedirs(COMPARE_DIR, exist_ok=True)
 
@@ -79,11 +81,13 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     """
     1. Use PC as the master key — LEFT JOIN all vendors onto PC.
        Any vendor cert ID that does NOT exist in PC is excluded.
-    2. Keep only rows where at least 2 vendors have a price (vendor_count >= 2).
-    3. Add discounted price columns and % diff vs PC.
-    4. Add vendors_matched column showing which vendors share each cert.
-    5. Save to compare/compare.csv and compare/compare.json.
-    Returns the filtered combined DataFrame.
+    2. Compute discounted prices and % diffs vs PC for all rows.
+    3. Save THREE output files:
+         compare.json         ← DEFAULT: only rows where ALL vendors have a price (common)
+         compare_partial.json ← rows where 2+ vendors have a price
+         compare_all.json     ← every PC cert (even if no vendor matched)
+         compare.csv          ← same as compare.json (common only) for Excel use
+    Returns the full combined DataFrame (all rows, pre-filter).
     """
     log.info("=" * 50)
     log.info("STEP 1 — Building compare.csv / compare.json")
@@ -135,18 +139,35 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     for cnt, num_certs in dist.items():
         log.info(f"  Certs in exactly {cnt} vendor(s): {num_certs:,}")
 
-    # ── Step C: keep only certs in >= 2 vendors ──────────────
-    before   = len(combined)
-    combined = combined[combined["_vendor_count"] >= 2].copy()
-    combined = combined.drop(columns=["_vendor_count"])
-    combined = combined.reset_index(drop=True)
-    dropped  = before - len(combined)
+    # ── Step C: tag rows by coverage level ─────────────────────
+    # CORE vendors for "common" = LG + Brilliance + PC only
+    # Luvansh is excluded from the common check (sparse data — rarely matches)
+    CORE_VENDORS = ["loose-grown", "brilliance", "PC"]
+    core_present = [n for n in CORE_VENDORS if f"{n} Price USD" in combined.columns]
+    log.info(f"Core vendors for common check: {core_present}")
 
-    log.info(f"Kept {len(combined):,} certs in ≥2 vendors  (dropped {dropped:,} single-vendor-only certs)")
+    # _all_matched = every CORE vendor has a price (luvansh not required)
+    if core_present:
+        combined["_all_matched"] = combined[[f"{n} Price USD" for n in core_present]].notna().all(axis=1)
+    else:
+        combined["_all_matched"] = combined["_vendor_count"] >= 2
 
-    if combined.empty:
-        log.error("No certificates shared by at least 2 vendors — compare.csv will be empty.")
-        log.error("Check that certificate_number columns are formatted consistently across CSVs.")
+    combined["_some_matched"] = combined["_vendor_count"] >= 2  # 2+ any vendors
+
+    dist = combined["_vendor_count"].value_counts().sort_index()
+    for cnt, num_certs in dist.items():
+        log.info(f"  Certs in exactly {cnt} vendor(s): {num_certs:,}")
+
+    common_count  = combined["_all_matched"].sum()
+    partial_count = combined["_some_matched"].sum()
+    log.info(f"  → Common (LG + Brilliance + PC):  {common_count:,}")
+    log.info(f"  → Partial (2+ vendors):            {partial_count:,}")
+    log.info(f"  → All PC certs:                    {len(combined):,}")
+
+    if common_count == 0:
+        log.warning("No certs found in LG + Brilliance + PC — compare.json (common) will be empty.")
+    if partial_count == 0:
+        log.error("No certs in ≥2 vendors — aborting.")
         return pd.DataFrame()
 
     # ── Step D: add discounted price columns ─────────────────
@@ -206,48 +227,94 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         )
     combined["vendors_matched"] = combined.apply(vendor_list, axis=1)
 
-    # ── Step G: reorder columns neatly ───────────────────────
-    # Diamond attribute cols (from PC CSV) come first after cert
-    attr_cols   = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
-    base_cols   = ["certificate_number", "vendors_matched"] + attr_cols
+    # ── Step G: enforce exact column order ──────────────────────
+    # Order: cert | vendors_matched | attrs | LG cols | Brilliance cols | luvansh cols | PC cols
+    attr_cols = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
+    base_cols = ["certificate_number", "vendors_matched"] + attr_cols
+
+    # Vendor order: LG first, then Brilliance, then luvansh, then PC last
+    VENDOR_ORDER = ["loose-grown", "brilliance", "luvansh", "PC"]
+    # Any extra vendors not in the predefined order go after luvansh, before PC
+    extra_vendors = [n for n in loaded.keys() if n not in VENDOR_ORDER and n != "PC"]
+    ordered_vendors = (
+        [n for n in VENDOR_ORDER if n in loaded and n != "PC"]
+        + extra_vendors
+        + (["PC"] if "PC" in loaded else [])
+    )
+
     vendor_cols = []
-    for name in loaded.keys():
+    for name in ordered_vendors:
         disc  = discounts.get(name, 0.70)
         label = f"-{round((1 - disc) * 100)}%"
         for col in [f"{name} Price USD", f"{name} {label} USD", f"{name} vs PC %"]:
             if col in combined.columns:
                 vendor_cols.append(col)
+
     other_cols = [c for c in combined.columns if c not in base_cols + vendor_cols]
     combined   = combined[base_cols + vendor_cols + other_cols]
+    log.info(f"Column order: {list(combined.columns)}")
     log.info(f"Diamond attribute columns included: {attr_cols if attr_cols else 'none (check PC CSV column names)'}")
 
-    # ── Step H: save CSV ──────────────────────────────────────
-    combined.to_csv(COMPARE_CSV, index=False)
-    log.info(f"Saved compare.csv → {COMPARE_CSV}  ({len(combined):,} rows × {len(combined.columns)} cols)")
+    # ── Step H: prepare clean JSON-ready dataframe ───────────
+    def to_json_records(df: pd.DataFrame) -> list:
+        """Clean a dataframe for JSON: nullify 0-prices, NaN % diffs, and all NaN/Inf values."""
+        # Drop all internal helper columns — never expose to frontend
+        out = df.drop(columns=["_all_matched", "_some_matched", "_vendor_count"], errors="ignore").copy()
+        p_cols = [c for c in out.columns if "Price USD" in c or c.endswith("USD")]
+        for col in p_cols:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+            out[col] = out[col].where(out[col].notna() & (out[col] != 0), other=None)
+        pct_cols = [c for c in out.columns if c.endswith("%")]
+        for col in pct_cols:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+            out[col] = out[col].where(out[col].notna(), other=None)
+        # Final pass: replace ALL remaining NaN/Inf with None — json.dump will write null
+        import math
+        records = out.where(out.notna(), other=None).to_dict(orient="records")
+        clean = []
+        for row in records:
+            clean_row = {}
+            for k, v in row.items():
+                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    clean_row[k] = None
+                else:
+                    clean_row[k] = v
+            clean.append(clean_row)
+        return clean
 
-    # ── Step I: save JSON ─────────────────────────────────────
-    # Price/discount cols: replace 0.0 (= vendor missing this cert) with None → JSON null
-    json_df = combined.copy()
-    price_cols = [c for c in json_df.columns if "Price USD" in c or c.endswith("USD")]
-    for col in price_cols:
-        json_df[col] = pd.to_numeric(json_df[col], errors="coerce")
-        json_df[col] = json_df[col].where(json_df[col].notna() & (json_df[col] != 0), other=None)
+    # ── Step I: split into 3 datasets and save ────────────────
+    df_common  = combined[combined["_all_matched"]].copy()   # ALL vendors matched
+    df_partial = combined[combined["_some_matched"]].copy()  # 2+ vendors matched
+    df_all     = combined.copy()                             # every PC cert
 
-    # % diff cols: replace NaN with None (0.0 diffs are valid and kept)
-    pct_cols = [c for c in json_df.columns if c.endswith("%")]
-    for col in pct_cols:
-        json_df[col] = pd.to_numeric(json_df[col], errors="coerce")
-        json_df[col] = json_df[col].where(json_df[col].notna(), other=None)
-
-    records = json_df.where(json_df.notna(), other=None).to_dict(orient="records")
+    # compare.json — DEFAULT — common only (all vendors present)
+    common_records = to_json_records(df_common)
     with open(COMPARE_JSON, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False, indent=2)
-    log.info(f"Saved compare.json → {COMPARE_JSON}  ({len(records):,} records)")
+        json.dump(common_records, f, ensure_ascii=False, indent=2)
+    log.info(f"Saved compare.json (COMMON)   → {COMPARE_JSON}  ({len(common_records):,} records)")
+
+    # compare_partial.json — 2+ vendors matched
+    partial_records = to_json_records(df_partial)
+    with open(COMPARE_PARTIAL_JSON, "w", encoding="utf-8") as f:
+        json.dump(partial_records, f, ensure_ascii=False, indent=2)
+    log.info(f"Saved compare_partial.json    → {COMPARE_PARTIAL_JSON}  ({len(partial_records):,} records)")
+
+    # compare_all.json — everything from PC
+    all_records = to_json_records(df_all)
+    with open(COMPARE_ALL_JSON, "w", encoding="utf-8") as f:
+        json.dump(all_records, f, ensure_ascii=False, indent=2)
+    log.info(f"Saved compare_all.json (ALL)  → {COMPARE_ALL_JSON}  ({len(all_records):,} records)")
+
+    # compare.csv — common only (for Excel / analysis)
+    df_common.drop(columns=["_all_matched", "_some_matched", "_vendor_count"], errors="ignore").to_csv(COMPARE_CSV, index=False)
+    log.info(f"Saved compare.csv (COMMON)    → {COMPARE_CSV}  ({len(df_common):,} rows × {len(df_common.columns)} cols)")
 
     log.info("-" * 50)
-    log.info(f"STEP 1 COMPLETE — {len(combined):,} certs | {len(combined.columns)} cols")
-    log.info(f"  compare.csv  → {COMPARE_CSV}")
-    log.info(f"  compare.json → {COMPARE_JSON}")
+    log.info(f"STEP 1 COMPLETE")
+    log.info(f"  compare.json         (common,  all vendors) → {len(common_records):,} records")
+    log.info(f"  compare_partial.json (partial, 2+ vendors)  → {len(partial_records):,} records")
+    log.info(f"  compare_all.json     (all PC certs)         → {len(all_records):,} records")
+    log.info(f"  compare.csv          (common, for Excel)    → {len(df_common):,} rows")
 
     return combined
 
