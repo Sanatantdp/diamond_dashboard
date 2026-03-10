@@ -1,80 +1,101 @@
+"""
+logger.py — Shared logger for diamond scrapers.
+
+Features:
+  • Writes logs to  logs/<name>.log
+  • If the log file is older than 2 days it is deleted and recreated fresh
+  • Console + file output with timestamps
+"""
+
 import logging
 import os
-from logging.handlers import RotatingFileHandler
+import time
+from pathlib import Path
 
-# ── Config ────────────────────────────────────────────────────
-LOGS_DIR     = os.path.join(os.getcwd(), "logs")
-MAX_BYTES    = 5 * 1024 * 1024   # 5 MB per log file before rotation
-BACKUP_COUNT = 3                  # keep 3 rotated backups (.log.1, .log.2, .log.3)
-LOG_LEVEL    = logging.DEBUG
-
-# ── Format: timestamp | level | logger name | message ─────────
-FORMATTER = logging.Formatter(
-    fmt="%(asctime)s | %(levelname)-8s | %(name)-12s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-# ── Known logger names → log filenames ────────────────────────
-LOGGER_FILES = {
-    "luvansh":    "luvansh.log",
-    "loosegrown": "loosegrown.log",
-    "pc_diamonds": "pc_diamonds.log",
-    "comparator": "comparator.log",
-}
-
-_loggers: dict[str, logging.Logger] = {}
+# ── Config ──────────────────────────────────────────────────────────
+LOG_DIR        = Path(os.getcwd()) / "logs"
+MAX_AGE_DAYS   = 2
+MAX_AGE_SECS   = MAX_AGE_DAYS * 24 * 3600
+LOG_FORMAT     = "%(asctime)s  [%(levelname)-8s]  %(name)s — %(message)s"
+DATE_FORMAT    = "%Y-%m-%d %H:%M:%S"
+# ────────────────────────────────────────────────────────────────────
 
 
-def get_logger(name: str) -> logging.Logger:
+def _get_log_path(name: str) -> Path:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return LOG_DIR / f"{name}.log"
+
+
+def _rotate_if_old(log_path: Path) -> None:
+    """Delete the log file if it is older than MAX_AGE_DAYS."""
+    if not log_path.exists():
+        return
+    age = time.time() - log_path.stat().st_mtime
+    if age > MAX_AGE_SECS:
+        log_path.unlink()
+        # brief notice to stdout (logger not yet set up)
+        print(
+            f"[logger] '{log_path.name}' was >{MAX_AGE_DAYS} days old — "
+            "deleted and recreated fresh."
+        )
+
+
+def get_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
     """
-    Return a named logger that writes to:
-      - logs/<name>.log     (rotating file)
-      - logs/app.log        (shared rotating file with all logs)
-      - stdout console      (INFO and above)
+    Return a named logger that writes to  logs/<name>.log
+    (and to the console).  The file is rotated if older than 2 days.
 
-    Calling get_logger() with the same name twice returns the same instance.
+    Parameters
+    ----------
+    name  : identifier used for both the logger name and the filename
+    level : minimum log level (default: DEBUG)
     """
-    if name in _loggers:
-        return _loggers[name]
-
-    os.makedirs(LOGS_DIR, exist_ok=True)
+    log_path = _get_log_path(name)
+    _rotate_if_old(log_path)
 
     logger = logging.getLogger(name)
-    logger.setLevel(LOG_LEVEL)
-    logger.propagate = False  # don't bubble up to root logger
 
-    # ── 1. Dedicated rotating file handler ───────────────────
-    log_filename = LOGGER_FILES.get(name, f"{name}.log")
-    log_filepath = os.path.join(LOGS_DIR, log_filename)
+    # Avoid adding duplicate handlers if called more than once
+    if logger.handlers:
+        return logger
 
-    file_handler = RotatingFileHandler(
-        log_filepath,
-        maxBytes=MAX_BYTES,
-        backupCount=BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(LOG_LEVEL)
-    file_handler.setFormatter(FORMATTER)
-    logger.addHandler(file_handler)
+    logger.setLevel(level)
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
 
-    # ── 2. Shared app.log (all scrapers in one place) ─────────
-    app_log_path = os.path.join(LOGS_DIR, "app.log")
-    app_handler = RotatingFileHandler(
-        app_log_path,
-        maxBytes=MAX_BYTES,
-        backupCount=BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    app_handler.setLevel(LOG_LEVEL)
-    app_handler.setFormatter(FORMATTER)
-    logger.addHandler(app_handler)
+    # ── File handler ────────────────────────────────────────────────
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setLevel(level)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
-    # ── 3. Console handler (INFO+) ────────────────────────────
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(FORMATTER)
-    logger.addHandler(console_handler)
+    # ── Console handler ─────────────────────────────────────────────
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
-    _loggers[name] = logger
-    logger.debug(f"Logger '{name}' initialised → {log_filepath}")
+    logger.debug(f"Logger initialised — writing to {log_path}")
     return logger
+
+
+def get_log_info(name: str) -> dict:
+    """
+    Return metadata about a log file (used by the API health endpoint).
+    """
+    import datetime
+    log_path = _get_log_path(name)
+    if not log_path.exists():
+        return {"name": name, "exists": False}
+    stat = log_path.stat()
+    age_hours = (time.time() - stat.st_mtime) / 3600
+    return {
+        "name":          name,
+        "exists":        True,
+        "path":          str(log_path),
+        "size_kb":       round(stat.st_size / 1024, 2),
+        "age_hours":     round(age_hours, 2),
+        "will_rotate_in_hours": round(max(0, MAX_AGE_SECS / 3600 - age_hours), 2),
+        "last_modified": datetime.datetime.fromtimestamp(stat.st_mtime).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
+    }

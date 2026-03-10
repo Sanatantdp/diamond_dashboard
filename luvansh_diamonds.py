@@ -269,7 +269,7 @@ def collect_all_details(all_ids: list, session: requests.Session):
 
     if not remaining:
         log.info("Nothing to do — all IDs already saved!")
-        return
+        return {"saved": len(done_ids), "skipped": len(skipped_ids)}
 
     write_header = not os.path.exists(OUTPUT_CSV) or os.path.getsize(OUTPUT_CSV) == 0
     csv_file = open(OUTPUT_CSV, "a", newline="", encoding="utf-8")
@@ -349,6 +349,13 @@ def collect_all_details(all_ids: list, session: requests.Session):
     log.info(f"Phase 2 complete | Saved: {new_saved:,} | Failed: {skipped[0]:,} | Incomplete: {incomplete[0]:,} | Unavailable: {len(skipped_ids):,}")
     log.info("=" * 50)
 
+    return {
+        "new_saved":   new_saved,
+        "failed":      skipped[0],
+        "incomplete":  incomplete[0],
+        "unavailable": len(skipped_ids),
+    }
+
 
 # ══════════════════════════════════════════════════════════════
 # MAIN
@@ -360,10 +367,11 @@ def main():
 
     if not all_ids:
         log.error("No IDs collected. Exiting.")
-        return
+        return {"error": "No IDs collected"}
 
-    collect_all_details(all_ids, session)
+    result = collect_all_details(all_ids, session)
     log.info(f"ALL DONE → {os.path.abspath(OUTPUT_CSV)}")
+    return result
 
 
 if __name__ == "__main__":

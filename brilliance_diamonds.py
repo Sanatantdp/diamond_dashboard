@@ -1,20 +1,27 @@
 from curl_cffi import requests
 import time
+import random
 import csv
 import os
+import json
+from logger import get_logger
+
+log = get_logger("brilliance")
 
 # ---------------- CONFIG ---------------- #
 
 URL = "https://worker.brilliance.com/api/v1/lab-grown-diamond-search"
-base_dir=os.getcwd()
-down_files=os.makedirs('diamond_files',exist_ok=True)
+base_dir = os.getcwd()
+os.makedirs('diamond_files', exist_ok=True)
 
-CSV_FILE = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
+CSV_FILE        = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
+CHECKPOINT_FILE = f"{base_dir}/diamond_files/checkpoint.json"
 
-SLEEP_SECONDS = 0.5
+SLEEP_MIN   = 0.0   # min sleep between normal pages (seconds)
+SLEEP_MAX   = 1.0   # max sleep between normal pages (seconds)
+SLEEP_EMPTY = 2.0   # sleep when a page returns 0 new diamonds
 RETRY_SLEEP = 20
 MAX_RETRIES = 5
-MAX_RESULTS = 48
 
 FIELDS = [
     "nid","shape","price","color","carat","clarity","cut","report",
@@ -25,13 +32,19 @@ FIELDS = [
 
 # ---------------- SESSION ---------------- #
 
-session = requests.Session(impersonate="chrome")
+session = requests.Session(impersonate="chrome124")
 
 HEADERS = {
-    "accept": "application/json",
+    "accept": "application/json, text/plain, */*",
+    "accept-encoding": "gzip, deflate, br",
+    "accept-language": "en-US,en;q=0.9",
     "content-type": "application/json",
     "origin": "https://www.brilliance.com",
-    "referer": "https://www.brilliance.com/lab-grown-diamonds"
+    "referer": "https://www.brilliance.com/lab-grown-diamonds",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
 BASE_PAYLOAD = {
@@ -64,6 +77,30 @@ BASE_PAYLOAD = {
     }
 }
 
+# ---------------- CHECKPOINT ---------------- #
+
+def save_checkpoint(page, total_inserted):
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump({"last_completed_page": page, "total_inserted": total_inserted}, f, indent=2)
+    log.debug(f"Checkpoint saved → page={page}, total={total_inserted}")
+
+
+def load_checkpoint():
+    if not os.path.exists(CHECKPOINT_FILE):
+        return 1, 0
+    with open(CHECKPOINT_FILE, "r") as f:
+        data = json.load(f)
+    page  = data.get("last_completed_page", 1) + 1
+    total = data.get("total_inserted", 0)
+    log.info(f"Resuming from page {page} (previously inserted: {total})")
+    return page, total
+
+
+def clear_checkpoint():
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+        log.info("Checkpoint cleared — scrape fully complete.")
+
 # ---------------- HELPERS ---------------- #
 
 def normalize_cert(cert):
@@ -77,18 +114,15 @@ def normalize_cert(cert):
 
 def load_existing_certs():
     certs = set()
-
     if not os.path.exists(CSV_FILE):
         return certs
-
     with open(CSV_FILE, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cert = row.get("reportNumber")
             if cert:
                 certs.add(cert)
-
-    print(f"Loaded {len(certs)} existing certificates")
+    log.info(f"Loaded {len(certs)} existing certificates")
     return certs
 
 
@@ -96,10 +130,8 @@ def get_writer():
     file_exists = os.path.exists(CSV_FILE)
     f = open(CSV_FILE, "a" if file_exists else "w", newline="", encoding="utf-8")
     writer = csv.DictWriter(f, fieldnames=FIELDS)
-
     if not file_exists:
         writer.writeheader()
-
     return f, writer
 
 
@@ -110,20 +142,16 @@ def fetch_page(page):
 
     for attempt in range(MAX_RETRIES):
         r = session.post(URL, headers=HEADERS, json=payload)
-        
         if r.status_code == 200:
-            # print(r.json())
-            # exit(0)
             return r.json()
-
         if r.status_code == 403:
-            print("Cloudflare detected – sleeping…")
+            log.warning(f"[page {page}] Cloudflare 403 – sleeping {RETRY_SLEEP}s (attempt {attempt+1}/{MAX_RETRIES})…")
             time.sleep(RETRY_SLEEP)
         else:
-            print("HTTP Error:", r.status_code)
+            log.warning(f"[page {page}] HTTP {r.status_code} – sleeping 5s")
             time.sleep(5)
 
-    raise Exception("Max retries exceeded")
+    raise Exception(f"Max retries exceeded on page {page}")
 
 
 def write_diamond(writer, d, cert):
@@ -153,44 +181,61 @@ def write_diamond(writer, d, cert):
         "fast": d.get("fast")
     })
 
-
 # ---------------- MAIN SCRAPER ---------------- #
 
 def brilliance_diamonds_scraper():
-    existing_certs = load_existing_certs()
-    file, writer = get_writer()
+    log.info("=" * 50)
+    log.info("Starting Brilliance scraper")
 
-    page = 60
+    existing_certs             = load_existing_certs()
+    file, writer               = get_writer()
+    start_page, total_inserted = load_checkpoint()
+    page = start_page
 
     try:
         while True:
-            data = fetch_page(page)
+            data     = fetch_page(page)
             diamonds = data.get("diamond", [])
 
             if not diamonds:
-                print("No more pages.")
+                log.info("No more pages — scrape complete.")
+                clear_checkpoint()
                 break
 
             inserted = 0
-
             for d in diamonds:
                 cert = normalize_cert(d.get("reportNumber"))
-
                 if not cert or cert in existing_certs:
                     continue
-
                 write_diamond(writer, d, cert)
                 existing_certs.add(cert)
                 inserted += 1
 
-            print(f"Page {page} → {inserted} new rows (API: {len(diamonds)})")
+            file.flush()
+            total_inserted += inserted
+            log.info(f"Page {page} → {inserted} new rows | total: {total_inserted} (API: {len(diamonds)})")
 
+            save_checkpoint(page, total_inserted)
             page += 1
-            time.sleep(SLEEP_SECONDS)
+
+            if inserted == 0:
+                log.debug(f"0 new diamonds on page {page - 1} — sleeping {SLEEP_EMPTY}s")
+                time.sleep(SLEEP_EMPTY)
+            else:
+                delay = round(random.uniform(SLEEP_MIN, SLEEP_MAX), 3)
+                log.debug(f"Sleeping {delay}s before next page")
+                time.sleep(delay)
+
+    except Exception as e:
+        log.error(f"Failed on page {page}: {e}")
+        log.info("checkpoint.json saved — re-run the script to resume")
 
     finally:
         file.close()
-        print("CSV saved & closed")
+        log.info("CSV saved & closed")
+        log.info("=" * 50)
+
+    return {"total_inserted": total_inserted, "last_page": page}
 
 
 # ---------------- RUN ---------------- #

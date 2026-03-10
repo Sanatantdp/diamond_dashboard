@@ -194,6 +194,8 @@ def loose_grown_diamonds_scrappe():
     log.info(f"Loose Grown scrape complete. Total saved this run: {total_saved:,}")
     log.info("=" * 50)
 
+    return {"total_saved": total_saved}
+
 
 if __name__ == "__main__":
     loose_grown_diamonds_scrappe()

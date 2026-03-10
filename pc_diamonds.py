@@ -12,9 +12,9 @@ log = get_logger("precious_carbon")
 
 # ── Config ─────────────────────────────────────────────────────────
 URL        = "https://py.preciouscarbon.com/graphql/"
-PAGE_SIZE  = 20        # API returns 20 per page
-WORKERS    = 20        # concurrent page fetches
-SAVE_EVERY = 100       # flush CSV & progress every N pages
+PAGE_SIZE  = 20
+WORKERS    = 20
+SAVE_EVERY = 100
 
 base_dir   = os.getcwd()
 down_files = os.path.join(base_dir, "diamond_files")
@@ -109,7 +109,7 @@ def build_query(page: int) -> dict:
     }
 
 
-# ── Progress helpers ────────────────────────────────────────────────
+# ── Progress helpers ──────────────────────────────────────────
 
 def load_progress() -> dict:
     if os.path.exists(PROGRESS_FILE):
@@ -140,8 +140,6 @@ def save_progress(done_pages: set, total_saved: int, total_pages: int):
         log.warning(f"Could not save progress: {e}")
 
 
-# ── Load existing cert numbers to deduplicate ───────────────────────
-
 def load_existing_certs(csv_path: str) -> set:
     seen = set()
     if not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0:
@@ -158,10 +156,7 @@ def load_existing_certs(csv_path: str) -> set:
     return seen
 
 
-# ── Fetch a single page ─────────────────────────────────────────────
-
-def fetch_page(page: int, session: requests.Session) -> tuple[int, list | None]:
-    """Returns (page_number, list_of_diamonds or None on failure)."""
+def fetch_page(page: int, session: requests.Session) -> tuple:
     for attempt in range(1, 5):
         try:
             resp = session.post(URL, json=build_query(page), timeout=30)
@@ -171,7 +166,7 @@ def fetch_page(page: int, session: requests.Session) -> tuple[int, list | None]:
             diamonds     = diamond_data.get("diamond") or []
             return page, diamonds
         except requests.exceptions.RequestException as e:
-            wait = 2 ** attempt   # 2, 4, 8, 16s
+            wait = 2 ** attempt
             log.warning(f"[page {page}] attempt {attempt}/4 failed: {e} — wait {wait}s")
             time.sleep(wait)
         except (json.JSONDecodeError, KeyError) as e:
@@ -181,17 +176,12 @@ def fetch_page(page: int, session: requests.Session) -> tuple[int, list | None]:
     return page, None
 
 
-# ══════════════════════════════════════════════════════════════
-# PHASE 1 — discover total pages (fetch page 1 sequentially)
-# ══════════════════════════════════════════════════════════════
-
 def get_total_pages(session: requests.Session) -> int:
     log.info("Fetching page 1 to determine total count…")
     _, diamonds = fetch_page(1, session)
     if diamonds is None:
         raise RuntimeError("Failed to fetch page 1 — cannot determine total pages")
 
-    # Re-fetch with full response to get dataCount
     resp         = session.post(URL, json=build_query(1), timeout=30)
     diamond_data = resp.json().get("data", {}).get("diamondData", {})
     total_count  = int(diamond_data.get("dataCount", 0))
@@ -219,21 +209,18 @@ def scrape():
     total_saved = progress.get("total_saved", 0)
     total_pages = progress.get("total_pages") or get_total_pages(session)
 
-    # Load existing certs for dedup
     seen_certs = load_existing_certs(OUTPUT_CSV)
 
-    # Determine remaining pages
-    all_pages   = list(range(1, total_pages + 1))
-    remaining   = [p for p in all_pages if p not in done_pages]
+    all_pages = list(range(1, total_pages + 1))
+    remaining = [p for p in all_pages if p not in done_pages]
 
     log.info(f"Pages done     : {len(done_pages):,}")
     log.info(f"Pages remaining: {len(remaining):,}")
 
     if not remaining:
         log.info("All pages already fetched — nothing to do.")
-        return
+        return {"total_saved": total_saved, "new_rows": 0}
 
-    # Open CSV for append (or write if fresh)
     file_exists = os.path.exists(OUTPUT_CSV) and os.path.getsize(OUTPUT_CSV) > 0
     write_mode  = "a" if file_exists and done_pages else "w"
     log.info(f"CSV mode: {'APPEND' if write_mode == 'a' else 'NEW'}")
@@ -243,7 +230,6 @@ def scrape():
     if write_mode == "w":
         writer.writeheader()
 
-    # Shared state
     lock        = Lock()
     saved_count = [0]
     skip_count  = [0]
@@ -251,11 +237,8 @@ def scrape():
     completed   = [0]
     total_rem   = len(remaining)
 
-    def process_page(page):
-        return fetch_page(page, session)
-
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-        futures = {executor.submit(process_page, p): p for p in remaining}
+        futures = {executor.submit(fetch_page, p, session): p for p in remaining}
 
         for future in as_completed(futures):
             page, diamonds = future.result()
@@ -267,11 +250,10 @@ def scrape():
                 if diamonds is None:
                     fail_count[0] += 1
                     log.error(f"[{completed[0]:>6}/{total_rem}] page {page:>5} FAILED")
-                    done_pages.add(page)   # mark as done to not retry forever
+                    done_pages.add(page)
                     continue
 
-                # ── Deduplicate ───────────────────────────────
-                new_rows  = []
+                new_rows = []
                 for d in diamonds:
                     cert = str(d.get("certificateNumber", "")).strip()
                     if cert and cert not in seen_certs:
@@ -297,10 +279,8 @@ def scrape():
                     f"{pct:.1f}%"
                 )
 
-                # Save progress every SAVE_EVERY pages
                 if completed[0] % SAVE_EVERY == 0:
                     save_progress(done_pages, total_saved_now, total_pages)
-                    log.debug(f"Progress checkpoint saved at {completed[0]} pages")
 
     csv_file.close()
 
@@ -317,13 +297,13 @@ def scrape():
     log.info("=" * 50)
 
     return {
-        "action":      "scrape_complete",
-        "total_saved": final_saved,
-        "new_rows":    saved_count[0],
-        "duplicates":  skip_count[0],
+        "action":       "scrape_complete",
+        "total_saved":  final_saved,
+        "new_rows":     saved_count[0],
+        "duplicates":   skip_count[0],
         "failed_pages": fail_count[0],
-        "output":      OUTPUT_CSV,
-        "end_time":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "output":       OUTPUT_CSV,
+        "end_time":     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
