@@ -482,13 +482,18 @@
         color: var(--text);
       }
       .pct-pos {
-        color: var(--red);
-      }
-      .pct-neg {
         color: var(--green);
-      }
+      } /* vendor more expensive than PC → green (PC wins) */
+      .pct-neg {
+        color: var(--red);
+      } /* vendor cheaper than PC → red (PC loses) */
       .pct-zero {
         color: var(--muted);
+      }
+      .pc-cheaper {
+        /* PC price cell blue when PC is more expensive */
+        color: #60a5fa;
+        font-weight: 600;
       }
       .badge {
         display: inline-block;
@@ -994,7 +999,7 @@
       function pctClass(v) {
         if (v === null || v === undefined) return "pct-zero";
         return v > 0 ? "pct-pos" : v < 0 ? "pct-neg" : "pct-zero";
-      }
+      } // pct-neg=blue(PC costlier) pct-pos=red(PC cheaper)
 
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
@@ -1094,12 +1099,18 @@
             const clarity = r["clarity"] || r["Clarity"] || "—";
             const cut = r["cut"] || r["Cut"] || "—";
             const carat = r["carat"] || r["Carat"] || "—";
+
+            // Blue PC cells = PC is more expensive than vendor (vendor % is negative)
+            const pcIsExpensive =
+              (lgPct !== null && lgPct < 0) || (brPct !== null && brPct < 0);
+            const pcCls = pcIsExpensive ? "price pc-cheaper" : "price";
+
             return `<tr>
             <td class="cert">${r["certificate_number"]}</td>
             <td class="attr">${shape}</td><td class="attr">${color}</td>
             <td class="attr">${clarity}</td><td class="attr">${cut}</td><td class="attr">${carat}</td>
-            <td class="price">${fmtUSD(r["PC Price USD"])}</td>
-            <td class="price">${fmtUSD(r["PC -30% USD"])}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
