@@ -613,17 +613,16 @@
       <div class="control-group">
         <label>Dataset Filter</label>
         <select id="datasetSelect" class="inp" onchange="switchDataset()">
-          <option value="compare.json">⬡ Common Only (all vendors)</option>
-          <option value="compare_partial.json">◑ Partial (2+ vendors)</option>
-          <option value="compare_all.json">◉ All PC Certs</option>
+          <option value="compare.json">⬡ Common (LG + Brilliance + PC)</option>
+          <option value="compare_partial.json">◑ Partial (by vendor)</option>
         </select>
       </div>
-      <div class="control-group">
+      <div class="control-group" id="vendorCompareGroup" style="display: none">
         <label>Vendor Compare</label>
         <select id="modeSelect" class="inp" onchange="onModeChange()">
-          <option value="lg">loose-grown vs PC %</option>
-          <option value="br">brilliance vs PC %</option>
-          <option value="lu">luvansh vs PC %</option>
+          <option value="lg">loose-grown vs PC</option>
+          <option value="br">brilliance vs PC</option>
+          <option value="lu">luvansh vs PC</option>
         </select>
       </div>
       <div class="control-group">
@@ -711,6 +710,7 @@
       const API_BASE = "";
 
       let ALL_DATA = [],
+        _RAW_DATA = [],
         filteredData = [],
         tableMode = "all",
         commonOnly = false;
@@ -859,7 +859,8 @@
           toast("Expected a JSON array", "error");
           return;
         }
-        ALL_DATA = json;
+        _RAW_DATA = json; // keep full raw copy for vendor re-filtering
+        ALL_DATA = [...json];
         tableMode = "all";
         currentPage = 1;
         priceMin = priceMax = null;
@@ -1058,6 +1059,8 @@
         render();
       }
       function onModeChange() {
+        const filename = document.getElementById("datasetSelect").value;
+        if (filename === "compare_partial.json") applyVendorFilter();
         currentPage = 1;
         render();
       }
@@ -1072,15 +1075,50 @@
 
       async function switchDataset() {
         const filename = document.getElementById("datasetSelect").value;
+        const isPartial = filename === "compare_partial.json";
+        // Show Vendor Compare only for partial dataset
+        document.getElementById("vendorCompareGroup").style.display = isPartial
+          ? ""
+          : "none";
         showLoading("Loading " + filename + "…");
         try {
           const data = await api("GET", `/api/data/${filename}`);
           ingestData(data, filename);
           document.getElementById("fileSelect").value = filename;
+          // After loading partial, apply vendor filter immediately
+          if (isPartial) applyVendorFilter();
         } catch (e) {
           hideLoading();
           toast("Failed to load " + filename + ": " + e.message, "error");
         }
+      }
+
+      // Filter partial dataset to only rows where selected vendor + PC both have prices
+      function applyVendorFilter() {
+        const mode = document.getElementById("modeSelect").value;
+        const vendorPriceCol =
+          mode === "lg"
+            ? "loose-grown Price USD"
+            : mode === "br"
+              ? "brilliance Price USD"
+              : "luvansh Price USD";
+        // Keep only rows that have both vendor price and PC price
+        ALL_DATA = _RAW_DATA.filter((row) => {
+          const vendorPrice = row[vendorPriceCol];
+          const pcPrice = row["PC Price USD"];
+          const hasVendor =
+            vendorPrice !== null &&
+            vendorPrice !== undefined &&
+            vendorPrice !== "" &&
+            Number(vendorPrice) !== 0;
+          const hasPC =
+            pcPrice !== null &&
+            pcPrice !== undefined &&
+            pcPrice !== "" &&
+            Number(pcPrice) !== 0;
+          return hasVendor && hasPC;
+        });
+        currentPage = 1;
       }
 
       function render() {
