@@ -15,11 +15,12 @@ log = get_logger("comparator")
 DIAMOND_FILES_DIR    = os.path.join(os.getcwd(), "diamond_files")
 COMPARE_DIR          = os.path.join(os.getcwd(), "compare")
 FILE_STATUS_JSON     = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
-COMPARE_CSV          = os.path.join(COMPARE_DIR, "compare.csv")           # common only CSV
-COMPARE_JSON         = os.path.join(COMPARE_DIR, "compare.json")          # ← DEFAULT: all vendors matched (common)
-COMPARE_PARTIAL_JSON = os.path.join(COMPARE_DIR, "compare_partial.json")  # 2+ vendors matched
-COMPARE_ALL_JSON     = os.path.join(COMPARE_DIR, "compare_all.json")      # everything in PC
-MAX_AGE_DAYS         = 7
+COMPARE_CSV           = os.path.join(COMPARE_DIR, "compare.csv")           # common only CSV
+COMPARE_JSON          = os.path.join(COMPARE_DIR, "compare.json")          # ← DEFAULT: all vendors matched (common)
+COMPARE_PARTIAL_JSON  = os.path.join(COMPARE_DIR, "compare_partial.json")  # 2+ vendors matched
+COMPARE_ALL_JSON      = os.path.join(COMPARE_DIR, "compare_all.json")      # everything in PC
+DIAMOND_STATUS_JSON   = os.path.join(COMPARE_DIR, "diamond_status.json")   # vendor stats summary
+MAX_AGE_DAYS          = 7
 
 os.makedirs(COMPARE_DIR, exist_ok=True)
 
@@ -76,6 +77,61 @@ def load_PC(csv_path):
 #           Only certificates present in PC are kept.
 #           Vendor rows with no matching PC cert ID are excluded.
 # ══════════════════════════════════════════════════════════════
+
+def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
+                         common_records: list, partial_records: list, all_records: list):
+    """
+    Save diamond_status.json with:
+      - Total diamond count per vendor (raw CSV rows)
+      - PC total
+      - PC vs each vendor: matched / unmatched / common counts
+      - Common count (LG + Brilliance + PC all matched)
+      - Partial count (2+ vendors)
+      - Timestamp
+    """
+    import math
+
+    vendor_names = [n for n in loaded.keys() if n != "PC"]
+    pc_total     = len(loaded["PC"]) if "PC" in loaded else 0
+
+    # Per-vendor raw counts
+    vendor_totals = {}
+    for name in vendor_names:
+        vendor_totals[name] = len(loaded[name]) if name in loaded else 0
+
+    # PC vs each vendor pairwise stats (from combined df)
+    pc_vs = {}
+    for name in vendor_names:
+        price_col = f"{name} Price USD"
+        if price_col not in combined.columns:
+            pc_vs[name] = {"matched": 0, "unmatched_in_pc": 0, "vendor_total": vendor_totals.get(name, 0)}
+            continue
+        matched   = int(combined[price_col].notna().sum())
+        unmatched = int(combined[price_col].isna().sum())
+        pc_vs[name] = {
+            "matched":            matched,
+            "unmatched_in_pc":    unmatched,
+            "vendor_total":       vendor_totals.get(name, 0),
+            "vendor_not_in_pc":   vendor_totals.get(name, 0) - matched,
+            "match_rate_pct":     round(matched / pc_total * 100, 2) if pc_total else 0,
+        }
+
+    status = {
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "pc_total":     pc_total,
+        "vendor_totals": vendor_totals,
+        "pc_vs_vendors": pc_vs,
+        "dataset_counts": {
+            "common":   len(common_records),   # LG + Brilliance + PC all present
+            "partial":  len(partial_records),  # any 2+ vendors
+            "all_pc":   len(all_records),       # every PC cert
+        },
+    }
+
+    with open(DIAMOND_STATUS_JSON, "w", encoding="utf-8") as f:
+        json.dump(status, f, ensure_ascii=False, indent=2)
+    log.info(f"Saved diamond_status.json → {DIAMOND_STATUS_JSON}")
+
 
 def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     """
@@ -315,6 +371,9 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     log.info(f"  compare_partial.json (partial, 2+ vendors)  → {len(partial_records):,} records")
     log.info(f"  compare_all.json     (all PC certs)         → {len(all_records):,} records")
     log.info(f"  compare.csv          (common, for Excel)    → {len(df_common):,} rows")
+
+    # ── Step J: save diamond_status.json ─────────────────────
+    _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records)
 
     return combined
 
@@ -573,12 +632,25 @@ def load_vendors_from_env():
         {"name": "luvansh",     "env_csv": "LUVANSH_CSV",     "env_cert": "LUVANSH_CERT_COL",     "env_price": "LUVANSH_PRICE_COL",     "env_disc": "LUVANSH_DISCOUNT",     "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
     ]
 
+    # Vendors whose discount is always fixed regardless of .env
+    FIXED_DISCOUNTS = {
+        "loose-grown": 0.70,  # always 30% cut — loose-grown price has no pre-applied discount
+        "brilliance":  0.70,  # always 30% cut
+        "PC":          0.70,  # always 30% cut
+        # luvansh uses discounted_price already, so 1.00 (no extra cut)
+    }
+
     vendors = []
     for v in vendor_defaults:
         csv_name  = get_env(v["env_csv"],   v["default_csv"])
         cert_col  = get_env(v["env_cert"],  v["default_cert"])
         price_col = get_env(v["env_price"], v["default_price"])
-        discount  = float(get_env(v["env_disc"], v["default_disc"]))
+        # Use fixed discount if defined, else fall back to .env / default
+        if v["name"] in FIXED_DISCOUNTS:
+            discount = FIXED_DISCOUNTS[v["name"]]
+            log.info(f"Vendor '{v['name']}': using fixed discount {discount} (30% cut)")
+        else:
+            discount = float(get_env(v["env_disc"], v["default_disc"]))
         vendors.append({
             "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
             "cert_col": cert_col, "price_col": price_col, "discount": discount,

@@ -18,10 +18,12 @@ COMPARE_JSON         = COMPARE_DIR / "compare.json"          # common (all vendo
 COMPARE_PARTIAL_JSON = COMPARE_DIR / "compare_partial.json"  # 2+ vendors
 COMPARE_ALL_JSON     = COMPARE_DIR / "compare_all.json"      # all PC certs
 COMPARE_CSV          = COMPARE_DIR / "compare.csv"
+DIAMOND_STATUS_JSON  = COMPARE_DIR / "diamond_status.json"
 COMPARE_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="Diamond Price Dashboard API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 
 
 def csv_to_json(csv_path: Path, output_path: Path, fill_na="") -> dict:
@@ -244,6 +246,22 @@ async def run_compare():
         raise HTTPException(status_code=504, detail="Compare pipeline timed out (>10 min)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/status")
+async def get_diamond_status():
+    """Return diamond_status.json — vendor counts, match rates, dataset sizes."""
+    if not DIAMOND_STATUS_JSON.exists():
+        raise HTTPException(status_code=404, detail="diamond_status.json not found — run pipeline first")
+    try:
+        import re as _re
+        raw = DIAMOND_STATUS_JSON.read_text(encoding="utf-8")
+        raw = _re.sub(r'\bNaN\b', 'null', raw)
+        data = json.loads(raw)
+        
+        return JSONResponse(content=data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read diamond_status.json: {e}")
 
 
 @app.get("/api/health")

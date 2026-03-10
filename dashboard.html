@@ -548,6 +548,86 @@
         margin-bottom: 8px;
       }
 
+      /* ── STATS PANEL ─────────────────────────────── */
+      .stats-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+        margin-bottom: 32px;
+      }
+      .stats-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        position: relative;
+        overflow: hidden;
+      }
+      .stats-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--card-color, var(--accent));
+      }
+      .stats-card-title {
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 10px;
+      }
+      .stats-card-value {
+        font-size: 1.7rem;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1;
+      }
+      .stats-card-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+      .stats-row-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .stats-row-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.72rem;
+      }
+      .stats-row-item .label {
+        color: var(--muted);
+      }
+      .stats-row-item .val {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .stats-bar-wrap {
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 3px;
+      }
+      .stats-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.6s ease;
+      }
+      .badge-pct {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 3px;
+        font-size: 0.62rem;
+        font-weight: 600;
+      }
+
       @media (max-width: 768px) {
         .header,
         .controls,
@@ -688,6 +768,7 @@
       <div id="vendorCompareGroup" style="display: none"></div>
 
       <div class="control-group">
+        <label>PC Price Range</label>
         <div style="display: flex; gap: 8px; align-items: center">
           <input
             type="number"
@@ -727,6 +808,31 @@
 
     <!-- MAIN -->
     <div class="main">
+      <!-- ── VENDOR STATS PANEL ──────────────────────────── -->
+      <div class="section-title" style="margin-bottom: 12px">
+        Vendor Statistics
+        <span
+          style="font-size: 0.68rem; color: var(--muted)"
+          id="statsLastRun"
+        ></span>
+        <button
+          class="btn btn-ghost btn-sm"
+          onclick="loadStats()"
+          style="font-size: 0.65rem; padding: 3px 10px; margin-left: 4px"
+        >
+          ↻ Refresh
+        </button>
+      </div>
+      <div class="stats-panel" id="statsPanel">
+        <div
+          class="stats-card"
+          style="--card-color: var(--muted); opacity: 0.5"
+        >
+          <div class="stats-card-title">Stats</div>
+          <div class="stats-card-sub">Run the pipeline to see vendor stats</div>
+        </div>
+      </div>
+
       <div class="section-title">
         % Range Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
@@ -1285,6 +1391,7 @@
               5000,
             );
             await refreshFileList();
+            loadStats(); // refresh stats after pipeline run
             showLoading("Reloading compare.json…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
@@ -1308,11 +1415,126 @@
       }
 
       // ── BOOT ──────────────────────────────────────────────────────────
+      // ── STATS PANEL ──────────────────────────────────────────
+      async function loadStats() {
+        const panel = document.getElementById("statsPanel");
+        panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6">
+          <div class="stats-card-title">Loading stats…</div>
+          <div class="stats-card-sub">Fetching diamond_status.json</div>
+        </div>`;
+        try {
+          const s = await api("GET", "/api/status");
+          renderStats(s);
+        } catch (e) {
+          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)">
+            <div class="stats-card-title" style="color:var(--muted)">No stats yet</div>
+            <div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div>
+            <div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div>
+          </div>`;
+        }
+      }
+
+      function renderStats(s) {
+        const panel = document.getElementById("statsPanel");
+        if (!s) {
+          panel.innerHTML =
+            '<div class="stats-card"><div class="stats-card-sub">No stats available — run pipeline first</div></div>';
+          return;
+        }
+
+        document.getElementById("statsLastRun").textContent = s.generated_at
+          ? "· last run " + s.generated_at
+          : "";
+
+        const pcTotal = s.pc_total || 0;
+        const vendors = s.pc_vs_vendors || {};
+        const datasets = s.dataset_counts || {};
+        const vendorTotals = s.vendor_totals || {};
+
+        const COLORS = {
+          "loose-grown": "#3ecf8e",
+          brilliance: "#60a5fa",
+          luvansh: "#c9a84c",
+          PC: "#e879f9",
+        };
+
+        let html = "";
+
+        // PC total card
+        html += `<div class="stats-card" style="--card-color:${COLORS["PC"] || "#e879f9"}">
+          <div class="stats-card-title">💠 PC (Precious Carbon)</div>
+          <div class="stats-card-value">${pcTotal.toLocaleString()}</div>
+          <div class="stats-card-sub">Total diamonds in master list</div>
+          <div class="stats-row-grid" style="margin-top:10px">
+            <div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div>
+            <div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div>
+          </div>
+        </div>`;
+
+        // Per-vendor cards
+        for (const [name, v] of Object.entries(vendors)) {
+          const color = COLORS[name] || "var(--accent2)";
+          const matched = v.matched || 0;
+          const vTotal = v.vendor_total || vendorTotals[name] || 0;
+          const notInPC = v.vendor_not_in_pc || 0;
+          const rate = v.match_rate_pct || 0;
+          const barW = pcTotal
+            ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
+            : 0;
+
+          const unmatched = v.unmatched_in_pc || 0;
+          html += `<div class="stats-card" style="--card-color:${color}">
+            <div class="stats-card-title" style="color:${color}">${name}</div>
+            <div class="stats-card-value">${vTotal.toLocaleString()}</div>
+            <div class="stats-card-sub">Total in vendor CSV</div>
+            <div class="stats-row-grid" style="margin-top:12px">
+              <div class="stats-row-item">
+                <span class="label">✓ Matched in PC</span>
+                <span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span>
+              </div>
+              <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+              <div class="stats-row-item">
+                <span class="label">✗ Not in PC (vendor only)</span>
+                <span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span>
+              </div>
+              <div class="stats-row-item">
+                <span class="label">◌ In PC but no vendor price</span>
+                <span class="val" style="color:var(--muted)">${unmatched.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>`;
+        }
+
+        // Dataset summary card
+        html += `<div class="stats-card" style="--card-color:var(--accent)">
+          <div class="stats-card-title">📊 Dataset Sizes</div>
+          <div class="stats-row-grid" style="margin-top:8px">
+            <div class="stats-row-item">
+              <span class="label">⬡ Common (LG + Brilliance + PC)</span>
+              <span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span>
+            </div>
+            <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div>
+            <div class="stats-row-item">
+              <span class="label">◑ Partial (any 2+ vendors)</span>
+              <span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span>
+            </div>
+            <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div>
+            <div class="stats-row-item">
+              <span class="label">◉ All PC certs</span>
+              <span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>`;
+
+        panel.innerHTML = html;
+      }
+
       async function initDashboard() {
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/api/health");
           await refreshFileList();
+          loadStats(); // load stats in background — non-blocking
           if (health.default_dataset) {
             showLoading("Loading compare.json…");
             const data = await api("GET", "/api/compare");
