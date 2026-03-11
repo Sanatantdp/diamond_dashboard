@@ -592,7 +592,67 @@
         background: var(--border);
       }
 
-      /* BUCKETS */
+      /* ═══════════════════════════════════════════════════════
+         VENDOR-TAB BUCKET SECTION
+         ═══════════════════════════════════════════════════════ */
+
+      /* Vendor selector tabs */
+      .vendor-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .vendor-tab {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 16px;
+        border-radius: 8px;
+        font-family: var(--font-mono);
+        font-size: 0.73rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        transition: all 0.18s;
+        white-space: nowrap;
+      }
+      .vendor-tab-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--vcolor, var(--muted));
+        transition: all 0.18s;
+      }
+      .vendor-tab:hover {
+        border-color: var(--vcolor, var(--accent));
+        color: var(--vcolor, var(--accent));
+      }
+      .vendor-tab.active {
+        background: color-mix(
+          in srgb,
+          var(--vcolor, var(--accent)) 16%,
+          var(--card)
+        );
+        border-color: var(--vcolor, var(--accent));
+        color: var(--vcolor, var(--accent));
+        box-shadow: 0 0 0 1px
+          color-mix(in srgb, var(--vcolor, var(--accent)) 30%, transparent);
+      }
+      .vendor-tab .v-count {
+        font-size: 0.6rem;
+        color: var(--muted);
+        background: var(--surface);
+        padding: 1px 6px;
+        border-radius: 3px;
+      }
+      .vendor-tab.active .v-count {
+        color: var(--vcolor, var(--accent));
+      }
+
+      /* Classic bucket cards (original style, now per-vendor) */
       .buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -658,6 +718,29 @@
         border-radius: 2px;
         background: var(--bucket-color, var(--accent));
         transition: width 0.5s ease;
+      }
+
+      /* Active filter tag shown below buckets */
+      .bucket-filter-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: color-mix(in srgb, var(--accent) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+        color: var(--accent);
+        font-size: 0.68rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .bucket-filter-tag:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+      }
+      .bucket-filter-tag .x {
+        font-size: 0.8rem;
+        opacity: 0.7;
       }
 
       /* TABLE */
@@ -887,6 +970,16 @@
           padding: 32px 24px;
           margin: 16px;
         }
+        .vendor-buckets-wrap {
+          flex-direction: column;
+        }
+        .vendor-column {
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .vendor-column:last-child {
+          border-bottom: none;
+        }
       }
     </style>
   </head>
@@ -1009,9 +1102,8 @@
       <div>
         <h1>💎 Diamond Price Dashboard</h1>
         <p>
-          loose-grown · brilliance · luvansh · PC — use
-          <strong style="color: var(--accent)">Vendor Compare</strong> to switch
-          % column &amp; buckets
+          loose-grown · brilliance · luvansh · PC — parallel % buckets per
+          vendor · click to filter
         </p>
       </div>
       <div class="stats-row">
@@ -1099,11 +1191,30 @@
           <div class="stats-card-sub">Run the pipeline to see vendor stats</div>
         </div>
       </div>
+
+      <!-- ═══ VENDOR-TAB BUCKET SECTION ═══ -->
       <div class="section-title">
-        % Range Buckets<span style="font-size: 0.68rem; color: var(--muted)"
-          >click to filter</span
+        % Range Buckets
+        <span style="font-size: 0.68rem; color: var(--muted)"
+          >select vendor · click bucket to filter</span
         >
       </div>
+
+      <!-- Vendor selector tabs (rendered by JS) -->
+      <div class="vendor-tabs" id="vendorTabs"></div>
+
+      <!-- Active filter tag -->
+      <div
+        id="activeBucketTag"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearBucketFilter()"
+      >
+        <span id="activeBucketTagText">Filtered</span>
+        <span class="x">✕ clear</span>
+      </div>
+
+      <!-- Classic bucket cards for selected vendor -->
       <div class="buckets-grid" id="bucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
           <div class="icon">💎</div>
@@ -1113,7 +1224,9 @@
           </p>
         </div>
       </div>
-      <div class="section-title">
+
+      <!-- Table section -->
+      <div class="section-title" style="margin-top: 32px">
         Records
         <span
           id="tableCount"
@@ -1155,9 +1268,6 @@
       const API_BASE = "";
 
       // ─── LOGIN ────────────────────────────────────────────────────────────────
-      // Password is validated by POST /api/login in main.py
-      // To change the password: edit DASHBOARD_PASSWORD in main.py — that's the ONLY place.
-
       function toggleEye() {
         const inp = document.getElementById("loginPassword");
         const btn = document.getElementById("eyeBtn");
@@ -1170,7 +1280,6 @@
         const inp = document.getElementById("loginPassword");
         const err = document.getElementById("loginError");
         const btn = document.getElementById("loginBtn");
-
         if (!pw) {
           inp.classList.remove("error");
           void inp.offsetWidth;
@@ -1178,19 +1287,15 @@
           err.textContent = "Please enter the password.";
           return;
         }
-
         btn.disabled = true;
         btn.textContent = "Checking…";
         err.textContent = "";
-
         try {
-          // Validated server-side — password lives only in main.py: DASHBOARD_PASSWORD
           const res = await fetch(API_BASE + "/api/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password: pw }),
           });
-
           if (res.ok) {
             inp.classList.remove("error");
             btn.classList.add("success-state");
@@ -1229,7 +1334,7 @@
         setTimeout(() => document.getElementById("loginPassword").focus(), 300),
       );
 
-      // ─── DASHBOARD ────────────────────────────────────────────────────────────
+      // ─── DASHBOARD STATE ──────────────────────────────────────────────────────
       let ALL_DATA = [],
         _RAW_DATA = [],
         filteredData = [],
@@ -1238,29 +1343,70 @@
       let currentPage = 1,
         PAGE_SIZE = 20,
         priceMin = null,
-        priceMax = null,
-        activeBucket = null;
+        priceMax = null;
+
+      // Active bucket filter: { vendorKey, bucketIdx } or null
+      let activeBucketFilter = null;
 
       const BUCKETS = [
         { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
         { label: "0 – 99%", min: 0, max: 100, color: "#60a5fa" },
-        { label: "100 – 199%", min: 100, max: 200, color: "#c9a84c" },
-        { label: "200 – 299%", min: 200, max: 300, color: "#fb923c" },
-        { label: "300 – 399%", min: 300, max: 400, color: "#f87171" },
-        { label: "400 – 499%", min: 400, max: 500, color: "#e879f9" },
+        { label: "100–199%", min: 100, max: 200, color: "#c9a84c" },
+        { label: "200–299%", min: 200, max: 300, color: "#fb923c" },
+        { label: "300–399%", min: 300, max: 400, color: "#f87171" },
+        { label: "400–499%", min: 400, max: 500, color: "#e879f9" },
         { label: "500%+", min: 500, max: Infinity, color: "#818cf8" },
       ];
 
+      // Vendor definitions — detect from data keys
+      const VENDOR_DEFS = [
+        {
+          key: "lg",
+          label: "Loose-Grown",
+          color: "#3ecf8e",
+          priceCol: "loose-grown Price USD",
+          pctPattern: /loose/i,
+        },
+        {
+          key: "br",
+          label: "Brilliance",
+          color: "#60a5fa",
+          priceCol: "brilliance Price USD",
+          pctPattern: /brilliance/i,
+        },
+        {
+          key: "lu",
+          label: "Luvansh",
+          color: "#c9a84c",
+          priceCol: "luvansh Price USD",
+          pctPattern: /luvansh/i,
+        },
+      ];
+
+      function getPct(row, vendorDef) {
+        const col = Object.keys(row).find(
+          (k) =>
+            vendorDef.pctPattern.test(k) && /vs/i.test(k) && k.includes("%"),
+        );
+        if (!col) return null;
+        const n = Number(row[col]);
+        return isNaN(n) ? null : n;
+      }
+
+      function vendorHasData(vendorDef) {
+        return ALL_DATA.some((r) => {
+          const v = r[vendorDef.priceCol];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+      }
+
+      // ─── TOAST / LOADING ──────────────────────────────────────────────────────
       let toastTimer;
       function toast(msg, type = "info", dur = 3500) {
         const el = document.getElementById("toast");
         el.className = `show ${type}`;
         el.textContent =
-          type === "success"
-            ? "✓  " + msg
-            : type === "error"
-              ? "✗  " + msg
-              : "ℹ  " + msg;
+          (type === "success" ? "✓  " : type === "error" ? "✗  " : "ℹ  ") + msg;
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => el.classList.remove("show"), dur);
       }
@@ -1282,6 +1428,7 @@
         document.getElementById("loadedIndicator").style.display = "flex";
       }
 
+      // ─── API HELPER ───────────────────────────────────────────────────────────
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
         if (body) {
@@ -1302,6 +1449,7 @@
         return res.json();
       }
 
+      // ─── FILE MANAGEMENT ─────────────────────────────────────────────────────
       async function refreshFileList() {
         try {
           const data = await api("GET", "/api/files");
@@ -1378,6 +1526,7 @@
           toast("Convert failed: " + e.message, "error");
         }
       }
+
       function ingestData(json, label = "") {
         if (!Array.isArray(json)) {
           hideLoading();
@@ -1386,7 +1535,7 @@
         }
         _RAW_DATA = json;
         ALL_DATA = [...json];
-        activeBucket = null;
+        activeBucketFilter = null;
         tableMode = "all";
         currentPage = 1;
         priceMin = priceMax = null;
@@ -1399,66 +1548,21 @@
         toast(`Loaded ${json.length.toLocaleString()} records`, "success");
       }
 
-      function getPctColName(row, mode) {
-        const keys = Object.keys(row);
-        if (mode === "lg")
-          return (
-            keys.find(
-              (k) => /loose/i.test(k) && /vs/i.test(k) && k.includes("%"),
-            ) || null
-          );
-        if (mode === "br")
-          return (
-            keys.find(
-              (k) => /brilliance/i.test(k) && /vs/i.test(k) && k.includes("%"),
-            ) || null
-          );
-        if (mode === "lu")
-          return (
-            keys.find(
-              (k) => /luvansh/i.test(k) && /vs/i.test(k) && k.includes("%"),
-            ) || null
-          );
-        return null;
-      }
-      function getPct(row, mode) {
-        const col = getPctColName(row, mode);
-        if (!col) return null;
-        const val = row[col];
-        if (val === null || val === undefined || val === "") return null;
-        const n = Number(val);
-        return isNaN(n) ? null : n;
-      }
-      function fmtPct(v) {
-        return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
-      }
-      function fmtUSD(v) {
-        return v === null || v === undefined || v === "" || Number(v) === 0
-          ? "—"
-          : "$" + Number(v).toLocaleString();
-      }
-      function pctClass(v) {
-        return v === null || v === undefined
-          ? "pct-zero"
-          : v > 0
-            ? "pct-pos"
-            : v < 0
-              ? "pct-neg"
-              : "pct-zero";
-      }
-
+      // ─── FILTERS ──────────────────────────────────────────────────────────────
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
-        const mode = document.getElementById("modeSelect").value;
         filteredData = ALL_DATA.filter((row) => {
           const PC = row["PC Price USD"];
           if (priceMin !== null && PC < priceMin) return false;
           if (priceMax !== null && PC > priceMax) return false;
           if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
-          if (activeBucket !== null) {
-            const p = getPct(row, mode),
-              b = BUCKETS[activeBucket];
+          // Bucket filter
+          if (activeBucketFilter) {
+            const { vendorKey, bucketIdx } = activeBucketFilter;
+            const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
+            const b = BUCKETS[bucketIdx];
+            const p = getPct(row, vd);
             if (p === null || p < b.min || p >= b.max) return false;
           }
           if (commonOnly) {
@@ -1476,6 +1580,7 @@
           return true;
         });
       }
+
       function toggleCommonOnly() {
         commonOnly = !commonOnly;
         document
@@ -1499,9 +1604,157 @@
         currentPage = 1;
         render();
       }
+      function clearBucketFilter() {
+        activeBucketFilter = null;
+        currentPage = 1;
+        render();
+      }
+
+      // ─── VENDOR TABS + CLASSIC BUCKET GRID ──────────────────────────────────
+      let selectedVendorKey = null; // which vendor tab is active
+
+      function renderVendorTabs() {
+        const tabsEl = document.getElementById("vendorTabs");
+        if (!ALL_DATA.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+
+        const activeVendors = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
+        if (!activeVendors.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+
+        // Auto-select first vendor if none selected or selected vendor has no data
+        if (
+          !selectedVendorKey ||
+          !activeVendors.find((v) => v.key === selectedVendorKey)
+        ) {
+          selectedVendorKey = activeVendors[0].key;
+        }
+
+        tabsEl.innerHTML = activeVendors
+          .map((vd) => {
+            const total = ALL_DATA.filter((r) => {
+              const v = r[vd.priceCol];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            }).length;
+            const isActive = selectedVendorKey === vd.key;
+            return `
+            <button class="vendor-tab ${isActive ? "active" : ""}"
+                    style="--vcolor:${vd.color}"
+                    onclick="selectVendor('${vd.key}')">
+              <span class="vendor-tab-dot" style="background:${vd.color}"></span>
+              ${vd.label}
+              <span class="v-count">${total.toLocaleString()}</span>
+            </button>`;
+          })
+          .join("");
+      }
+
+      function selectVendor(key) {
+        selectedVendorKey = key;
+        // Clear bucket filter if it was for a different vendor
+        if (activeBucketFilter && activeBucketFilter.vendorKey !== key) {
+          activeBucketFilter = null;
+        }
+        currentPage = 1;
+        render();
+      }
+
+      function renderBuckets() {
+        const grid = document.getElementById("bucketsGrid");
+        if (!ALL_DATA.length) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
+
+        const counts = BUCKETS.map(
+          (b) =>
+            ALL_DATA.filter((r) => {
+              const p = getPct(r, vd);
+              return p !== null && p >= b.min && p < b.max;
+            }).length,
+        );
+        const total = ALL_DATA.length;
+        const maxC = Math.max(...counts, 1);
+
+        grid.innerHTML = BUCKETS.map((b, i) => {
+          const cnt = counts[i],
+            isEmpty = cnt === 0;
+          const isActive =
+            activeBucketFilter &&
+            activeBucketFilter.vendorKey === vd.key &&
+            activeBucketFilter.bucketIdx === i;
+          const pct = ((cnt / total) * 100).toFixed(1);
+          const barW = ((cnt / maxC) * 100).toFixed(1);
+          return `
+            <div class="bucket-card ${isActive ? "active" : ""}"
+                 style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}"
+                 onclick="${isEmpty ? "" : `toggleBucket(${i})`}">
+              <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+              <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+              <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
+              <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div>
+            </div>`;
+        }).join("");
+
+        // Update active filter tag
+        const tag = document.getElementById("activeBucketTag");
+        if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
+          const b = BUCKETS[activeBucketFilter.bucketIdx];
+          document.getElementById("activeBucketTagText").textContent =
+            `${vd.label} · ${b.label}`;
+          tag.style.display = "inline-flex";
+        } else {
+          tag.style.display = "none";
+        }
+      }
+
+      function toggleBucket(bucketIdx) {
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) return;
+        if (
+          activeBucketFilter &&
+          activeBucketFilter.vendorKey === vd.key &&
+          activeBucketFilter.bucketIdx === bucketIdx
+        ) {
+          activeBucketFilter = null;
+        } else {
+          activeBucketFilter = { vendorKey: vd.key, bucketIdx };
+        }
+        currentPage = 1;
+        render();
+      }
+
+      // ─── TABLE ────────────────────────────────────────────────────────────────
+      function fmtPct(v) {
+        return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
+      }
+      function fmtUSD(v) {
+        return v === null || v === undefined || v === "" || Number(v) === 0
+          ? "—"
+          : "$" + Number(v).toLocaleString();
+      }
+      function pctClass(v) {
+        return v === null || v === undefined
+          ? "pct-zero"
+          : v > 0
+            ? "pct-pos"
+            : v < 0
+              ? "pct-neg"
+              : "pct-zero";
+      }
 
       function renderTable(data) {
-        const mode = document.getElementById("modeSelect").value;
         document.getElementById("tableCount").textContent =
           `— ${data.length.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent =
@@ -1518,10 +1771,12 @@
           document.getElementById("pagination").innerHTML = "";
           return;
         }
+        const lgVD = VENDOR_DEFS[0],
+          brVD = VENDOR_DEFS[1];
         document.getElementById("tableBody").innerHTML = pr
           .map((r) => {
-            const lgP = getPct(r, "lg"),
-              brP = getPct(r, "br");
+            const lgP = getPct(r, lgVD),
+              brP = getPct(r, brVD);
             const sh = r["shape"] || r["Shape"] || "—",
               co = r["color"] || r["Color"] || "—",
               cl = r["clarity"] || r["Clarity"] || "—",
@@ -1549,6 +1804,7 @@
         }
         document.getElementById("pagination").innerHTML = pages;
       }
+
       function setTableMode(m) {
         tableMode = m;
         currentPage = 1;
@@ -1575,71 +1831,17 @@
         }, 200);
       }
 
-      function renderBuckets() {
-        const mode = document.getElementById("modeSelect").value,
-          grid = document.getElementById("bucketsGrid");
-        if (!ALL_DATA.length) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
-          return;
-        }
-        const counts = BUCKETS.map(
-          (b) =>
-            ALL_DATA.filter((r) => {
-              const p = getPct(r, mode);
-              return p !== null && p >= b.min && p < b.max;
-            }).length,
-        );
-        const total = ALL_DATA.length,
-          maxC = Math.max(...counts, 1);
-        grid.innerHTML = BUCKETS.map((b, i) => {
-          const cnt = counts[i],
-            isEmpty = cnt === 0,
-            isActive = activeBucket === i,
-            pct = ((cnt / total) * 100).toFixed(1),
-            barW = ((cnt / maxC) * 100).toFixed(1);
-          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="toggleBucket(${i},${cnt})"><div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div><div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div><div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div><div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
-        }).join("");
-      }
-      function toggleBucket(i, count) {
-        if (count === 0) return;
-        activeBucket = activeBucket === i ? null : i;
-        currentPage = 1;
-        render();
-      }
-
-      function applyVendorFilter() {
-        const mode = document.getElementById("modeSelect").value;
-        const col =
-          mode === "lg"
-            ? "loose-grown Price USD"
-            : mode === "br"
-              ? "brilliance Price USD"
-              : "luvansh Price USD";
-        ALL_DATA = _RAW_DATA.filter((row) => {
-          const vp = row[col],
-            pp = row["PC Price USD"];
-          return (
-            vp !== null &&
-            vp !== undefined &&
-            vp !== "" &&
-            Number(vp) !== 0 &&
-            pp !== null &&
-            pp !== undefined &&
-            pp !== "" &&
-            Number(pp) !== 0
-          );
-        });
-        currentPage = 1;
-      }
-
+      // ─── MASTER RENDER ────────────────────────────────────────────────────────
       function render() {
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
+        renderVendorTabs();
         renderBuckets();
         renderTable(filteredData);
       }
 
+      // ─── PIPELINE ─────────────────────────────────────────────────────────────
       async function runComparePipeline() {
         const btn = document.getElementById("runCompareBtn"),
           st = document.getElementById("runCompareStatus");
@@ -1678,6 +1880,7 @@
         }
       }
 
+      // ─── STATS ────────────────────────────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
@@ -1718,14 +1921,14 @@
             rate = v.match_rate_pct || 0,
             barW = pcTotal
               ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
-              : 0,
-            unmatched = v.unmatched_in_pc || 0;
+              : 0;
           html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div></div></div>`;
         }
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
         panel.innerHTML = html;
       }
 
+      // ─── STARTUP ──────────────────────────────────────────────────────────────
       async function startDashboard() {
         showLoading("Connecting to API…");
         try {
