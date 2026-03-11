@@ -1321,14 +1321,17 @@
         </div>
       </div>
 
-      <!-- ═══ PC PRICE BUCKETS SECTION ═══ -->
+      <!-- ═══ VENDOR PRICE BUCKETS SECTION ═══ -->
       <div class="section-title" style="margin-top: 4px">
-        PC -30% Price Buckets
+        Vendor Price Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
-          >based on PC -30% price · avg vendor % · only non-empty ranges shown ·
-          click to filter</span
+          >bucketed by vendor price · select vendor · avg % vs PC shown · click
+          to filter</span
         >
       </div>
+
+      <!-- Separate vendor tabs just for price buckets -->
+      <div class="vendor-tabs" id="priceVendorTabs"></div>
 
       <!-- Active price bucket filter tag -->
       <div
@@ -1336,7 +1339,6 @@
         style="display: none"
         class="bucket-filter-tag"
         onclick="clearPriceBucketFilter()"
-        style="--accent: #a78bfa"
       >
         <span id="activePriceBucketTagText">Filtered</span>
         <span class="x">✕ clear</span>
@@ -1671,6 +1673,7 @@
         ALL_DATA = [...json];
         activeBucketFilter = null;
         activePriceBucket = null;
+        selectedPriceVendorKey = null;
         tableMode = "all";
         currentPage = 1;
         priceMin = priceMax = null;
@@ -1700,12 +1703,22 @@
             const p = getPct(row, vd);
             if (p === null || p < b.min || p >= b.max) return false;
           }
-          // Price bucket filter (uses PC -30% USD)
+          // Price bucket filter (uses selected price vendor's price column)
           if (activePriceBucket !== null) {
             const pb = PRICE_BUCKETS[activePriceBucket];
-            const pc = Number(row["PC -30% USD"]);
-            if (isNaN(pc) || pc <= 0 || pc < pb.min || pc >= pb.max)
-              return false;
+            const pvd = VENDOR_DEFS.find(
+              (v) => v.key === selectedPriceVendorKey,
+            );
+            if (pvd) {
+              const price = Number(row[pvd.priceCol]);
+              if (
+                isNaN(price) ||
+                price <= 0 ||
+                price < pb.min ||
+                price >= pb.max
+              )
+                return false;
+            }
           }
           if (commonOnly) {
             const pc = Object.keys(row).filter((k) => k.includes("Price USD"));
@@ -1889,8 +1902,63 @@
         render();
       }
 
+      // Separate vendor selection for price buckets
+      let selectedPriceVendorKey = null;
+
+      function selectPriceVendor(key) {
+        selectedPriceVendorKey = key;
+        // Clear price bucket filter if vendor changes
+        activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
+
+      function renderPriceVendorTabs() {
+        const tabsEl = document.getElementById("priceVendorTabs");
+        if (!ALL_DATA.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+
+        const activeVendors = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
+        if (!activeVendors.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+
+        // Auto-select first vendor
+        if (
+          !selectedPriceVendorKey ||
+          !activeVendors.find((v) => v.key === selectedPriceVendorKey)
+        ) {
+          selectedPriceVendorKey = activeVendors[0].key;
+        }
+
+        tabsEl.innerHTML = activeVendors
+          .map((vd) => {
+            // Count diamonds that have a valid price for this vendor
+            const total = ALL_DATA.filter((r) => {
+              const v = r[vd.priceCol];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            }).length;
+            const isActive = selectedPriceVendorKey === vd.key;
+            return `
+            <button class="vendor-tab ${isActive ? "active" : ""}"
+                    style="--vcolor:${vd.color}"
+                    onclick="selectPriceVendor('${vd.key}')">
+              <span class="vendor-tab-dot" style="background:${vd.color}"></span>
+              ${vd.label}
+              <span class="v-count">${total.toLocaleString()}</span>
+            </button>`;
+          })
+          .join("");
+      }
+
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
+
         if (!ALL_DATA.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
           document.getElementById("activePriceBucketTag").style.display =
@@ -1898,62 +1966,82 @@
           return;
         }
 
-        const total = ALL_DATA.length;
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
 
-        // For each price bucket: use PC -30% USD, count diamonds + compute avg % per vendor
+        // Only rows where this vendor has a price
+        const vendorRows = ALL_DATA.filter((r) => {
+          const v = r[vd.priceCol];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+        const total = vendorRows.length || 1;
+
+        // Build bucket data — bucket by vendor price
         const bucketData = PRICE_BUCKETS.map((pb, i) => {
-          const rows = ALL_DATA.filter((r) => {
-            const pc = Number(r["PC -30% USD"]);
-            return !isNaN(pc) && pc > 0 && pc >= pb.min && pc < pb.max;
+          const rows = vendorRows.filter((r) => {
+            const price = Number(r[vd.priceCol]);
+            return !isNaN(price) && price >= pb.min && price < pb.max;
           });
           const count = rows.length;
 
-          const avgPcts = VENDOR_DEFS.map((vd) => {
-            const vals = rows
-              .map((r) => getPct(r, vd))
-              .filter((v) => v !== null);
-            const avg = vals.length
-              ? vals.reduce((a, b) => a + b, 0) / vals.length
-              : null;
-            return { vd, avg, n: vals.length };
-          });
+          // Avg vendor % vs PC for diamonds in this price bucket
+          const pctVals = rows
+            .map((r) => getPct(r, vd))
+            .filter((v) => v !== null);
+          const avgPct = pctVals.length
+            ? pctVals.reduce((a, b) => a + b, 0) / pctVals.length
+            : null;
 
-          return { pb, count, avgPcts, idx: i };
+          // Also avg PC price for context
+          const pcVals = rows
+            .map((r) => Number(r["PC Price USD"]))
+            .filter((v) => !isNaN(v) && v > 0);
+          const avgPC = pcVals.length
+            ? pcVals.reduce((a, b) => a + b, 0) / pcVals.length
+            : null;
+
+          return { pb, count, avgPct, avgPC, idx: i };
         });
 
-        // Only render buckets that have data
+        // Only show non-empty buckets
         const nonEmpty = bucketData.filter((b) => b.count > 0);
         const maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
 
         if (!nonEmpty.length) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No PC -30% price data found</h3></div>`;
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No price data for ${vd.label}</h3></div>`;
           document.getElementById("activePriceBucketTag").style.display =
             "none";
           return;
         }
 
         grid.innerHTML = nonEmpty
-          .map(({ pb, count, avgPcts, idx }) => {
+          .map(({ pb, count, avgPct, avgPC, idx }) => {
             const isActive = activePriceBucket === idx;
             const pctOfTotal = ((count / total) * 100).toFixed(1);
             const barW = ((count / maxCount) * 100).toFixed(1);
 
-            const avgRows = avgPcts
-              .filter(({ vd }) => vendorHasData(vd))
-              .map(({ vd, avg }) => {
-                if (avg === null)
-                  return `<div class="pb-avg-item"><span class="pb-avg-label">${vd.label}</span><span class="pb-avg-val" style="color:var(--muted)">—</span></div>`;
-                const cls =
-                  avg < 0
-                    ? "#3ecf8e"
-                    : avg < 100
-                      ? "#60a5fa"
-                      : avg < 200
-                        ? "#c9a84c"
-                        : "#f87171";
-                return `<div class="pb-avg-item"><span class="pb-avg-label">${vd.label}</span><span class="pb-avg-val" style="color:${cls}">${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%</span></div>`;
-              })
-              .join("");
+            // Avg % badge color
+            const avgPctColor =
+              avgPct === null
+                ? "var(--muted)"
+                : avgPct < 0
+                  ? "#3ecf8e"
+                  : avgPct < 100
+                    ? "#60a5fa"
+                    : avgPct < 200
+                      ? "#c9a84c"
+                      : "#f87171";
+
+            const avgPctStr =
+              avgPct === null
+                ? "—"
+                : `${avgPct >= 0 ? "+" : ""}${avgPct.toFixed(1)}%`;
+
+            const avgPCStr =
+              avgPC !== null ? `Avg PC: $${avgPC.toFixed(0)}` : "";
 
             return `
             <div class="price-bucket-card ${isActive ? "active" : ""}"
@@ -1961,9 +2049,15 @@
                  onclick="togglePriceBucket(${idx})">
               <div class="pb-range">${pb.label}</div>
               <div class="pb-count">${count.toLocaleString()}</div>
-              <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of total</div>
+              <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of vendor</div>
               <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-              ${avgRows ? `<div class="pb-avg-row">${avgRows}</div>` : ""}
+              <div class="pb-avg-row">
+                <div class="pb-avg-item">
+                  <span class="pb-avg-label">Avg % vs PC</span>
+                  <span class="pb-avg-val" style="color:${avgPctColor}">${avgPctStr}</span>
+                </div>
+                ${avgPCStr ? `<div class="pb-avg-item"><span class="pb-avg-label">${avgPCStr}</span></div>` : ""}
+              </div>
             </div>`;
           })
           .join("");
@@ -1973,7 +2067,7 @@
         if (activePriceBucket !== null) {
           const pb = PRICE_BUCKETS[activePriceBucket];
           document.getElementById("activePriceBucketTagText").textContent = pb
-            ? `PC -30%: ${pb.label}`
+            ? `${vd.label} price: ${pb.label}`
             : "Filtered";
           tag.style.display = "inline-flex";
         } else {
@@ -2084,6 +2178,7 @@
           ALL_DATA.length.toLocaleString();
         renderVendorTabs();
         renderBuckets();
+        renderPriceVendorTabs();
         renderPriceBuckets();
         renderTable(filteredData);
       }
