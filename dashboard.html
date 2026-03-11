@@ -1358,6 +1358,10 @@
           id="tableCount"
           style="font-size: 0.7rem; color: var(--muted)"
         ></span>
+        <span
+          id="tableSourceLabel"
+          style="font-size: 0.65rem; color: var(--muted)"
+        ></span>
       </div>
       <div class="tabs">
         <button class="tab active" onclick="setTableMode('all')">All</button>
@@ -1470,6 +1474,8 @@
         PAGE_SIZE = 20,
         priceMin = null,
         priceMax = null;
+      // compare_partial.json — used exclusively for Vendor Price Buckets
+      let PARTIAL_DATA = [];
 
       // Active % bucket filter: { vendorKey, bucketIdx } or null
       let activeBucketFilter = null;
@@ -1501,6 +1507,7 @@
           label: "Loose-Grown",
           color: "#3ecf8e",
           priceCol: "loose-grown Price USD",
+          bucketPriceCol: "loose-grown Price USD",
           pctPattern: /loose/i,
         },
         {
@@ -1508,6 +1515,7 @@
           label: "Brilliance",
           color: "#60a5fa",
           priceCol: "brilliance Price USD",
+          bucketPriceCol: "brilliance -30% USD",
           pctPattern: /brilliance/i,
         },
         {
@@ -1515,6 +1523,7 @@
           label: "Luvansh",
           color: "#c9a84c",
           priceCol: "luvansh Price USD",
+          bucketPriceCol: "luvansh Price USD",
           pctPattern: /luvansh/i,
         },
       ];
@@ -1689,13 +1698,20 @@
       // ─── FILTERS ──────────────────────────────────────────────────────────────
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
-        filteredData = ALL_DATA.filter((row) => {
+        // When a price bucket is active → source rows from PARTIAL_DATA (matched diamonds)
+        // Otherwise → source from ALL_DATA (compare.json, normal behaviour)
+        const BASE =
+          activePriceBucket !== null && PARTIAL_DATA.length
+            ? PARTIAL_DATA
+            : ALL_DATA;
+
+        filteredData = BASE.filter((row) => {
           const PC = row["PC Price USD"];
           if (priceMin !== null && PC < priceMin) return false;
           if (priceMax !== null && PC > priceMax) return false;
           if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
-          // Bucket filter
+          // % bucket filter
           if (activeBucketFilter) {
             const { vendorKey, bucketIdx } = activeBucketFilter;
             const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
@@ -1703,14 +1719,14 @@
             const p = getPct(row, vd);
             if (p === null || p < b.min || p >= b.max) return false;
           }
-          // Price bucket filter (uses selected price vendor's price column)
+          // Price bucket filter — uses bucketPriceCol (Brilliance uses -30%)
           if (activePriceBucket !== null) {
             const pb = PRICE_BUCKETS[activePriceBucket];
             const pvd = VENDOR_DEFS.find(
               (v) => v.key === selectedPriceVendorKey,
             );
             if (pvd) {
-              const price = Number(row[pvd.priceCol]);
+              const price = Number(row[pvd.bucketPriceCol]);
               if (
                 isNaN(price) ||
                 price <= 0 ||
@@ -1915,18 +1931,23 @@
 
       function renderPriceVendorTabs() {
         const tabsEl = document.getElementById("priceVendorTabs");
-        if (!ALL_DATA.length) {
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!SRC.length) {
           tabsEl.innerHTML = "";
           return;
         }
 
-        const activeVendors = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
+        const activeVendors = VENDOR_DEFS.filter((vd) =>
+          SRC.some((r) => {
+            const v = r[vd.bucketPriceCol];
+            return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+          }),
+        );
         if (!activeVendors.length) {
           tabsEl.innerHTML = "";
           return;
         }
 
-        // Auto-select first vendor
         if (
           !selectedPriceVendorKey ||
           !activeVendors.find((v) => v.key === selectedPriceVendorKey)
@@ -1934,17 +1955,21 @@
           selectedPriceVendorKey = activeVendors[0].key;
         }
 
-        tabsEl.innerHTML = activeVendors
-          .map((vd) => {
-            // Count diamonds that have a valid price for this vendor
-            const total = ALL_DATA.filter((r) => {
-              const v = r[vd.priceCol];
-              return (
-                v !== null && v !== undefined && v !== "" && Number(v) !== 0
-              );
-            }).length;
-            const isActive = selectedPriceVendorKey === vd.key;
-            return `
+        const sourceLabel = PARTIAL_DATA.length
+          ? `<span style="font-size:0.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+          : `<span style="font-size:0.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
+
+        tabsEl.innerHTML =
+          activeVendors
+            .map((vd) => {
+              const total = SRC.filter((r) => {
+                const v = r[vd.bucketPriceCol];
+                return (
+                  v !== null && v !== undefined && v !== "" && Number(v) !== 0
+                );
+              }).length;
+              const isActive = selectedPriceVendorKey === vd.key;
+              return `
             <button class="vendor-tab ${isActive ? "active" : ""}"
                     style="--vcolor:${vd.color}"
                     onclick="selectPriceVendor('${vd.key}')">
@@ -1952,14 +1977,15 @@
               ${vd.label}
               <span class="v-count">${total.toLocaleString()}</span>
             </button>`;
-          })
-          .join("");
+            })
+            .join("") + sourceLabel;
       }
 
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
 
-        if (!ALL_DATA.length) {
+        if (!SRC.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
           document.getElementById("activePriceBucketTag").style.display =
             "none";
@@ -1972,30 +1998,41 @@
           return;
         }
 
-        // Only rows where this vendor has a price
-        const vendorRows = ALL_DATA.filter((r) => {
-          const v = r[vd.priceCol];
+        const vendorRows = SRC.filter((r) => {
+          const v = r[vd.bucketPriceCol];
           return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
         });
         const total = vendorRows.length || 1;
 
-        // Build bucket data — bucket by vendor price
+        const activeVendors = VENDOR_DEFS.filter((v) =>
+          SRC.some((r) => {
+            const val = r[v.bucketPriceCol];
+            return (
+              val !== null &&
+              val !== undefined &&
+              val !== "" &&
+              Number(val) !== 0
+            );
+          }),
+        );
+
         const bucketData = PRICE_BUCKETS.map((pb, i) => {
           const rows = vendorRows.filter((r) => {
-            const price = Number(r[vd.priceCol]);
+            const price = Number(r[vd.bucketPriceCol]);
             return !isNaN(price) && price >= pb.min && price < pb.max;
           });
           const count = rows.length;
 
-          // Avg vendor % vs PC for diamonds in this price bucket
-          const pctVals = rows
-            .map((r) => getPct(r, vd))
-            .filter((v) => v !== null);
-          const avgPct = pctVals.length
-            ? pctVals.reduce((a, b) => a + b, 0) / pctVals.length
-            : null;
+          const allAvgPcts = activeVendors.map((av) => {
+            const vals = rows
+              .map((r) => getPct(r, av))
+              .filter((v) => v !== null);
+            const avg = vals.length
+              ? vals.reduce((a, b) => a + b, 0) / vals.length
+              : null;
+            return { vd: av, avg };
+          });
 
-          // Also avg PC price for context
           const pcVals = rows
             .map((r) => Number(r["PC Price USD"]))
             .filter((v) => !isNaN(v) && v > 0);
@@ -2003,10 +2040,9 @@
             ? pcVals.reduce((a, b) => a + b, 0) / pcVals.length
             : null;
 
-          return { pb, count, avgPct, avgPC, idx: i };
+          return { pb, count, allAvgPcts, avgPC, idx: i };
         });
 
-        // Only show non-empty buckets
         const nonEmpty = bucketData.filter((b) => b.count > 0);
         const maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
 
@@ -2018,30 +2054,38 @@
         }
 
         grid.innerHTML = nonEmpty
-          .map(({ pb, count, avgPct, avgPC, idx }) => {
+          .map(({ pb, count, allAvgPcts, avgPC, idx }) => {
             const isActive = activePriceBucket === idx;
             const pctOfTotal = ((count / total) * 100).toFixed(1);
             const barW = ((count / maxCount) * 100).toFixed(1);
 
-            // Avg % badge color
-            const avgPctColor =
-              avgPct === null
-                ? "var(--muted)"
-                : avgPct < 0
-                  ? "#3ecf8e"
-                  : avgPct < 100
-                    ? "#60a5fa"
-                    : avgPct < 200
-                      ? "#c9a84c"
-                      : "#f87171";
-
-            const avgPctStr =
-              avgPct === null
-                ? "—"
-                : `${avgPct >= 0 ? "+" : ""}${avgPct.toFixed(1)}%`;
+            const avgRows = allAvgPcts
+              .map(({ vd: av, avg }) => {
+                const valStr =
+                  avg === null
+                    ? "—"
+                    : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
+                const valColor =
+                  avg === null
+                    ? "var(--muted)"
+                    : avg < 0
+                      ? "#3ecf8e"
+                      : avg < 100
+                        ? "#60a5fa"
+                        : avg < 200
+                          ? "#c9a84c"
+                          : "#f87171";
+                return `<div class="pb-avg-item">
+              <span class="pb-avg-label" style="color:${av.color}">${av.label} vs PC</span>
+              <span class="pb-avg-val" style="color:${valColor}">${valStr}</span>
+            </div>`;
+              })
+              .join("");
 
             const avgPCStr =
-              avgPC !== null ? `Avg PC: $${avgPC.toFixed(0)}` : "";
+              avgPC !== null
+                ? `<div class="pb-avg-item"><span class="pb-avg-label">Avg PC Price</span><span class="pb-avg-val" style="color:var(--muted)">$${avgPC.toFixed(0)}</span></div>`
+                : "";
 
             return `
             <div class="price-bucket-card ${isActive ? "active" : ""}"
@@ -2049,20 +2093,13 @@
                  onclick="togglePriceBucket(${idx})">
               <div class="pb-range">${pb.label}</div>
               <div class="pb-count">${count.toLocaleString()}</div>
-              <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of vendor</div>
+              <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
               <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-              <div class="pb-avg-row">
-                <div class="pb-avg-item">
-                  <span class="pb-avg-label">Avg % vs PC</span>
-                  <span class="pb-avg-val" style="color:${avgPctColor}">${avgPctStr}</span>
-                </div>
-                ${avgPCStr ? `<div class="pb-avg-item"><span class="pb-avg-label">${avgPCStr}</span></div>` : ""}
-              </div>
+              <div class="pb-avg-row">${avgRows}${avgPCStr}</div>
             </div>`;
           })
           .join("");
 
-        // Update filter tag
         const tag = document.getElementById("activePriceBucketTag");
         if (activePriceBucket !== null) {
           const pb = PRICE_BUCKETS[activePriceBucket];
@@ -2176,11 +2213,41 @@
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
+        // Show in table title which source is active
+        const tableTitle = document.getElementById("tableSourceLabel");
+        if (tableTitle) {
+          if (activePriceBucket !== null && PARTIAL_DATA.length) {
+            tableTitle.textContent = "· showing compare_partial.json (matched)";
+            tableTitle.style.color = "#60a5fa";
+          } else {
+            tableTitle.textContent = "· showing compare.json";
+            tableTitle.style.color = "var(--muted)";
+          }
+        }
         renderVendorTabs();
         renderBuckets();
         renderPriceVendorTabs();
         renderPriceBuckets();
         renderTable(filteredData);
+      }
+
+      // ─── PARTIAL DATA (compare_partial.json) ─────────────────────────────────
+      async function loadPartialData() {
+        try {
+          const data = await api("GET", "/api/data/compare_partial.json");
+          if (Array.isArray(data)) {
+            PARTIAL_DATA = data;
+            toast(
+              `Partial data loaded — ${data.length.toLocaleString()} matched records`,
+              "success",
+              3000,
+            );
+            render(); // re-render price buckets with partial data
+          }
+        } catch (e) {
+          // Silently fall back — partial file may not exist yet
+          PARTIAL_DATA = [];
+        }
       }
 
       // ─── PIPELINE ─────────────────────────────────────────────────────────────
@@ -2207,6 +2274,7 @@
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
+            loadPartialData();
           } else {
             st.textContent = `✗ Error (code ${r.returncode})`;
             st.style.color = "var(--red)";
@@ -2282,6 +2350,8 @@
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
+            // Auto-load partial data for price buckets
+            loadPartialData();
           } else {
             hideLoading();
             toast(
