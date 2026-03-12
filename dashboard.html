@@ -22,6 +22,7 @@
         --muted: #6b6b8a;
         --font-mono: "DM Mono", monospace;
         --font-display: "Playfair Display", serif;
+        --br-vs-lg: #f472b6;
       }
       *,
       *::before,
@@ -37,7 +38,7 @@
         min-height: 100vh;
       }
 
-      /* LOGIN */
+      /* ── LOGIN ─────────────────────────────────────────────── */
       #loginOverlay {
         position: fixed;
         inset: 0;
@@ -301,7 +302,7 @@
         letter-spacing: 0.08em;
       }
 
-      /* LOADING */
+      /* ── LOADING ───────────────────────────────────────────── */
       #loadingOverlay {
         position: fixed;
         inset: 0;
@@ -341,7 +342,7 @@
         color: var(--muted);
       }
 
-      /* TOAST */
+      /* ── TOAST ────────────────────────────────────────────── */
       #toast {
         position: fixed;
         bottom: 24px;
@@ -378,7 +379,288 @@
         color: var(--accent);
       }
 
-      /* TOPBAR */
+      /* ── BR vs LG MODAL ───────────────────────────────────── */
+      #brVsLgModal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        animation: modalFadeIn 0.25s ease both;
+      }
+      #brVsLgModal.open {
+        display: flex;
+      }
+      @keyframes modalFadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .modal-box {
+        background: var(--card);
+        border: 1px solid var(--br-vs-lg);
+        border-radius: 16px;
+        width: 100%;
+        max-width: 1100px;
+        max-height: 88vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow:
+          0 0 60px rgba(244, 114, 182, 0.15),
+          0 32px 80px rgba(0, 0, 0, 0.7);
+        animation: modalSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+        overflow: hidden;
+      }
+      @keyframes modalSlideIn {
+        from {
+          transform: translateY(30px) scale(0.97);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0) scale(1);
+          opacity: 1;
+        }
+      }
+      .modal-header {
+        padding: 22px 28px 18px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        background: linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--br-vs-lg) 8%, var(--card)),
+          var(--card)
+        );
+        flex-shrink: 0;
+      }
+      .modal-header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .modal-title {
+        font-family: var(--font-display);
+        font-size: 1.25rem;
+        color: var(--br-vs-lg);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .modal-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .modal-pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .modal-pill {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.65rem;
+        font-weight: 500;
+        border: 1px solid;
+        white-space: nowrap;
+      }
+      .modal-close {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 1.1rem;
+        transition: all 0.18s;
+        flex-shrink: 0;
+      }
+      .modal-close:hover {
+        border-color: var(--red);
+        color: var(--red);
+        background: color-mix(in srgb, var(--red) 10%, var(--surface));
+      }
+
+      .modal-controls {
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        background: var(--surface);
+      }
+      .modal-filter-label {
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .modal-filter-btn {
+        padding: 5px 14px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        transition: all 0.18s;
+      }
+      .modal-filter-btn:hover {
+        border-color: var(--br-vs-lg);
+        color: var(--br-vs-lg);
+      }
+      .modal-filter-btn.active {
+        background: color-mix(in srgb, var(--br-vs-lg) 15%, var(--card));
+        border-color: var(--br-vs-lg);
+        color: var(--br-vs-lg);
+      }
+      .modal-search-inp {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 6px 12px;
+        border-radius: 6px;
+        outline: none;
+        width: 180px;
+        transition: border-color 0.2s;
+      }
+      .modal-search-inp:focus {
+        border-color: var(--br-vs-lg);
+      }
+      .modal-search-inp::placeholder {
+        color: var(--muted);
+      }
+
+      .modal-body {
+        flex: 1;
+        overflow: auto;
+      }
+      .modal-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.73rem;
+      }
+      .modal-table thead th {
+        background: var(--surface);
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s;
+      }
+      .modal-table thead th:hover {
+        color: var(--br-vs-lg);
+      }
+      .modal-table thead th.sort-asc::after {
+        content: " ↑";
+        color: var(--br-vs-lg);
+      }
+      .modal-table thead th.sort-desc::after {
+        content: " ↓";
+        color: var(--br-vs-lg);
+      }
+      .modal-table tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: background 0.1s;
+      }
+      .modal-table tbody tr:last-child {
+        border-bottom: none;
+      }
+      .modal-table tbody tr:hover {
+        background: var(--surface);
+      }
+      .modal-table tbody td {
+        padding: 8px 14px;
+        white-space: nowrap;
+      }
+      .in-pc-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.6rem;
+        font-weight: 600;
+      }
+      .in-pc-yes {
+        background: color-mix(in srgb, var(--green) 15%, transparent);
+        color: var(--green);
+        border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+      }
+      .in-pc-no {
+        background: color-mix(in srgb, var(--red) 15%, transparent);
+        color: var(--red);
+        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+      }
+
+      .modal-footer {
+        padding: 12px 28px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        flex-shrink: 0;
+        background: var(--surface);
+      }
+      .modal-footer-info {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .modal-pagination {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .mpg-btn {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        font-family: var(--font-mono);
+        transition: all 0.15s;
+      }
+      .mpg-btn.active {
+        background: var(--br-vs-lg);
+        color: #0a0a0f;
+        border-color: var(--br-vs-lg);
+        font-weight: 600;
+      }
+      .mpg-btn:hover:not(.active) {
+        border-color: var(--br-vs-lg);
+        color: var(--br-vs-lg);
+      }
+
+      /* ── TOPBAR ───────────────────────────────────────────── */
       .topbar {
         background: var(--surface);
         border-bottom: 1px solid var(--border);
@@ -502,7 +784,7 @@
         }
       }
 
-      /* HEADER */
+      /* ── HEADER ───────────────────────────────────────────── */
       .header {
         padding: 28px 40px 22px;
         background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
@@ -550,7 +832,7 @@
         letter-spacing: 0.08em;
       }
 
-      /* CONTROLS */
+      /* ── CONTROLS ─────────────────────────────────────────── */
       .controls {
         padding: 16px 40px;
         background: var(--surface);
@@ -572,7 +854,7 @@
         letter-spacing: 0.1em;
       }
 
-      /* MAIN */
+      /* ── MAIN ─────────────────────────────────────────────── */
       .main {
         padding: 28px 40px;
       }
@@ -592,11 +874,7 @@
         background: var(--border);
       }
 
-      /* ═══════════════════════════════════════════════════════
-         VENDOR-TAB BUCKET SECTION
-         ═══════════════════════════════════════════════════════ */
-
-      /* Vendor selector tabs */
+      /* ── VENDOR TABS ──────────────────────────────────────── */
       .vendor-tabs {
         display: flex;
         gap: 6px;
@@ -652,7 +930,7 @@
         color: var(--vcolor, var(--accent));
       }
 
-      /* Classic bucket cards (original style, now per-vendor) */
+      /* ── BUCKET CARDS ─────────────────────────────────────── */
       .buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -719,8 +997,6 @@
         background: var(--bucket-color, var(--accent));
         transition: width 0.5s ease;
       }
-
-      /* Active filter tag shown below buckets */
       .bucket-filter-tag {
         display: inline-flex;
         align-items: center;
@@ -743,7 +1019,7 @@
         opacity: 0.7;
       }
 
-      /* PC PRICE BUCKETS */
+      /* ── PRICE BUCKETS ────────────────────────────────────── */
       .price-buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -839,7 +1115,7 @@
         transition: width 0.5s ease;
       }
 
-      /* TABLE */
+      /* ── TABLE ────────────────────────────────────────────── */
       .tabs {
         display: flex;
         gap: 4px;
@@ -972,7 +1248,7 @@
         margin-bottom: 8px;
       }
 
-      /* STATS PANEL */
+      /* ── STATS PANEL ──────────────────────────────────────── */
       .stats-panel {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1052,6 +1328,42 @@
         font-weight: 600;
       }
 
+      /* ── BR vs LG stats card special styles ──────────────── */
+      .brvslg-card {
+        cursor: pointer;
+        transition: all 0.2s;
+        border-color: color-mix(
+          in srgb,
+          var(--br-vs-lg) 40%,
+          var(--border)
+        ) !important;
+      }
+      .brvslg-card:hover {
+        border-color: var(--br-vs-lg) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(244, 114, 182, 0.15);
+      }
+      .brvslg-card::before {
+        background: var(--br-vs-lg) !important;
+      }
+      .brvslg-open-hint {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        font-size: 0.65rem;
+        color: var(--br-vs-lg);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .brvslg-arrow {
+        font-size: 0.9rem;
+        transition: transform 0.2s;
+      }
+      .brvslg-card:hover .brvslg-arrow {
+        transform: translateX(3px);
+      }
+
       @media (max-width: 768px) {
         .header,
         .controls,
@@ -1066,21 +1378,22 @@
           padding: 32px 24px;
           margin: 16px;
         }
-        .vendor-buckets-wrap {
-          flex-direction: column;
+        .modal-box {
+          max-height: 95vh;
         }
-        .vendor-column {
-          border-right: none;
-          border-bottom: 1px solid var(--border);
+        .modal-header,
+        .modal-controls,
+        .modal-footer {
+          padding: 14px 16px;
         }
-        .vendor-column:last-child {
-          border-bottom: none;
+        .modal-body table {
+          font-size: 0.68rem;
         }
       }
     </style>
   </head>
   <body>
-    <!-- LOGIN OVERLAY -->
+    <!-- ── LOGIN ──────────────────────────────────────────────── -->
     <div id="loginOverlay">
       <div class="login-card">
         <div class="login-success-overlay" id="loginSuccess">
@@ -1124,7 +1437,93 @@
     </div>
     <div id="toast"></div>
 
-    <!-- TOP BAR -->
+    <!-- ═══════════════════════════════════════════════════════════
+         BR vs LG MODAL
+    ═══════════════════════════════════════════════════════════ -->
+    <div
+      id="brVsLgModal"
+      onclick="if (event.target === this) closeBrVsLgModal();"
+    >
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">
+              <span>💠</span>
+              Brilliance × Loose-Grown Overlap
+            </div>
+            <div class="modal-sub">
+              Diamonds whose certificate ID appears in
+              <strong style="color: #60a5fa">Brilliance</strong> AND
+              <strong style="color: #3ecf8e">Loose-Grown</strong> — with PC
+              price where available
+            </div>
+          </div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              flex-wrap: wrap;
+            "
+          >
+            <div class="modal-pills" id="modalStatPills"></div>
+            <button
+              class="modal-close"
+              onclick="closeBrVsLgModal()"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-controls">
+          <span class="modal-filter-label">Filter:</span>
+          <button
+            class="modal-filter-btn active"
+            id="mfAll"
+            onclick="setModalFilter('all')"
+          >
+            All
+          </button>
+          <span style="flex: 1"></span>
+          <input
+            class="modal-search-inp"
+            id="modalSearchInp"
+            placeholder="Search cert…"
+            oninput="onModalSearch()"
+          />
+        </div>
+
+        <div class="modal-body">
+          <table class="modal-table">
+            <thead>
+              <tr>
+                <th onclick="sortModal('diamond_id')">Diamond ID</th>
+                <th onclick="sortModal('shape')">Shape</th>
+                <th onclick="sortModal('color')">Color</th>
+                <th onclick="sortModal('clarity')">Clarity</th>
+                <th onclick="sortModal('cut')">Cut</th>
+                <th onclick="sortModal('caratWeight')">Carat</th>
+                <th onclick="sortModal('loose-grown Price USD')">LG Price</th>
+                <th onclick="sortModal('brilliance Price USD')">BR Price</th>
+                <th onclick="sortModal('brilliance -30% USD')">BR -30%</th>
+                <th onclick="sortModal('BR -30% vs LG USD')">BR-30% vs LG $</th>
+                <th onclick="sortModal('BR -30% vs LG %')">BR-30% vs LG %</th>
+              </tr>
+            </thead>
+            <tbody id="modalTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="modal-footer">
+          <div class="modal-footer-info" id="modalFooterInfo"></div>
+          <div class="modal-pagination" id="modalPagination"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TOPBAR ──────────────────────────────────────────────── -->
     <div class="topbar">
       <div class="topbar-section">
         <label>Dataset</label>
@@ -1193,7 +1592,7 @@
       </div>
     </div>
 
-    <!-- HEADER -->
+    <!-- ── HEADER ──────────────────────────────────────────────── -->
     <div class="header">
       <div>
         <h1>💎 Diamond Price Dashboard</h1>
@@ -1214,15 +1613,8 @@
       </div>
     </div>
 
-    <!-- CONTROLS -->
+    <!-- ── CONTROLS ────────────────────────────────────────────── -->
     <div class="controls">
-      <select id="datasetSelect" style="display: none">
-        <option value="compare.json" selected>compare.json</option>
-      </select>
-      <select id="modeSelect" style="display: none">
-        <option value="lg" selected>lg</option>
-      </select>
-      <div id="vendorCompareGroup" style="display: none"></div>
       <div class="control-group">
         <label>PC Price Range</label>
         <div style="display: flex; gap: 8px; align-items: center">
@@ -1262,8 +1654,9 @@
       </div>
     </div>
 
-    <!-- MAIN -->
+    <!-- ── MAIN ───────────────────────────────────────────────── -->
     <div class="main">
+      <!-- Vendor Stats -->
       <div class="section-title" style="margin-bottom: 12px">
         Vendor Statistics
         <span
@@ -1288,18 +1681,14 @@
         </div>
       </div>
 
-      <!-- ═══ VENDOR-TAB BUCKET SECTION ═══ -->
+      <!-- % Range Buckets -->
       <div class="section-title">
         % Range Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
           >select vendor · click bucket to filter</span
         >
       </div>
-
-      <!-- Vendor selector tabs (rendered by JS) -->
       <div class="vendor-tabs" id="vendorTabs"></div>
-
-      <!-- Active filter tag -->
       <div
         id="activeBucketTag"
         style="display: none"
@@ -1309,8 +1698,6 @@
         <span id="activeBucketTagText">Filtered</span>
         <span class="x">✕ clear</span>
       </div>
-
-      <!-- Classic bucket cards for selected vendor -->
       <div class="buckets-grid" id="bucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
           <div class="icon">💎</div>
@@ -1321,7 +1708,7 @@
         </div>
       </div>
 
-      <!-- ═══ VENDOR PRICE BUCKETS SECTION ═══ -->
+      <!-- Vendor Price Buckets -->
       <div class="section-title" style="margin-top: 4px">
         Vendor Price Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
@@ -1329,11 +1716,7 @@
           to filter</span
         >
       </div>
-
-      <!-- Separate vendor tabs just for price buckets -->
       <div class="vendor-tabs" id="priceVendorTabs"></div>
-
-      <!-- Active price bucket filter tag -->
       <div
         id="activePriceBucketTag"
         style="display: none"
@@ -1343,7 +1726,6 @@
         <span id="activePriceBucketTagText">Filtered</span>
         <span class="x">✕ clear</span>
       </div>
-
       <div class="price-buckets-grid" id="priceBucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
           <div class="icon">💎</div>
@@ -1351,7 +1733,7 @@
         </div>
       </div>
 
-      <!-- Table section -->
+      <!-- Records Table -->
       <div class="section-title" style="margin-top: 32px">
         Records
         <span
@@ -1384,7 +1766,9 @@
               <th>LG Price</th>
               <th>Brilliance Price</th>
               <th>Brilliance -30%</th>
+              <th>LG vs PC $</th>
               <th>LG vs PC %</th>
+              <th>Brilliance vs PC $</th>
               <th>Brilliance vs PC %</th>
             </tr>
           </thead>
@@ -1397,14 +1781,13 @@
     <script>
       const API_BASE = "";
 
-      // ─── LOGIN ────────────────────────────────────────────────────────────────
+      // ── LOGIN ────────────────────────────────────────────────
       function toggleEye() {
         const inp = document.getElementById("loginPassword");
         const btn = document.getElementById("eyeBtn");
         inp.type = inp.type === "password" ? "text" : "password";
         btn.textContent = inp.type === "password" ? "👁" : "🙈";
       }
-
       async function attemptLogin() {
         const pw = document.getElementById("loginPassword").value;
         const inp = document.getElementById("loginPassword");
@@ -1447,7 +1830,7 @@
             err.textContent =
               res.status === 401
                 ? "Incorrect password. Please try again."
-                : data.detail || "Login failed. Please try again.";
+                : data.detail || "Login failed.";
             inp.value = "";
             inp.focus();
             btn.disabled = false;
@@ -1459,12 +1842,11 @@
           btn.textContent = "Unlock Dashboard";
         }
       }
-
       window.addEventListener("load", () =>
         setTimeout(() => document.getElementById("loginPassword").focus(), 300),
       );
 
-      // ─── DASHBOARD STATE ──────────────────────────────────────────────────────
+      // ── DASHBOARD STATE ──────────────────────────────────────
       let ALL_DATA = [],
         _RAW_DATA = [],
         filteredData = [],
@@ -1474,13 +1856,9 @@
         PAGE_SIZE = 20,
         priceMin = null,
         priceMax = null;
-      // compare_partial.json — used exclusively for Vendor Price Buckets
       let PARTIAL_DATA = [];
-
-      // Active % bucket filter: { vendorKey, bucketIdx } or null
-      let activeBucketFilter = null;
-      // Active PC price bucket filter: index into PRICE_BUCKETS, or null
-      let activePriceBucket = null;
+      let activeBucketFilter = null,
+        activePriceBucket = null;
 
       const BUCKETS = [
         { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
@@ -1491,7 +1869,6 @@
         { label: "400–499%", min: 400, max: 500, color: "#e879f9" },
         { label: "500%+", min: 500, max: Infinity, color: "#818cf8" },
       ];
-
       const PRICE_BUCKETS = [
         { label: "$0 – $150", min: 0, max: 151, color: "#34d399" },
         { label: "$151 – $300", min: 151, max: 301, color: "#60a5fa" },
@@ -1537,15 +1914,14 @@
         const n = Number(row[col]);
         return isNaN(n) ? null : n;
       }
-
-      function vendorHasData(vendorDef) {
+      function vendorHasData(vd) {
         return ALL_DATA.some((r) => {
-          const v = r[vendorDef.priceCol];
+          const v = r[vd.priceCol];
           return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
         });
       }
 
-      // ─── TOAST / LOADING ──────────────────────────────────────────────────────
+      // ── TOAST / LOADING ──────────────────────────────────────
       let toastTimer;
       function toast(msg, type = "info", dur = 3500) {
         const el = document.getElementById("toast");
@@ -1564,16 +1940,14 @@
       function hideLoading() {
         const ov = document.getElementById("loadingOverlay");
         ov.classList.add("hidden");
-        setTimeout(() => {
-          ov.style.display = "none";
-        }, 450);
+        setTimeout(() => (ov.style.display = "none"), 450);
       }
       function markLoaded(label) {
         document.getElementById("loadedLabel").textContent = label;
         document.getElementById("loadedIndicator").style.display = "flex";
       }
 
-      // ─── API HELPER ───────────────────────────────────────────────────────────
+      // ── API ───────────────────────────────────────────────────
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
         if (body) {
@@ -1586,15 +1960,13 @@
         }
         const res = await fetch(API_BASE + path, opts);
         if (!res.ok) {
-          const err = await res
-            .json()
-            .catch(() => ({ detail: res.statusText }));
-          throw new Error(err.detail || res.statusText);
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || res.statusText);
         }
         return res.json();
       }
 
-      // ─── FILE MANAGEMENT ─────────────────────────────────────────────────────
+      // ── FILE MANAGEMENT ──────────────────────────────────────
       async function refreshFileList() {
         try {
           const data = await api("GET", "/api/files");
@@ -1671,7 +2043,6 @@
           toast("Convert failed: " + e.message, "error");
         }
       }
-
       function ingestData(json, label = "") {
         if (!Array.isArray(json)) {
           hideLoading();
@@ -1695,23 +2066,19 @@
         toast(`Loaded ${json.length.toLocaleString()} records`, "success");
       }
 
-      // ─── FILTERS ──────────────────────────────────────────────────────────────
+      // ── FILTERS ───────────────────────────────────────────────
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
-        // When a price bucket is active → source rows from PARTIAL_DATA (matched diamonds)
-        // Otherwise → source from ALL_DATA (compare.json, normal behaviour)
         const BASE =
           activePriceBucket !== null && PARTIAL_DATA.length
             ? PARTIAL_DATA
             : ALL_DATA;
-
         filteredData = BASE.filter((row) => {
           const PC = row["PC Price USD"];
           if (priceMin !== null && PC < priceMin) return false;
           if (priceMax !== null && PC > priceMax) return false;
           if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
-          // % bucket filter
           if (activeBucketFilter) {
             const { vendorKey, bucketIdx } = activeBucketFilter;
             const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
@@ -1719,7 +2086,6 @@
             const p = getPct(row, vd);
             if (p === null || p < b.min || p >= b.max) return false;
           }
-          // Price bucket filter — uses bucketPriceCol (Brilliance uses -30%)
           if (activePriceBucket !== null) {
             const pb = PRICE_BUCKETS[activePriceBucket];
             const pvd = VENDOR_DEFS.find(
@@ -1751,7 +2117,6 @@
           return true;
         });
       }
-
       function toggleCommonOnly() {
         commonOnly = !commonOnly;
         document
@@ -1781,31 +2146,22 @@
         render();
       }
 
-      // ─── VENDOR TABS + CLASSIC BUCKET GRID ──────────────────────────────────
-      let selectedVendorKey = null; // which vendor tab is active
-
+      // ── VENDOR TABS ───────────────────────────────────────────
+      let selectedVendorKey = null;
       function renderVendorTabs() {
         const tabsEl = document.getElementById("vendorTabs");
         if (!ALL_DATA.length) {
           tabsEl.innerHTML = "";
           return;
         }
-
-        const activeVendors = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
-        if (!activeVendors.length) {
+        const av = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
+        if (!av.length) {
           tabsEl.innerHTML = "";
           return;
         }
-
-        // Auto-select first vendor if none selected or selected vendor has no data
-        if (
-          !selectedVendorKey ||
-          !activeVendors.find((v) => v.key === selectedVendorKey)
-        ) {
-          selectedVendorKey = activeVendors[0].key;
-        }
-
-        tabsEl.innerHTML = activeVendors
+        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
+          selectedVendorKey = av[0].key;
+        tabsEl.innerHTML = av
           .map((vd) => {
             const total = ALL_DATA.filter((r) => {
               const v = r[vd.priceCol];
@@ -1813,29 +2169,18 @@
                 v !== null && v !== undefined && v !== "" && Number(v) !== 0
               );
             }).length;
-            const isActive = selectedVendorKey === vd.key;
-            return `
-            <button class="vendor-tab ${isActive ? "active" : ""}"
-                    style="--vcolor:${vd.color}"
-                    onclick="selectVendor('${vd.key}')">
-              <span class="vendor-tab-dot" style="background:${vd.color}"></span>
-              ${vd.label}
-              <span class="v-count">${total.toLocaleString()}</span>
-            </button>`;
+            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')">
+            <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
           })
           .join("");
       }
-
       function selectVendor(key) {
         selectedVendorKey = key;
-        // Clear bucket filter if it was for a different vendor
-        if (activeBucketFilter && activeBucketFilter.vendorKey !== key) {
+        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
           activeBucketFilter = null;
-        }
         currentPage = 1;
         render();
       }
-
       function renderBuckets() {
         const grid = document.getElementById("bucketsGrid");
         if (!ALL_DATA.length) {
@@ -1847,7 +2192,6 @@
           grid.innerHTML = "";
           return;
         }
-
         const counts = BUCKETS.map(
           (b) =>
             ALL_DATA.filter((r) => {
@@ -1855,9 +2199,8 @@
               return p !== null && p >= b.min && p < b.max;
             }).length,
         );
-        const total = ALL_DATA.length;
-        const maxC = Math.max(...counts, 1);
-
+        const total = ALL_DATA.length,
+          maxC = Math.max(...counts, 1);
         grid.innerHTML = BUCKETS.map((b, i) => {
           const cnt = counts[i],
             isEmpty = cnt === 0;
@@ -1865,70 +2208,52 @@
             activeBucketFilter &&
             activeBucketFilter.vendorKey === vd.key &&
             activeBucketFilter.bucketIdx === i;
-          const pct = ((cnt / total) * 100).toFixed(1);
-          const barW = ((cnt / maxC) * 100).toFixed(1);
-          return `
-            <div class="bucket-card ${isActive ? "active" : ""}"
-                 style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}"
-                 onclick="${isEmpty ? "" : `toggleBucket(${i})`}">
-              <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
-              <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
-              <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
-              <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div>
-            </div>`;
+          const pct = ((cnt / total) * 100).toFixed(1),
+            barW = ((cnt / maxC) * 100).toFixed(1);
+          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="${isEmpty ? "" : "toggleBucket(" + i + ")"}">
+            <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+            <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+            <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
+            <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
         }).join("");
-
-        // Update active filter tag
         const tag = document.getElementById("activeBucketTag");
         if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
-          const b = BUCKETS[activeBucketFilter.bucketIdx];
           document.getElementById("activeBucketTagText").textContent =
-            `${vd.label} · ${b.label}`;
+            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
           tag.style.display = "inline-flex";
-        } else {
-          tag.style.display = "none";
-        }
+        } else tag.style.display = "none";
       }
-
       function toggleBucket(bucketIdx) {
         const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
         if (!vd) return;
-        if (
+        activeBucketFilter =
           activeBucketFilter &&
           activeBucketFilter.vendorKey === vd.key &&
           activeBucketFilter.bucketIdx === bucketIdx
-        ) {
-          activeBucketFilter = null;
-        } else {
-          activeBucketFilter = { vendorKey: vd.key, bucketIdx };
-        }
+            ? null
+            : { vendorKey: vd.key, bucketIdx };
         currentPage = 1;
         render();
       }
 
+      // ── PRICE BUCKETS ─────────────────────────────────────────
+      let selectedPriceVendorKey = null;
       function clearPriceBucketFilter() {
         activePriceBucket = null;
         currentPage = 1;
         render();
       }
-
       function togglePriceBucket(i) {
         activePriceBucket = activePriceBucket === i ? null : i;
         currentPage = 1;
         render();
       }
-
-      // Separate vendor selection for price buckets
-      let selectedPriceVendorKey = null;
-
       function selectPriceVendor(key) {
         selectedPriceVendorKey = key;
-        // Clear price bucket filter if vendor changes
         activePriceBucket = null;
         currentPage = 1;
         render();
       }
-
       function renderPriceVendorTabs() {
         const tabsEl = document.getElementById("priceVendorTabs");
         const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
@@ -1936,31 +2261,26 @@
           tabsEl.innerHTML = "";
           return;
         }
-
-        const activeVendors = VENDOR_DEFS.filter((vd) =>
+        const av = VENDOR_DEFS.filter((vd) =>
           SRC.some((r) => {
             const v = r[vd.bucketPriceCol];
             return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
           }),
         );
-        if (!activeVendors.length) {
+        if (!av.length) {
           tabsEl.innerHTML = "";
           return;
         }
-
         if (
           !selectedPriceVendorKey ||
-          !activeVendors.find((v) => v.key === selectedPriceVendorKey)
-        ) {
-          selectedPriceVendorKey = activeVendors[0].key;
-        }
-
+          !av.find((v) => v.key === selectedPriceVendorKey)
+        )
+          selectedPriceVendorKey = av[0].key;
         const sourceLabel = PARTIAL_DATA.length
-          ? `<span style="font-size:0.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
-          : `<span style="font-size:0.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
-
+          ? `<span style="font-size:.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
         tabsEl.innerHTML =
-          activeVendors
+          av
             .map((vd) => {
               const total = SRC.filter((r) => {
                 const v = r[vd.bucketPriceCol];
@@ -1968,42 +2288,30 @@
                   v !== null && v !== undefined && v !== "" && Number(v) !== 0
                 );
               }).length;
-              const isActive = selectedPriceVendorKey === vd.key;
-              return `
-            <button class="vendor-tab ${isActive ? "active" : ""}"
-                    style="--vcolor:${vd.color}"
-                    onclick="selectPriceVendor('${vd.key}')">
-              <span class="vendor-tab-dot" style="background:${vd.color}"></span>
-              ${vd.label}
-              <span class="v-count">${total.toLocaleString()}</span>
-            </button>`;
+              return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')">
+            <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
             })
             .join("") + sourceLabel;
       }
-
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
         const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-
         if (!SRC.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
           document.getElementById("activePriceBucketTag").style.display =
             "none";
           return;
         }
-
         const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
         if (!vd) {
           grid.innerHTML = "";
           return;
         }
-
         const vendorRows = SRC.filter((r) => {
           const v = r[vd.bucketPriceCol];
           return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
         });
         const total = vendorRows.length || 1;
-
         const activeVendors = VENDOR_DEFS.filter((v) =>
           SRC.some((r) => {
             const val = r[v.bucketPriceCol];
@@ -2015,14 +2323,12 @@
             );
           }),
         );
-
         const bucketData = PRICE_BUCKETS.map((pb, i) => {
           const rows = vendorRows.filter((r) => {
-            const price = Number(r[vd.bucketPriceCol]);
-            return !isNaN(price) && price >= pb.min && price < pb.max;
+            const p = Number(r[vd.bucketPriceCol]);
+            return !isNaN(p) && p >= pb.min && p < pb.max;
           });
           const count = rows.length;
-
           const allAvgPcts = activeVendors.map((av) => {
             const vals = rows
               .map((r) => getPct(r, av))
@@ -2032,33 +2338,27 @@
               : null;
             return { vd: av, avg };
           });
-
           const pcVals = rows
             .map((r) => Number(r["PC Price USD"]))
             .filter((v) => !isNaN(v) && v > 0);
           const avgPC = pcVals.length
             ? pcVals.reduce((a, b) => a + b, 0) / pcVals.length
             : null;
-
           return { pb, count, allAvgPcts, avgPC, idx: i };
         });
-
         const nonEmpty = bucketData.filter((b) => b.count > 0);
         const maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
-
         if (!nonEmpty.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No price data for ${vd.label}</h3></div>`;
           document.getElementById("activePriceBucketTag").style.display =
             "none";
           return;
         }
-
         grid.innerHTML = nonEmpty
           .map(({ pb, count, allAvgPcts, avgPC, idx }) => {
             const isActive = activePriceBucket === idx;
-            const pctOfTotal = ((count / total) * 100).toFixed(1);
-            const barW = ((count / maxCount) * 100).toFixed(1);
-
+            const pctOfTotal = ((count / total) * 100).toFixed(1),
+              barW = ((count / maxCount) * 100).toFixed(1);
             const avgRows = allAvgPcts
               .map(({ vd: av, avg }) => {
                 const valStr =
@@ -2075,31 +2375,20 @@
                         : avg < 200
                           ? "#c9a84c"
                           : "#f87171";
-                return `<div class="pb-avg-item">
-              <span class="pb-avg-label" style="color:${av.color}">${av.label} vs PC</span>
-              <span class="pb-avg-val" style="color:${valColor}">${valStr}</span>
-            </div>`;
+                return `<div class="pb-avg-item"><span class="pb-avg-label" style="color:${av.color}">${av.label} vs PC</span><span class="pb-avg-val" style="color:${valColor}">${valStr}</span></div>`;
               })
               .join("");
-
             const avgPCStr =
               avgPC !== null
                 ? `<div class="pb-avg-item"><span class="pb-avg-label">Avg PC Price</span><span class="pb-avg-val" style="color:var(--muted)">$${avgPC.toFixed(0)}</span></div>`
                 : "";
-
-            return `
-            <div class="price-bucket-card ${isActive ? "active" : ""}"
-                 style="--pb-color:${pb.color}"
-                 onclick="togglePriceBucket(${idx})">
-              <div class="pb-range">${pb.label}</div>
-              <div class="pb-count">${count.toLocaleString()}</div>
-              <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
-              <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-              <div class="pb-avg-row">${avgRows}${avgPCStr}</div>
-            </div>`;
+            return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})">
+            <div class="pb-range">${pb.label}</div><div class="pb-count">${count.toLocaleString()}</div>
+            <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
+            <div class="pb-avg-row">${avgRows}${avgPCStr}</div></div>`;
           })
           .join("");
-
         const tag = document.getElementById("activePriceBucketTag");
         if (activePriceBucket !== null) {
           const pb = PRICE_BUCKETS[activePriceBucket];
@@ -2107,12 +2396,10 @@
             ? `${vd.label} price: ${pb.label}`
             : "Filtered";
           tag.style.display = "inline-flex";
-        } else {
-          tag.style.display = "none";
-        }
+        } else tag.style.display = "none";
       }
 
-      // ─── TABLE ────────────────────────────────────────────────────────────────
+      // ── TABLE ─────────────────────────────────────────────────
       function fmtPct(v) {
         return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
       }
@@ -2130,7 +2417,6 @@
               ? "pct-neg"
               : "pct-zero";
       }
-
       function renderTable(data) {
         document.getElementById("tableCount").textContent =
           `— ${data.length.toLocaleString()} records`;
@@ -2164,7 +2450,31 @@
                 ? "price pc-cheaper"
                 : "price";
             const caD = ca === "" || ca === "nan" || ca === "Na" ? "—" : ca;
-            return `<tr><td class="cert">${String(r["certificate_number"] ?? "—")}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td></tr>`;
+            const lgD =
+              r["loose-grown vs PC USD"] != null
+                ? Number(r["loose-grown vs PC USD"])
+                : null;
+            const brD =
+              r["brilliance vs PC USD"] != null
+                ? Number(r["brilliance vs PC USD"])
+                : null;
+            const fmtDiff = (v) =>
+              v === null ? "—" : (v >= 0 ? "+" : "") + fmtUSD(v);
+            const diffCls = (v) =>
+              v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
+            return `<tr>
+            <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
+            <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
+            <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
+                 <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
+            <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
+         
+            <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td>
+            <td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
+            <td class="${diffCls(brD)}">${fmtDiff(brD)}</td>
+            <td class="${pctClass(brP)}">${fmtPct(brP)}</td>
+          </tr>`;
           })
           .join("");
         const d = 2;
@@ -2181,7 +2491,6 @@
         }
         document.getElementById("pagination").innerHTML = pages;
       }
-
       function setTableMode(m) {
         tableMode = m;
         currentPage = 1;
@@ -2208,20 +2517,19 @@
         }, 200);
       }
 
-      // ─── MASTER RENDER ────────────────────────────────────────────────────────
+      // ── MASTER RENDER ─────────────────────────────────────────
       function render() {
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
-        // Show in table title which source is active
-        const tableTitle = document.getElementById("tableSourceLabel");
-        if (tableTitle) {
+        const tl = document.getElementById("tableSourceLabel");
+        if (tl) {
           if (activePriceBucket !== null && PARTIAL_DATA.length) {
-            tableTitle.textContent = "· showing compare_partial.json (matched)";
-            tableTitle.style.color = "#60a5fa";
+            tl.textContent = "· showing compare_partial.json (matched)";
+            tl.style.color = "#60a5fa";
           } else {
-            tableTitle.textContent = "· showing compare.json";
-            tableTitle.style.color = "var(--muted)";
+            tl.textContent = "· showing compare.json";
+            tl.style.color = "var(--muted)";
           }
         }
         renderVendorTabs();
@@ -2231,7 +2539,7 @@
         renderTable(filteredData);
       }
 
-      // ─── PARTIAL DATA (compare_partial.json) ─────────────────────────────────
+      // ── PARTIAL DATA ──────────────────────────────────────────
       async function loadPartialData() {
         try {
           const data = await api("GET", "/api/data/compare_partial.json");
@@ -2242,15 +2550,207 @@
               "success",
               3000,
             );
-            render(); // re-render price buckets with partial data
+            render();
           }
         } catch (e) {
-          // Silently fall back — partial file may not exist yet
           PARTIAL_DATA = [];
         }
       }
 
-      // ─── PIPELINE ─────────────────────────────────────────────────────────────
+      // ══════════════════════════════════════════════════════════
+      // BR vs LG MODAL
+      // ══════════════════════════════════════════════════════════
+      let BR_VS_LG_DATA = [];
+      let brVsLgSearch = "";
+      let brVsLgPage = 1;
+      const BR_PAGE_SIZE = 25;
+      let brVsLgSortCol = null;
+      let brVsLgSortDir = 1; // 1=asc, -1=desc
+
+      async function openBrVsLgModal() {
+        document.getElementById("brVsLgModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+
+        if (!BR_VS_LG_DATA.length) {
+          document.getElementById("modalTableBody").innerHTML =
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
+              <div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading Brilliance × LG data…
+            </td></tr>`;
+          try {
+            const data = await api("GET", "/api/br-vs-lg");
+            BR_VS_LG_DATA = Array.isArray(data) ? data : [];
+            if (!BR_VS_LG_DATA.length) {
+              document.getElementById("modalTableBody").innerHTML =
+                `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
+                  <div style="font-size:1.4rem;margin-bottom:8px">⚠️</div>
+                  No data found. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first.
+                </td></tr>`;
+              return;
+            }
+          } catch (e) {
+            document.getElementById("modalTableBody").innerHTML =
+              `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)">
+                <div style="font-size:1.4rem;margin-bottom:8px">✗</div>
+                ${e.message.includes("404") ? "compare_br_vs_lg.json not found — run the pipeline first." : e.message}
+              </td></tr>`;
+            return;
+          }
+        }
+        renderModalTable();
+      }
+
+      function closeBrVsLgModal() {
+        document.getElementById("brVsLgModal").classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      // Escape key closes modal
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeBrVsLgModal();
+      });
+
+      function setModalFilter(f) {
+        brVsLgPage = 1;
+        document.getElementById("mfAll").classList.add("active");
+        renderModalTable();
+      }
+
+      function onModalSearch() {
+        brVsLgSearch = document.getElementById("modalSearchInp").value.trim();
+        brVsLgPage = 1;
+        renderModalTable();
+      }
+
+      function sortModal(col) {
+        if (brVsLgSortCol === col) brVsLgSortDir *= -1;
+        else {
+          brVsLgSortCol = col;
+          brVsLgSortDir = 1;
+        }
+        // Update header classes
+        document.querySelectorAll(".modal-table thead th").forEach((th) => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (th.getAttribute("onclick") === `sortModal('${col}')`) {
+            th.classList.add(brVsLgSortDir === 1 ? "sort-asc" : "sort-desc");
+          }
+        });
+        renderModalTable();
+      }
+
+      function getModalFiltered() {
+        let rows = BR_VS_LG_DATA;
+        if (brVsLgSearch)
+          rows = rows.filter((r) =>
+            String(r["diamond_id"] ?? r["certificate_number"] ?? "").includes(
+              brVsLgSearch,
+            ),
+          );
+        if (brVsLgSortCol) {
+          rows = [...rows].sort((a, b) => {
+            let va = a[brVsLgSortCol],
+              vb = b[brVsLgSortCol];
+            if (va === null || va === undefined)
+              va = brVsLgSortDir === 1 ? Infinity : -Infinity;
+            if (vb === null || vb === undefined)
+              vb = brVsLgSortDir === 1 ? Infinity : -Infinity;
+            if (typeof va === "string" && typeof vb === "string")
+              return brVsLgSortDir * va.localeCompare(vb);
+            return brVsLgSortDir * (va - vb);
+          });
+        }
+        return rows;
+      }
+
+      function renderModalTable() {
+        const all = BR_VS_LG_DATA;
+        const filtered = getModalFiltered();
+        const tp = Math.ceil(filtered.length / BR_PAGE_SIZE);
+        brVsLgPage = Math.min(brVsLgPage, tp || 1);
+        const page = filtered.slice(
+          (brVsLgPage - 1) * BR_PAGE_SIZE,
+          brVsLgPage * BR_PAGE_SIZE,
+        );
+
+        // Stat pill
+        document.getElementById("modalStatPills").innerHTML = `
+          <div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">
+            Total <strong style="color:var(--br-vs-lg)">${all.length.toLocaleString()}</strong>
+          </div>`;
+
+        if (!page.length) {
+          document.getElementById("modalTableBody").innerHTML =
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
+              <div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+        } else {
+          document.getElementById("modalTableBody").innerHTML = page
+            .map((r) => {
+              const cert = String(
+                r["diamond_id"] ?? r["certificate_number"] ?? "—",
+              );
+              const sh = r["shape"] || r["Shape"] || "—";
+              const co = r["color"] || r["Color"] || "—";
+              const cl = r["clarity"] || r["Clarity"] || "—";
+              const cu = r["cut"] || r["Cut"] || "—";
+              const ca = r["caratWeight"] || r["Carat"] || "—";
+              const caD =
+                ca === "" || ca === "nan" || ca === "Na" || ca === "None"
+                  ? "—"
+                  : ca;
+              const brLgD =
+                r["BR -30% vs LG USD"] != null
+                  ? Number(r["BR -30% vs LG USD"])
+                  : null;
+              const brLgP =
+                r["BR -30% vs LG %"] != null
+                  ? Number(r["BR -30% vs LG %"])
+                  : null;
+              const diffCls =
+                brLgD === null
+                  ? "pct-zero"
+                  : brLgD > 0
+                    ? "pct-pos"
+                    : brLgD < 0
+                      ? "pct-neg"
+                      : "pct-zero";
+              return `<tr>
+              <td class="cert">${cert}</td>
+              <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
+              <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
+              <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
+              <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
+              <td class="${diffCls}">${brLgD === null ? "—" : (brLgD >= 0 ? "+" : "") + fmtUSD(brLgD)}</td>
+              <td class="${pctClass(brLgP)}">${fmtPct(brLgP)}</td>
+            </tr>`;
+            })
+            .join("");
+        }
+
+        // Footer
+        document.getElementById("modalFooterInfo").textContent =
+          `Showing ${Math.min((brVsLgPage - 1) * BR_PAGE_SIZE + 1, filtered.length)}–${Math.min(brVsLgPage * BR_PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} records`;
+
+        // Pagination
+        const d = 2;
+        let pages = "";
+        for (let p = 1; p <= tp; p++) {
+          if (
+            p === 1 ||
+            p === tp ||
+            (p >= brVsLgPage - d && p <= brVsLgPage + d)
+          )
+            pages += `<button class="mpg-btn ${p === brVsLgPage ? "active" : ""}" onclick="brVsLgGoPage(${p})">${p}</button>`;
+          else if (p === brVsLgPage - d - 1 || p === brVsLgPage + d + 1)
+            pages += `<span style="color:var(--muted);padding:4px 4px;font-size:.68rem">…</span>`;
+        }
+        document.getElementById("modalPagination").innerHTML = pages;
+      }
+
+      function brVsLgGoPage(p) {
+        brVsLgPage = p;
+        renderModalTable();
+      }
+
+      // ── PIPELINE ──────────────────────────────────────────────
       async function runComparePipeline() {
         const btn = document.getElementById("runCompareBtn"),
           st = document.getElementById("runCompareStatus");
@@ -2275,6 +2775,8 @@
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
             loadPartialData();
+            // Reset BR vs LG cache so next open re-fetches
+            BR_VS_LG_DATA = [];
           } else {
             st.textContent = `✗ Error (code ${r.returncode})`;
             st.style.color = "var(--red)";
@@ -2290,7 +2792,7 @@
         }
       }
 
-      // ─── STATS ────────────────────────────────────────────────────────────────
+      // ── STATS ─────────────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
@@ -2322,7 +2824,11 @@
           luvansh: "#c9a84c",
           PC: "#e879f9",
         };
+
+        // PC card
         let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 PC (Precious Carbon)</div><div class="stats-card-value">${pcTotal.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div></div></div>`;
+
+        // Vendor cards
         for (const [name, v] of Object.entries(vendors)) {
           const color = COLORS[name] || "var(--accent2)",
             matched = v.matched || 0,
@@ -2334,11 +2840,38 @@
               : 0;
           html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div></div></div>`;
         }
+
+        // Dataset sizes card
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
+
+        // ═══ NEW: BR vs LG card ═══
+        const brVsLgCount = datasets.br_vs_lg || 0;
+        const brVsLgInPc = "—"; // we don't store this in status, shown in modal
+        html += `
+          <div class="stats-card brvslg-card" style="--card-color:var(--br-vs-lg)" onclick="openBrVsLgModal()">
+            <div class="stats-card-title" style="color:var(--br-vs-lg)">💠 Brilliance × LG Overlap</div>
+            <div class="stats-card-value" style="color:var(--br-vs-lg)">${brVsLgCount.toLocaleString()}</div>
+            <div class="stats-card-sub">Cert IDs in both BR &amp; Loose-Grown CSVs</div>
+            <div class="stats-row-grid" style="margin-top:10px">
+              <div class="stats-row-item">
+                <span class="label">Source</span>
+                <span class="val" style="font-size:.68rem;color:var(--muted)">compare_br_vs_lg.json</span>
+              </div>
+              <div class="stats-row-item">
+                <span class="label">PC price data</span>
+                <span class="val" style="font-size:.68rem;color:var(--muted)">where available</span>
+              </div>
+            </div>
+            <div class="brvslg-open-hint">
+              <span>Click to view full table</span>
+              <span class="brvslg-arrow">→</span>
+            </div>
+          </div>`;
+
         panel.innerHTML = html;
       }
 
-      // ─── STARTUP ──────────────────────────────────────────────────────────────
+      // ── STARTUP ───────────────────────────────────────────────
       async function startDashboard() {
         showLoading("Connecting to API…");
         try {
@@ -2350,7 +2883,6 @@
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
-            // Auto-load partial data for price buckets
             loadPartialData();
           } else {
             hideLoading();

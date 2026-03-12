@@ -13,13 +13,14 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-BASE_DIR             = Path(os.getcwd())
-COMPARE_DIR          = BASE_DIR / "compare"
-COMPARE_JSON         = COMPARE_DIR / "compare.json"          # common (all vendors)
-COMPARE_PARTIAL_JSON = COMPARE_DIR / "compare_partial.json"  # 2+ vendors
-COMPARE_ALL_JSON     = COMPARE_DIR / "compare_all.json"      # all PC certs
-COMPARE_CSV          = COMPARE_DIR / "compare.csv"
-DIAMOND_STATUS_JSON  = COMPARE_DIR / "diamond_status.json"
+BASE_DIR                 = Path(os.getcwd())
+COMPARE_DIR              = BASE_DIR / "compare"
+COMPARE_JSON             = COMPARE_DIR / "compare.json"
+COMPARE_PARTIAL_JSON     = COMPARE_DIR / "compare_partial.json"
+COMPARE_ALL_JSON         = COMPARE_DIR / "compare_all.json"
+COMPARE_BR_VS_LG_JSON    = COMPARE_DIR / "compare_br_vs_lg.json"   # ← NEW
+COMPARE_CSV              = COMPARE_DIR / "compare.csv"
+DIAMOND_STATUS_JSON      = COMPARE_DIR / "diamond_status.json"
 COMPARE_DIR.mkdir(exist_ok=True)
 
 # ── PASSWORD ──────────────────────────────────────────────────────────────────
@@ -37,7 +38,6 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/login")
 async def login(req: LoginRequest):
-    """Validate the dashboard password. Returns 200 on success, 401 on failure."""
     if req.password == DASHBOARD_PASSWORD:
         return {"status": "ok", "message": "Access granted"}
     raise HTTPException(status_code=401, detail="Incorrect password")
@@ -45,17 +45,19 @@ async def login(req: LoginRequest):
 
 @app.get("/api/login/config")
 async def login_config():
-    """
-    Returns the hashed (SHA-256) password so the frontend can validate
-    without the plain-text password ever being sent to the browser.
-    The frontend hashes user input client-side and compares.
-    """
     import hashlib
     pw_hash = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()
     return {"pw_hash": pw_hash}
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _clean_json_text(raw: str) -> str:
+    import re
+    raw = re.sub(r'\bNaN\b', 'null', raw)
+    raw = re.sub(r'\bInfinity\b', 'null', raw)
+    raw = re.sub(r'\b-Infinity\b', 'null', raw)
+    return raw
 
 def csv_to_json(csv_path: Path, output_path: Path, fill_na="") -> dict:
     if not csv_path.exists():
@@ -80,6 +82,20 @@ def _file_info(path: Path) -> dict:
     }
 
 
+INTERNAL_COLS = {"_vendor_count", "_all_matched", "_some_matched"}
+
+def _load_json_file(path: Path):
+    """Read a JSON file, sanitize NaN/Infinity, strip internal columns."""
+    raw  = path.read_text(encoding="utf-8")
+    raw  = _clean_json_text(raw)
+    data = json.loads(raw)
+    if isinstance(data, list) and data:
+        keys_to_strip = INTERNAL_COLS & set(data[0].keys())
+        if keys_to_strip:
+            data = [{k: v for k, v in row.items() if k not in keys_to_strip} for row in data]
+    return data
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
     html_path = BASE_DIR / "dashboard.html"
@@ -91,17 +107,30 @@ async def serve_dashboard():
 @app.get("/api/compare")
 async def get_default_compare():
     if not COMPARE_JSON.exists():
-        raise HTTPException(status_code=404, detail="compare/compare.json not found. Run diamond_compare.py first or upload a JSON/CSV via /api/upload.")
+        raise HTTPException(status_code=404, detail="compare/compare.json not found. Run diamond_compare.py first.")
     try:
-        import re as _re
-        raw = COMPARE_JSON.read_text(encoding="utf-8")
-        raw = _re.sub(r'\bNaN\b', 'null', raw)
-        raw = _re.sub(r'\bInfinity\b', 'null', raw)
-        raw = _re.sub(r'\b-Infinity\b', 'null', raw)
-        data = json.loads(raw)
-        return JSONResponse(content=data)
+        return JSONResponse(content=_load_json_file(COMPARE_JSON))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read compare.json: {e}")
+
+
+# ── NEW: Brilliance vs LG endpoint ───────────────────────────────────────────
+@app.get("/api/br-vs-lg")
+async def get_br_vs_lg():
+    """
+    Returns compare_br_vs_lg.json — diamonds present in BOTH Brilliance AND
+    Loose-Grown CSVs (inner join), with PC price appended where available.
+    """
+    if not COMPARE_BR_VS_LG_JSON.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="compare_br_vs_lg.json not found — run the pipeline first (⚙ Run Compare)."
+        )
+    try:
+        return JSONResponse(content=_load_json_file(COMPARE_BR_VS_LG_JSON))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read compare_br_vs_lg.json: {e}")
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @app.post("/api/convert")
@@ -111,50 +140,41 @@ async def convert_csv(csv_filename: str = Form(...), output_name: str = Form(Non
         csv_path = BASE_DIR / csv_filename
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {csv_filename}")
-    stem = Path(csv_filename).stem
-    out_name = output_name or f"{stem}.json"
+    stem        = Path(csv_filename).stem
+    out_name    = output_name or f"{stem}.json"
     output_path = COMPARE_DIR / out_name
     try:
         summary = csv_to_json(csv_path, output_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return {"status": "ok", "message": f"Converted {csv_filename} -> compare/{out_name}", "rows": summary["rows"], "columns": summary["columns"], "file": out_name}
+    return {"status": "ok", "message": f"Converted {csv_filename} -> compare/{out_name}",
+            "rows": summary["rows"], "columns": summary["columns"], "file": out_name}
 
 
 @app.post("/api/upload")
 async def upload_and_convert(file: UploadFile = File(...), output_name: str = Form(None)):
     filename = file.filename or ""
     suffix   = Path(filename).suffix.lower()
-
     if suffix not in (".csv", ".json"):
         raise HTTPException(status_code=400, detail="Only .csv or .json files are accepted")
-
     content = await file.read()
     stem    = Path(filename).stem
 
     if suffix == ".json":
         try:
-            import re as _re
-            raw = content.decode("utf-8")
-            raw = _re.sub(r'\bNaN\b', 'null', raw)
-            raw = _re.sub(r'\bInfinity\b', 'null', raw)
-            raw = _re.sub(r'\b-Infinity\b', 'null', raw)
+            raw  = content.decode("utf-8")
+            raw  = _clean_json_text(raw)
             data = json.loads(raw)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON — file could not be parsed: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
         if not isinstance(data, list):
-            raise HTTPException(status_code=400, detail="JSON must be an array of records (got object/other)")
+            raise HTTPException(status_code=400, detail="JSON must be an array of records")
         out_name    = output_name or filename
         output_path = COMPARE_DIR / out_name
         output_path.write_text(raw, encoding="utf-8")
-        return {
-            "status":  "ok",
-            "message": f"Uploaded JSON -> compare/{out_name}",
-            "rows":    len(data),
-            "columns": list(data[0].keys()) if data else [],
-            "file":    out_name,
-            "type":    "json",
-        }
+        return {"status": "ok", "message": f"Uploaded JSON -> compare/{out_name}",
+                "rows": len(data), "columns": list(data[0].keys()) if data else [],
+                "file": out_name, "type": "json"}
 
     import tempfile
     out_name    = output_name or f"{stem}.json"
@@ -171,14 +191,9 @@ async def upload_and_convert(file: UploadFile = File(...), output_name: str = Fo
             tmp_path.unlink(missing_ok=True)
         except Exception:
             pass
-    return {
-        "status":  "ok",
-        "message": f"Uploaded & converted {filename} -> compare/{out_name}",
-        "rows":    summary["rows"],
-        "columns": summary["columns"],
-        "file":    out_name,
-        "type":    "csv->json",
-    }
+    return {"status": "ok", "message": f"Uploaded & converted {filename} -> compare/{out_name}",
+            "rows": summary["rows"], "columns": summary["columns"],
+            "file": out_name, "type": "csv->json"}
 
 
 @app.get("/api/data/{filename}")
@@ -186,25 +201,14 @@ async def get_json_data(filename: str):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not filename.endswith(".json"):
-        raise HTTPException(status_code=400, detail=f"Only .json files are supported, got: {filename}")
+        raise HTTPException(status_code=400, detail=f"Only .json files are supported")
     json_path = COMPARE_DIR / filename
     if not json_path.exists():
         raise HTTPException(status_code=404, detail=f"JSON file not found: {filename}")
     try:
-        import re as _re
-        raw = json_path.read_text(encoding="utf-8")
-        raw = _re.sub(r'\bNaN\b', 'null', raw)
-        raw = _re.sub(r'\bInfinity\b', 'null', raw)
-        raw = _re.sub(r'\b-Infinity\b', 'null', raw)
-        data = json.loads(raw)
-        INTERNAL_COLS = {"_vendor_count", "_all_matched", "_some_matched"}
-        if isinstance(data, list) and data:
-            keys_to_strip = INTERNAL_COLS & set(data[0].keys())
-            if keys_to_strip:
-                data = [{k: v for k, v in row.items() if k not in keys_to_strip} for row in data]
-        return JSONResponse(content=data)
+        return JSONResponse(content=_load_json_file(json_path))
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid JSON in file {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"Invalid JSON in {filename}: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read {filename}: {e}")
 
@@ -230,29 +234,27 @@ async def run_compare():
     if not compare_script.exists():
         raise HTTPException(status_code=404, detail="diamond_compare.py not found in project root")
     try:
-        result = subprocess.run([sys.executable, str(compare_script)], capture_output=True, text=True, timeout=600)
-        success = result.returncode == 0
+        result = subprocess.run([sys.executable, str(compare_script)],
+                                capture_output=True, text=True, timeout=600)
+        success    = result.returncode == 0
+        rows       = 0
         compare_data = None
-        rows = 0
-        compare_json_info         = _file_info(COMPARE_JSON)
-        compare_partial_json_info = _file_info(COMPARE_PARTIAL_JSON)
-        compare_all_json_info     = _file_info(COMPARE_ALL_JSON)
-        compare_csv_info          = _file_info(COMPARE_CSV)
         if COMPARE_JSON.exists():
             try:
                 compare_data = json.loads(COMPARE_JSON.read_text(encoding="utf-8"))
                 rows = len(compare_data)
-            except Exception as parse_err:
-                compare_json_info["parse_error"] = str(parse_err)
+            except Exception:
+                pass
         return JSONResponse(content={
-            "status":    "ok" if success else "error",
+            "status":     "ok" if success else "error",
             "returncode": result.returncode,
             "rows":       rows,
             "files": {
-                "common":  {**compare_json_info,         "filename": "compare.json"},
-                "partial": {**compare_partial_json_info, "filename": "compare_partial.json"},
-                "all":     {**compare_all_json_info,     "filename": "compare_all.json"},
-                "csv":     {**compare_csv_info,          "filename": "compare.csv"},
+                "common":    {**_file_info(COMPARE_JSON),          "filename": "compare.json"},
+                "partial":   {**_file_info(COMPARE_PARTIAL_JSON),  "filename": "compare_partial.json"},
+                "all":       {**_file_info(COMPARE_ALL_JSON),      "filename": "compare_all.json"},
+                "br_vs_lg":  {**_file_info(COMPARE_BR_VS_LG_JSON), "filename": "compare_br_vs_lg.json"},
+                "csv":       {**_file_info(COMPARE_CSV),           "filename": "compare.csv"},
             },
             "compare_json": compare_data,
             "stdout": result.stdout[-3000:] if result.stdout else "",
@@ -269,9 +271,8 @@ async def get_diamond_status():
     if not DIAMOND_STATUS_JSON.exists():
         raise HTTPException(status_code=404, detail="diamond_status.json not found — run pipeline first")
     try:
-        import re as _re
-        raw = DIAMOND_STATUS_JSON.read_text(encoding="utf-8")
-        raw = _re.sub(r'\bNaN\b', 'null', raw)
+        raw  = DIAMOND_STATUS_JSON.read_text(encoding="utf-8")
+        raw  = _clean_json_text(raw)
         data = json.loads(raw)
         return JSONResponse(content=data)
     except Exception as e:
@@ -286,9 +287,10 @@ async def health():
         "json_files":      len(list(COMPARE_DIR.glob("*.json"))),
         "default_dataset": COMPARE_JSON.exists(),
         "datasets": {
-            "common":  COMPARE_JSON.exists(),
-            "partial": COMPARE_PARTIAL_JSON.exists(),
-            "all":     COMPARE_ALL_JSON.exists(),
+            "common":    COMPARE_JSON.exists(),
+            "partial":   COMPARE_PARTIAL_JSON.exists(),
+            "all":       COMPARE_ALL_JSON.exists(),
+            "br_vs_lg":  COMPARE_BR_VS_LG_JSON.exists(),
         },
         "compare_csv": COMPARE_CSV.exists(),
         "timestamp":   datetime.datetime.now().isoformat(),
@@ -297,4 +299,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="locahost", port=8000, reload=True)

@@ -12,15 +12,16 @@ load_dotenv()
 log = get_logger("comparator")
 
 # ── Directories ────────────────────────────────────────────────
-DIAMOND_FILES_DIR    = os.path.join(os.getcwd(), "diamond_files")
-COMPARE_DIR          = os.path.join(os.getcwd(), "compare")
-FILE_STATUS_JSON     = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
-COMPARE_CSV           = os.path.join(COMPARE_DIR, "compare.csv")           # common only CSV
-COMPARE_JSON          = os.path.join(COMPARE_DIR, "compare.json")          # ← DEFAULT: all vendors matched (common)
-COMPARE_PARTIAL_JSON  = os.path.join(COMPARE_DIR, "compare_partial.json")  # 2+ vendors matched
-COMPARE_ALL_JSON      = os.path.join(COMPARE_DIR, "compare_all.json")      # everything in PC
-DIAMOND_STATUS_JSON   = os.path.join(COMPARE_DIR, "diamond_status.json")   # vendor stats summary
-MAX_AGE_DAYS          = 7
+DIAMOND_FILES_DIR       = os.path.join(os.getcwd(), "diamond_files")
+COMPARE_DIR             = os.path.join(os.getcwd(), "compare")
+FILE_STATUS_JSON        = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
+COMPARE_CSV              = os.path.join(COMPARE_DIR, "compare.csv")
+COMPARE_JSON             = os.path.join(COMPARE_DIR, "compare.json")
+COMPARE_PARTIAL_JSON     = os.path.join(COMPARE_DIR, "compare_partial.json")
+COMPARE_ALL_JSON         = os.path.join(COMPARE_DIR, "compare_all.json")
+COMPARE_BR_VS_LG_JSON    = os.path.join(COMPARE_DIR, "compare_br_vs_lg.json")   # ← NEW
+DIAMOND_STATUS_JSON      = os.path.join(COMPARE_DIR, "diamond_status.json")
+MAX_AGE_DAYS             = 7
 
 os.makedirs(COMPARE_DIR, exist_ok=True)
 
@@ -40,13 +41,12 @@ def load_vendor(csv_path, cert_col, price_col, name):
     return df
 
 
-# Extra diamond attribute columns pulled from the PC (PC) CSV
 PC_EXTRA_COLS = {
-    "SHAPE":     "shape",
-    "COLOR":     "color",
-    "CLARITY":   "clarity",
-    "CUT":       "cut",
-    "CARAT":     "caratWeight",
+    "SHAPE":   "shape",
+    "COLOR":   "color",
+    "CLARITY": "clarity",
+    "CUT":     "cut",
+    "CARAT":   "caratWeight",
 }
 
 def load_PC(csv_path):
@@ -56,9 +56,7 @@ def load_PC(csv_path):
     df["certificate_number"] = df["certificate_number"].astype(str).str.strip()
     df["PC Price USD"] = pd.to_numeric(df["PC Price USD"], errors="coerce")
 
-    # Pull extra attribute columns if they exist in the CSV
     for src_col, dest_col in PC_EXTRA_COLS.items():
-        # try uppercase, lowercase, and title-case variants
         for variant in [src_col, src_col.lower(), src_col.title()]:
             if variant in df.columns:
                 df[dest_col] = df[variant].astype(str).str.strip().str.title()
@@ -73,46 +71,189 @@ def load_PC(csv_path):
 
 
 # ══════════════════════════════════════════════════════════════
-# STEP 1 — BUILD compare.csv + compare.json
-#           Only certificates present in PC are kept.
-#           Vendor rows with no matching PC cert ID are excluded.
+# NEW — BUILD compare_br_vs_lg.json
+#   Diamonds present in BOTH Brilliance AND Loose-Grown CSVs,
+#   regardless of whether they exist in PC.
+#   Includes their raw prices, any PC price if found, and
+#   % diff columns so the dashboard table can render them.
+# ══════════════════════════════════════════════════════════════
+
+LG_EXTRA_COLS = {
+    "shape":   "shape",
+    "carat":   "caratWeight",
+    "cut":     "cut",
+    "color":   "color",
+    "clarity": "clarity",
+}
+
+def load_lg_with_attrs(csv_path: str, cert_col: str, price_col: str) -> pd.DataFrame:
+    """Load LG CSV keeping certificate_number, price, and diamond attribute columns."""
+    log.debug(f"Loading LG with attrs from {csv_path}")
+    df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
+    log.info(f"  LG CSV columns: {list(df.columns)}")
+
+    # Normalise column names to lowercase for lookup
+    col_map = {c.lower().strip(): c for c in df.columns}
+
+    df["certificate_number"] = df[cert_col].astype(str).str.strip()
+    df = df.rename(columns={price_col: "loose-grown Price USD"})
+    df["loose-grown Price USD"] = pd.to_numeric(df["loose-grown Price USD"], errors="coerce")
+    keep = ["certificate_number", "loose-grown Price USD"]
+
+    for src_col_lower, dest_col in LG_EXTRA_COLS.items():
+        actual = col_map.get(src_col_lower)
+        if actual and actual in df.columns:
+            if dest_col == "caratWeight":
+                df[dest_col] = pd.to_numeric(df[actual], errors="coerce")
+            else:
+                df[dest_col] = df[actual].astype(str).str.strip().str.title()
+            keep.append(dest_col)
+            log.info(f"  LG extra col: '{actual}' → '{dest_col}'")
+        else:
+            log.warning(f"  LG CSV missing column for '{src_col_lower}' (looked in: {list(col_map.keys())})")
+
+    log.info(f"Loaded LG with attrs: {len(df):,} rows | kept: {keep}")
+    return df[[c for c in keep if c in df.columns]]
+
+
+def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
+    """
+    Build compare_br_vs_lg.json:
+      - Inner join of Brilliance ∩ Loose-Grown on certificate_number
+      - Uses LG CSV directly (with attrs) so shape/carat/cut/color/clarity are populated
+      - Renames certificate_number → diamond_id, fixes _x/_y merge cols
+      - NO PC data — only BR and LG prices + BR -30% vs LG comparison
+      - Returns count of records saved
+    """
+    log.info("=" * 50)
+    log.info("BUILDING compare_br_vs_lg.json (Brilliance ∩ LG)")
+
+    # Re-load LG with attribute columns (the loaded dict only has cert+price)
+    from dotenv import load_dotenv
+    load_dotenv()
+    lg_csv   = os.path.join(DIAMOND_FILES_DIR, get_env("LOOSE_GROWN_CSV", "loosegrowndiamond.csv"))
+    lg_cert  = get_env("LOOSE_GROWN_CERT_COL", "sku")
+    lg_price = get_env("LOOSE_GROWN_PRICE_COL", "price")
+    lg_df    = load_lg_with_attrs(lg_csv, lg_cert, lg_price)
+
+    br_df = loaded.get("brilliance")
+    pc_df = loaded.get("PC")
+
+    if br_df is None:
+        log.warning("brilliance not loaded — skipping br_vs_lg build")
+        return 0
+
+    # Inner join: only certs present in BOTH BR and LG
+    merged = pd.merge(lg_df, br_df, on="certificate_number", how="inner")
+    log.info(f"  LG rows: {len(lg_df):,}  |  BR rows: {len(br_df):,}  |  Inner join: {len(merged):,}")
+
+    # Keep only rows where BOTH LG and BR prices are present
+    before = len(merged)
+    merged = merged.dropna(subset=["loose-grown Price USD", "brilliance Price USD"])
+    merged = merged[merged["loose-grown Price USD"] > 0]
+    merged = merged[merged["brilliance Price USD"] > 0]
+    log.info(f"  After price filter: {len(merged):,} rows (dropped {before - len(merged):,} with null/zero prices)")
+
+    if merged.empty:
+        log.warning("No overlapping cert IDs between Brilliance and LG — br_vs_lg will be empty")
+        with open(COMPARE_BR_VS_LG_JSON, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        return 0
+
+    # ── Fix _x / _y duplicate columns from merge ──────────────
+    # LG has attrs (shape_x, color_x ...), BR has none → drop _y cols, rename _x → clean
+    for col in list(merged.columns):
+        if col.endswith("_y"):
+            merged = merged.drop(columns=[col])
+        elif col.endswith("_x"):
+            merged = merged.rename(columns={col: col[:-2]})
+
+    # ── Rename certificate_number → diamond_id ─────────────────
+    merged = merged.rename(columns={"certificate_number": "diamond_id"})
+
+    # ── Add discounted price columns (BR only, skip PC) ────────
+    for name, disc in discounts.items():
+        if name == "PC":
+            continue
+        price_col = f"{name} Price USD"
+        label     = f"-{round((1 - disc) * 100)}%"
+        disc_col  = f"{name} {label} USD"
+        if price_col in merged.columns:
+            merged[price_col] = pd.to_numeric(merged[price_col], errors="coerce").round(0)
+            merged[disc_col]  = (merged[price_col] * disc).round(0)
+
+    # ── Add BR -30% vs LG price comparison ────────────────────
+    br_disc      = discounts.get("brilliance", 0.70)
+    br_label     = f"-{round((1 - br_disc) * 100)}%"
+    br_disc_col  = f"brilliance {br_label} USD"
+    lg_price_col = "loose-grown Price USD"
+    if br_disc_col in merged.columns and lg_price_col in merged.columns:
+        br_vals = pd.to_numeric(merged[br_disc_col], errors="coerce").replace(0, float("nan"))
+        lg_vals = pd.to_numeric(merged[lg_price_col], errors="coerce").replace(0, float("nan"))
+        merged["BR -30% vs LG USD"] = (br_vals - lg_vals).round(0)
+        merged["BR -30% vs LG %"]   = ((br_vals - lg_vals) / lg_vals * 100).round(2)
+        log.info(f"Added BR -30% vs LG comparison  ({merged['BR -30% vs LG %'].notna().sum():,} valid rows)")
+
+    # ── Drop all PC-related and helper columns ─────────────────
+    pc_cols_to_drop = (
+        ["PC Price USD", "loose-grown vs PC %", "brilliance vs PC %",
+         "luvansh vs PC %", "vendors_matched", "in_pc",
+         "_all_matched", "_some_matched", "_vendor_count"]
+        + [c for c in merged.columns if c.startswith("PC ")]
+    )
+    merged = merged.drop(columns=pc_cols_to_drop, errors="ignore")
+
+    # Clean for JSON
+    import math
+
+    records = merged.where(merged.notna(), other=None).to_dict(orient="records")
+    clean = []
+    for row in records:
+        clean_row = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                clean_row[k] = None
+            else:
+                clean_row[k] = v
+        clean.append(clean_row)
+
+    with open(COMPARE_BR_VS_LG_JSON, "w", encoding="utf-8") as f:
+        json.dump(clean, f, ensure_ascii=False, indent=2)
+
+    log.info(f"Saved compare_br_vs_lg.json → {COMPARE_BR_VS_LG_JSON}")
+    log.info(f"  Total: {len(clean):,} records | columns: {list(merged.columns)}")
+    return len(clean)
+
+
+# ══════════════════════════════════════════════════════════════
+# STEP 1 — BUILD compare files
 # ══════════════════════════════════════════════════════════════
 
 def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
-                         common_records: list, partial_records: list, all_records: list):
-    """
-    Save diamond_status.json with:
-      - Total diamond count per vendor (raw CSV rows)
-      - PC total
-      - PC vs each vendor: matched / unmatched / common counts
-      - Common count (LG + Brilliance + PC all matched)
-      - Partial count (2+ vendors)
-      - Timestamp
-    """
+                         common_records: list, partial_records: list, all_records: list,
+                         br_vs_lg_count: int = 0):
     import math
 
     vendor_names = [n for n in loaded.keys() if n != "PC"]
     pc_total     = len(loaded["PC"]) if "PC" in loaded else 0
 
-    # Per-vendor raw counts
     vendor_totals = {}
     for name in vendor_names:
         vendor_totals[name] = len(loaded[name]) if name in loaded else 0
 
-    # PC vs each vendor pairwise stats (from combined df)
     pc_vs = {}
     for name in vendor_names:
         price_col = f"{name} Price USD"
         if price_col not in combined.columns:
-            pc_vs[name] = {"matched": 0,  "vendor_total": vendor_totals.get(name, 0)}
+            pc_vs[name] = {"matched": 0, "vendor_total": vendor_totals.get(name, 0)}
             continue
         matched   = int(combined[price_col].notna().sum())
         unmatched = int(combined[price_col].isna().sum())
         pc_vs[name] = {
-            "matched":            matched,
-            "vendor_total":       vendor_totals.get(name, 0),
-            "vendor_not_in_pc":   vendor_totals.get(name, 0) - matched,
-            "match_rate_pct":     round(matched / pc_total * 100, 2) if pc_total else 0,
+            "matched":          matched,
+            "vendor_total":     vendor_totals.get(name, 0),
+            "vendor_not_in_pc": vendor_totals.get(name, 0) - matched,
+            "match_rate_pct":   round(matched / pc_total * 100, 2) if pc_total else 0,
         }
 
     status = {
@@ -121,9 +262,10 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
         "vendor_totals": vendor_totals,
         "pc_vs_vendors": pc_vs,
         "dataset_counts": {
-            "common":   len(common_records),   # LG + Brilliance + PC all present
-            "partial":  len(partial_records),  # any 2+ vendors
-            "all_pc":   len(all_records),       # every PC cert
+            "common":     len(common_records),
+            "partial":    len(partial_records),
+            "all_pc":     len(all_records),
+            "br_vs_lg":   br_vs_lg_count,      # ← NEW
         },
     }
 
@@ -134,9 +276,9 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 def load_vendors_from_env():
     vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV", "env_cert": "LOOSE_GROWN_CERT_COL", "env_price": "LOOSE_GROWN_PRICE_COL", "env_disc": "LOOSE_GROWN_DISCOUNT", "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",                "default_price": "price",            "default_disc": "0.70"},
-        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",  "env_cert": "BRILLIANCE_CERT_COL",  "env_price": "BRILLIANCE_PRICE_COL",  "env_disc": "BRILLIANCE_DISCOUNT",  "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber",       "default_price": "price",            "default_disc": "0.70"},
-        {"name": "luvansh",     "env_csv": "LUVANSH_CSV",     "env_cert": "LUVANSH_CERT_COL",     "env_price": "LUVANSH_PRICE_COL",     "env_disc": "LUVANSH_DISCOUNT",     "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",                "default_price": "price",            "default_disc": "0.70"},
+        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber",       "default_price": "price",            "default_disc": "0.70"},
+        {"name": "luvansh",     "env_csv": "LUVANSH_CSV",      "env_cert": "LUVANSH_CERT_COL",      "env_price": "LUVANSH_PRICE_COL",      "env_disc": "LUVANSH_DISCOUNT",      "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
     ]
 
     vendors = []
@@ -149,108 +291,51 @@ def load_vendors_from_env():
             "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
             "cert_col": cert_col, "price_col": price_col, "discount": discount,
         })
-        log.debug(f"Vendor '{v['name']}': csv={csv_name}, cert={cert_col}, price={price_col}, discount={discount}")
 
     PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
     PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
     PC_discount = float(get_env("PC_DISCOUNT", "0.70"))
-
     return vendors, PC_csv, PC_discount
 
+
 def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
-    """
-    1. Use PC as the master key — LEFT JOIN all vendors onto PC.
-       Any vendor cert ID that does NOT exist in PC is excluded.
-    2. Compute discounted prices and % diffs vs PC for all rows.
-    3. Save THREE output files:
-         compare.json         ← DEFAULT: only rows where ALL vendors have a price (common)
-         compare_partial.json ← rows where 2+ vendors have a price
-         compare_all.json     ← every PC cert (even if no vendor matched)
-         compare.csv          ← same as compare.json (common only) for Excel use
-    Returns the full combined DataFrame (all rows, pre-filter).
-    """
     log.info("=" * 50)
-    log.info("STEP 1 — Building compare.csv / compare.json")
+    log.info("STEP 1 — Building compare files")
     log.info(f"Vendors loaded: {list(loaded.keys())}")
 
-    # ── Step A: PC-first left join — only PC cert IDs are kept ──
     if "PC" not in loaded:
-        log.warning("PC not loaded — falling back to outer join (no PC filter applied)")
+        log.warning("PC not loaded — falling back to outer join")
         combined = None
         for name, df in loaded.items():
-            combined = df if combined is None else pd.merge(
-                combined, df, on="certificate_number", how="outer"
-            )
+            combined = df if combined is None else pd.merge(combined, df, on="certificate_number", how="outer")
     else:
-        # Start from PC as the master list
         combined = loaded["PC"].copy()
         log.info(f"PC master list: {len(combined):,} cert IDs")
-
         for name, df in loaded.items():
             if name == "PC":
                 continue
-            before_vendor = len(df)
             combined = pd.merge(combined, df, on="certificate_number", how="left")
             matched = combined[f"{name} Price USD"].notna().sum()
-            excluded = before_vendor - matched
-            log.info(f"  '{name}': {matched:,} cert IDs matched PC  |  {excluded:,} excluded (not in PC)")
-
-        log.info("PC-first left join complete — only certs present in PC are retained")
+            log.info(f"  '{name}': {matched:,} matched PC")
 
     if combined is None or combined.empty:
-        log.error("No data loaded at all — aborting.")
+        log.error("No data loaded — aborting.")
         return pd.DataFrame()
 
     combined = combined.reset_index(drop=True)
-    log.info(f"After join: {len(combined):,} total certificate numbers (all from PC)")
-
-    # ── Step B: count how many vendors have a price per cert ─
-    price_cols = [
-        f"{name} Price USD"
-        for name in loaded.keys()
-        if f"{name} Price USD" in combined.columns
-    ]
-    log.info(f"Price columns: {price_cols}")
-
+    price_cols = [f"{name} Price USD" for name in loaded.keys() if f"{name} Price USD" in combined.columns]
     combined["_vendor_count"] = combined[price_cols].notna().sum(axis=1)
 
-    # Log distribution
-    dist = combined["_vendor_count"].value_counts().sort_index()
-    for cnt, num_certs in dist.items():
-        log.info(f"  Certs in exactly {cnt} vendor(s): {num_certs:,}")
-
-    # ── Step C: tag rows by coverage level ─────────────────────
-    # CORE vendors for "common" = LG + Brilliance + PC only
-    # Luvansh is excluded from the common check (sparse data — rarely matches)
     CORE_VENDORS = ["loose-grown", "brilliance", "PC"]
     core_present = [n for n in CORE_VENDORS if f"{n} Price USD" in combined.columns]
-    log.info(f"Core vendors for common check: {core_present}")
-
-    # _all_matched = every CORE vendor has a price (luvansh not required)
-    if core_present:
-        combined["_all_matched"] = combined[[f"{n} Price USD" for n in core_present]].notna().all(axis=1)
-    else:
-        combined["_all_matched"] = combined["_vendor_count"] >= 2
-
-    combined["_some_matched"] = combined["_vendor_count"] >= 2  # 2+ any vendors
-
-    dist = combined["_vendor_count"].value_counts().sort_index()
-    for cnt, num_certs in dist.items():
-        log.info(f"  Certs in exactly {cnt} vendor(s): {num_certs:,}")
+    combined["_all_matched"]  = combined[[f"{n} Price USD" for n in core_present]].notna().all(axis=1) if core_present else combined["_vendor_count"] >= 2
+    combined["_some_matched"] = combined["_vendor_count"] >= 2
 
     common_count  = combined["_all_matched"].sum()
     partial_count = combined["_some_matched"].sum()
-    log.info(f"  → Common (LG + Brilliance + PC):  {common_count:,}")
-    log.info(f"  → Partial (2+ vendors):            {partial_count:,}")
-    log.info(f"  → All PC certs:                    {len(combined):,}")
+    log.info(f"  Common (LG+BR+PC): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All PC: {len(combined):,}")
 
-    if common_count == 0:
-        log.warning("No certs found in LG + Brilliance + PC — compare.json (common) will be empty.")
-    if partial_count == 0:
-        log.error("No certs in ≥2 vendors — aborting.")
-        return pd.DataFrame()
-
-    # ── Step D: add discounted price columns ─────────────────
+    # Discounted price columns
     for name, disc in discounts.items():
         price_col = f"{name} Price USD"
         label     = f"-{round((1 - disc) * 100)}%"
@@ -259,18 +344,12 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
             combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
             combined[disc_col]  = (combined[price_col] * disc).round(0)
 
-    # ── Step E: add % diff columns vs PC ────────────────────
-    # Correct formula: ((Vendor -X% price - PC -X% price) / PC -X% price) * 100
-    # Example: LG=$284, PC=$244 → ((284-244)/244)*100 = +16.39%  NOT 284.00%
+    # % diff vs PC
     if "PC" in discounts and "PC Price USD" in combined.columns:
         PC_disc     = discounts["PC"]
         PC_label    = f"-{round((1 - PC_disc) * 100)}%"
         PC_disc_col = f"PC {PC_label} USD"
-
-        if PC_disc_col not in combined.columns:
-            log.error(f"PC discounted column '{PC_disc_col}' missing — cannot compute % diffs.")
-            log.error(f"Available columns: {[c for c in combined.columns if 'PC' in c]}")
-        else:
+        if PC_disc_col in combined.columns:
             for name in discounts:
                 if name == "PC":
                     continue
@@ -278,67 +357,60 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 label    = f"-{round((1 - disc) * 100)}%"
                 disc_col = f"{name} {label} USD"
                 pct_col  = f"{name} vs PC %"
-
                 if disc_col not in combined.columns:
-                    log.error(f"Vendor discounted column '{disc_col}' missing — skipping % diff for '{name}'.")
-                    log.error(f"Available columns: {[c for c in combined.columns if name in c]}")
                     continue
-
-                # Both prices must be non-null and non-zero for a valid % diff
                 vendor_price = pd.to_numeric(combined[disc_col], errors="coerce").replace(0, float("nan"))
                 PC_price     = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
+                combined[pct_col] = ((vendor_price - PC_price) / PC_price * 100).round(2)
+                log.info(f"Added % diff: {pct_col}  ({combined[pct_col].notna().sum():,} valid rows)")
 
-                combined[pct_col] = (
-                    (vendor_price - PC_price) / PC_price * 100
-                ).round(2)
+            # ── PC vs vendor $ diff columns ───────────────────────
+            # LG vs PC $  (LG price - PC -30%)
+            lg_price_col = "loose-grown Price USD"
+            if lg_price_col in combined.columns:
+                pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
+                lg_vals = pd.to_numeric(combined[lg_price_col], errors="coerce").replace(0, float("nan"))
+                combined["loose-grown vs PC USD"] = (lg_vals - pc_vals).round(0)
+                log.info(f"Added loose-grown vs PC USD  ({combined['loose-grown vs PC USD'].notna().sum():,} valid rows)")
 
-                valid_count = combined[pct_col].notna().sum()
-                log.info(f"Added % diff column: {pct_col}  ({valid_count:,} valid rows)")
-                # Log a sample so you can verify correctness in the logs
-                sample = combined[[disc_col, PC_disc_col, pct_col]].dropna().head(2)
-                for _, r in sample.iterrows():
-                    log.debug(f"  Check: ({r[disc_col]} - {r[PC_disc_col]}) / {r[PC_disc_col]} * 100 = {r[pct_col]}%")
+            # Brilliance vs PC $  (BR -30% - PC -30%)
+            br_disc     = discounts.get("brilliance", 0.70)
+            br_label    = f"-{round((1 - br_disc) * 100)}%"
+            br_disc_col = f"brilliance {br_label} USD"
+            if br_disc_col in combined.columns:
+                pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
+                br_vals = pd.to_numeric(combined[br_disc_col], errors="coerce").replace(0, float("nan"))
+                combined["brilliance vs PC USD"] = (br_vals - pc_vals).round(0)
+                log.info(f"Added brilliance vs PC USD  ({combined['brilliance vs PC USD'].notna().sum():,} valid rows)")
 
-    # ── Step F: add vendors_matched helper column ─────────────
     def vendor_list(row):
-        return ", ".join(
-            name for name in loaded.keys()
-            if pd.notna(row.get(f"{name} Price USD"))
-        )
+        return ", ".join(name for name in loaded.keys() if pd.notna(row.get(f"{name} Price USD")))
     combined["vendors_matched"] = combined.apply(vendor_list, axis=1)
 
-    # ── Step G: enforce exact column order ──────────────────────
-    # Order: cert | vendors_matched | attrs | LG cols | Brilliance cols | luvansh cols | PC cols
+    # Column ordering
     attr_cols = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
     base_cols = ["certificate_number", "vendors_matched"] + attr_cols
-
-    # Vendor order: LG first, then Brilliance, then luvansh, then PC last
     VENDOR_ORDER = ["loose-grown", "brilliance", "luvansh", "PC"]
-    # Any extra vendors not in the predefined order go after luvansh, before PC
     extra_vendors = [n for n in loaded.keys() if n not in VENDOR_ORDER and n != "PC"]
-    ordered_vendors = (
-        [n for n in VENDOR_ORDER if n in loaded and n != "PC"]
-        + extra_vendors
-        + (["PC"] if "PC" in loaded else [])
-    )
-
+    ordered_vendors = ([n for n in VENDOR_ORDER if n in loaded and n != "PC"] + extra_vendors + (["PC"] if "PC" in loaded else []))
     vendor_cols = []
     for name in ordered_vendors:
         disc  = discounts.get(name, 0.70)
         label = f"-{round((1 - disc) * 100)}%"
-        for col in [f"{name} Price USD", f"{name} {label} USD", f"{name} vs PC %"]:
+        # Price → discounted price → $ vs PC → % vs PC
+        for col in [
+            f"{name} Price USD",
+            f"{name} {label} USD",
+            f"{name} vs PC USD",
+            f"{name} vs PC %",
+        ]:
             if col in combined.columns:
                 vendor_cols.append(col)
-
     other_cols = [c for c in combined.columns if c not in base_cols + vendor_cols]
     combined   = combined[base_cols + vendor_cols + other_cols]
-    log.info(f"Column order: {list(combined.columns)}")
-    log.info(f"Diamond attribute columns included: {attr_cols if attr_cols else 'none (check PC CSV column names)'}")
 
-    # ── Step H: prepare clean JSON-ready dataframe ───────────
     def to_json_records(df: pd.DataFrame) -> list:
-        """Clean a dataframe for JSON: nullify 0-prices, NaN % diffs, and all NaN/Inf values."""
-        # Drop all internal helper columns — never expose to frontend
+        import math
         out = df.drop(columns=["_all_matched", "_some_matched", "_vendor_count"], errors="ignore").copy()
         p_cols = [c for c in out.columns if "Price USD" in c or c.endswith("USD")]
         for col in p_cols:
@@ -348,8 +420,6 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         for col in pct_cols:
             out[col] = pd.to_numeric(out[col], errors="coerce")
             out[col] = out[col].where(out[col].notna(), other=None)
-        # Final pass: replace ALL remaining NaN/Inf with None — json.dump will write null
-        import math
         records = out.where(out.notna(), other=None).to_dict(orient="records")
         clean = []
         for row in records:
@@ -362,44 +432,25 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
             clean.append(clean_row)
         return clean
 
-    # ── Step I: split into 3 datasets and save ────────────────
-    df_common  = combined[combined["_all_matched"]].copy()   # ALL vendors matched
-    df_partial = combined[combined["_some_matched"]].copy()  # 2+ vendors matched
-    df_all     = combined.copy()                             # every PC cert
+    df_common  = combined[combined["_all_matched"]].copy()
+    df_partial = combined[combined["_some_matched"]].copy()
+    df_all     = combined.copy()
 
-    # compare.json — DEFAULT — common only (all vendors present)
-    common_records = to_json_records(df_common)
+    common_records  = to_json_records(df_common)
+    partial_records = to_json_records(df_partial)
+    all_records     = to_json_records(df_all)
+
     with open(COMPARE_JSON, "w", encoding="utf-8") as f:
         json.dump(common_records, f, ensure_ascii=False, indent=2)
-    log.info(f"Saved compare.json (COMMON)   → {COMPARE_JSON}  ({len(common_records):,} records)")
-
-    # compare_partial.json — 2+ vendors matched
-    partial_records = to_json_records(df_partial)
     with open(COMPARE_PARTIAL_JSON, "w", encoding="utf-8") as f:
         json.dump(partial_records, f, ensure_ascii=False, indent=2)
-    log.info(f"Saved compare_partial.json    → {COMPARE_PARTIAL_JSON}  ({len(partial_records):,} records)")
-
-    # compare_all.json — everything from PC
-    all_records = to_json_records(df_all)
     with open(COMPARE_ALL_JSON, "w", encoding="utf-8") as f:
         json.dump(all_records, f, ensure_ascii=False, indent=2)
-    log.info(f"Saved compare_all.json (ALL)  → {COMPARE_ALL_JSON}  ({len(all_records):,} records)")
 
-    # compare.csv — common only (for Excel / analysis)
     df_common.drop(columns=["_all_matched", "_some_matched", "_vendor_count"], errors="ignore").to_csv(COMPARE_CSV, index=False)
-    log.info(f"Saved compare.csv (COMMON)    → {COMPARE_CSV}  ({len(df_common):,} rows × {len(df_common.columns)} cols)")
 
-    log.info("-" * 50)
-    log.info(f"STEP 1 COMPLETE")
-    log.info(f"  compare.json         (common,  all vendors) → {len(common_records):,} records")
-    log.info(f"  compare_partial.json (partial, 2+ vendors)  → {len(partial_records):,} records")
-    log.info(f"  compare_all.json     (all PC certs)         → {len(all_records):,} records")
-    log.info(f"  compare.csv          (common, for Excel)    → {len(df_common):,} rows")
-
-    # ── Step J: save diamond_status.json ─────────────────────
-    _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records)
-
-    return combined
+    log.info(f"compare.json ({len(common_records):,}) | compare_partial.json ({len(partial_records):,}) | compare_all.json ({len(all_records):,})")
+    return combined, common_records, partial_records, all_records
 
 
 # ══════════════════════════════════════════════════════════════
@@ -407,8 +458,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════
 
 def categorize_diff(val):
-    if pd.isna(val):
-        return "N/A"
+    if pd.isna(val): return "N/A"
     val = abs(val)
     if val <= 100:    return "0-100"
     elif val <= 200:  return "100-200"
@@ -428,28 +478,21 @@ DARK_CATEGORIES = {"1000+"}
 
 
 def _write_sheet_with_formatting(df, writer, sheet_name, highlight_col=None, category_col=None):
-    """Write a DataFrame to an Excel sheet with optional highlighting and category colors."""
     try:
         def highlight_loss(v):
             return ["background-color: #FF9999" if x < 0 else "" for x in v]
-
         if highlight_col and highlight_col in df.columns:
             styled = df.style.apply(highlight_loss, subset=[highlight_col])
             styled.to_excel(writer, sheet_name=sheet_name, index=False)
         else:
             df.to_excel(writer, sheet_name=sheet_name, index=False)
     except AttributeError:
-        log.warning("jinja2 not installed — writing without cell highlighting. Run: pip install jinja2")
         df.to_excel(writer, sheet_name=sheet_name, index=False)
 
     ws      = writer.sheets[sheet_name]
     headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-
-    # Bold headers
     for col_idx in range(1, ws.max_column + 1):
         ws.cell(row=1, column=col_idx).font = Font(bold=True)
-
-    # Color category column
     if category_col and category_col in headers:
         cat_col_idx = headers.index(category_col) + 1
         for row in range(2, len(df) + 2):
@@ -458,50 +501,34 @@ def _write_sheet_with_formatting(df, writer, sheet_name, highlight_col=None, cat
             color = CATEGORY_COLORS.get(str(cat), "FFFFFF")
             cell.fill = PatternFill("solid", start_color=color, fgColor=color)
             cell.font = Font(color="FFFFFF" if cat in DARK_CATEGORIES else "000000", bold=True)
-
-    # Auto-width
     for col_idx, col_cells in enumerate(ws.columns, 1):
         max_len = max((len(str(c.value)) if c.value else 0) for c in col_cells)
         ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 4, 40)
 
 
 def compare_two_from_combined(combined: pd.DataFrame, name_a, discount_a, name_b, discount_b) -> pd.DataFrame:
-    """Extract a pairwise sheet — only rows where BOTH vendors have a price."""
     label_a    = f"-{round((1 - discount_a) * 100)}%"
     label_b    = f"-{round((1 - discount_b) * 100)}%"
     price_a    = f"{name_a} Price USD"
     price_b    = f"{name_b} Price USD"
     disc_col_a = f"{name_a} {label_a} USD"
     disc_col_b = f"{name_b} {label_b} USD"
-
-    needed = ["certificate_number", "vendors_matched", price_a, disc_col_a, price_b, disc_col_b]
+    needed = ["certificate_number", price_a, disc_col_a, price_b, disc_col_b]
     avail  = [c for c in needed if c in combined.columns]
     df     = combined[avail].dropna(subset=[price_a, price_b]).copy()
-
     if df.empty:
-        log.warning(f"No overlapping rows for '{name_a}' vs '{name_b}' — skipping")
         return pd.DataFrame()
-
     compare_col = f"Compare ({name_b}{label_b} - {name_a}{label_a}) USD"
     if disc_col_a in df.columns and disc_col_b in df.columns:
         df[compare_col] = (df[disc_col_b] - df[disc_col_a]).round(2)
-
-    df = df.reset_index(drop=True)
-    log.info(f"Pairwise '{name_a}' vs '{name_b}': {len(df):,} rows")
-    return df
+    return df.reset_index(drop=True)
 
 
 def compare_all_three_from_combined(combined: pd.DataFrame, discounts: dict, names: list, writer):
-    """Build the A vs B vs C sheet — only rows where ALL THREE vendors have a price."""
-    log.info(f"Building '{' vs '.join(names)}' sheet")
-
     price_cols = [f"{n} Price USD" for n in names]
     df = combined.dropna(subset=price_cols).copy()
-
     if df.empty:
-        log.warning(f"No rows with all prices for {names} — skipping sheet")
         return False
-
     disc_cols = {}
     for name in names:
         disc     = discounts[name]
@@ -510,21 +537,17 @@ def compare_all_three_from_combined(combined: pd.DataFrame, discounts: dict, nam
         disc_cols[name] = disc_col
         if disc_col not in df.columns:
             df[disc_col] = (pd.to_numeric(df[f"{name} Price USD"], errors="coerce") * disc).round(0)
-
-    n       = names
+    n = names
     diff_ab = f"{n[0]} vs {n[1]} Diff USD"
     diff_bc = f"{n[1]} vs {n[2]} Diff USD"
     diff_ca = f"{n[2]} vs {n[0]} Diff USD"
-
     df[diff_ab]        = (df[disc_cols[n[0]]] - df[disc_cols[n[1]]]).abs().round(2)
     df[diff_bc]        = (df[disc_cols[n[1]]] - df[disc_cols[n[2]]]).abs().round(2)
     df[diff_ca]        = (df[disc_cols[n[2]]] - df[disc_cols[n[0]]]).abs().round(2)
     df["Min Diff USD"] = df[[diff_ab, diff_bc, diff_ca]].min(axis=1).round(2)
     df["Category"]     = df["Min Diff USD"].apply(categorize_diff)
-
     sheet_name = " vs ".join(names)[:31]
     _write_sheet_with_formatting(df, writer, sheet_name, category_col="Category")
-    log.info(f"Sheet '{sheet_name}': {len(df):,} rows")
     return True
 
 
@@ -532,89 +555,32 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     log.info("=" * 50)
     log.info("Starting vendor comparison pipeline")
 
-    # ── Load all vendor DataFrames ────────────────────────────
     loaded    = {}
     discounts = {}
-
     for v in vendors:
         loaded[v["name"]]    = load_vendor(v["csv"], v["cert_col"], v["price_col"], v["name"])
         discounts[v["name"]] = v.get("discount", default_discount)
-
     if PC_csv:
         loaded["PC"]    = load_PC(PC_csv)
         discounts["PC"] = PC_discount
 
-    # ── STEP 1: build compare.csv + compare.json ─────────────
-    combined = build_compare_files(loaded, discounts)
+    # ── STEP 1: build compare files ───────────────────────────
+    result = build_compare_files(loaded, discounts)
+    if isinstance(result, tuple):
+        combined, common_records, partial_records, all_records = result
+    else:
+        combined = result
+        common_records = partial_records = all_records = []
 
-    if combined.empty:
-        log.error("compare.csv is empty — no Excel will be generated.")
+    if combined is None or (hasattr(combined, "empty") and combined.empty):
+        log.error("compare.csv is empty — aborting.")
         return {}
 
-    # ── STEP 2: build Excel from combined data ────────────────
-    log.info("=" * 50)
-    log.info("STEP 2 — Generating Excel comparison sheets")
+    # ── NEW: build BR vs LG file ──────────────────────────────
+    br_vs_lg_count = build_br_vs_lg(loaded, discounts)
 
-    names          = list(loaded.keys())
-    pairs          = list(combinations(names, 2))
-    timestamp      = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file    = os.path.join(COMPARE_DIR, f"vendor_comparison_{timestamp}.xlsx")
-    sheets_written = 0
-    results        = {}
-
-    with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-
-        # ── Sheet 1: full combined (≥2 vendor matches) ───────
-        try:
-            _write_sheet_with_formatting(combined, writer, "All Vendors Combined")
-            sheets_written += 1
-            log.info(f"Sheet 'All Vendors Combined': {len(combined):,} rows")
-        except Exception as e:
-            log.error(f"Failed writing combined sheet: {e}")
-
-        # ── Pairwise sheets ───────────────────────────────────
-        for name_a, name_b in pairs:
-            try:
-                disc_a = discounts.get(name_a, default_discount)
-                disc_b = discounts.get(name_b, default_discount)
-                merged = compare_two_from_combined(combined, name_a, disc_a, name_b, disc_b)
-
-                if merged.empty:
-                    continue
-
-                sheet_name  = f"{name_a} vs {name_b}"[:31]
-                label_a     = f"-{round((1 - disc_a) * 100)}%"
-                label_b     = f"-{round((1 - disc_b) * 100)}%"
-                compare_col = f"Compare ({name_b}{label_b} - {name_a}{label_a}) USD"
-
-                _write_sheet_with_formatting(merged, writer, sheet_name, highlight_col=compare_col)
-                sheets_written += 1
-                results[(name_a, name_b)] = merged
-
-            except Exception as e:
-                log.error(f"Failed sheet '{name_a}' vs '{name_b}': {e}")
-                continue
-
-        # ── A vs B vs C sheet ─────────────────────────────────
-        try:
-            vendor_names = [n for n in names if n != "PC"]
-            trio         = vendor_names[:3] if len(vendor_names) >= 3 else names[:3]
-            if len(trio) >= 3:
-                ok = compare_all_three_from_combined(combined, discounts, trio, writer)
-                if ok:
-                    sheets_written += 1
-        except Exception as e:
-            log.error(f"Failed A vs B vs C sheet: {e}")
-
-        # ── Safety placeholder ────────────────────────────────
-        if sheets_written == 0:
-            log.error("No sheets written — inserting placeholder")
-            ph       = writer.book.create_sheet("No Data")
-            ph["A1"] = "No overlapping certificate numbers found across vendors."
-
-    log.info(f"Excel saved → {output_file}  ({sheets_written} sheets)")
-    log.info("=" * 50)
-    return results
+    # ── Save status ───────────────────────────────────────────
+    _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records, br_vs_lg_count)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -630,18 +596,15 @@ def check_file_age(filepath: str, label: str) -> dict:
         log.error(f"[{label}] MISSING: {filepath}")
         return {"file": os.path.basename(filepath), "vendor": label,
                 "status": "MISSING", "last_modified": None, "age_days": None, "ok": False}
-
     mtime    = os.path.getmtime(filepath)
     mod_dt   = datetime.datetime.fromtimestamp(mtime)
     age_days = (datetime.datetime.now() - mod_dt).days
     is_fresh = age_days < MAX_AGE_DAYS
     status   = "OK" if is_fresh else "STALE"
-
     if is_fresh:
         log.info(f"[{label}] {status} — {os.path.basename(filepath)} ({age_days}d old)")
     else:
         log.warning(f"[{label}] {status} — {os.path.basename(filepath)} ({age_days}d old, last: {mod_dt.strftime('%Y-%m-%d %H:%M:%S')})")
-
     return {
         "file": os.path.basename(filepath), "vendor": label,
         "status": status, "last_modified": mod_dt.strftime("%Y-%m-%d %H:%M:%S"),
@@ -652,18 +615,15 @@ def check_file_age(filepath: str, label: str) -> dict:
 def check_all_files_and_run():
     log.info("=" * 50)
     log.info("FILE AGE CHECK")
-
     vendors, PC_csv, PC_discount = load_vendors_from_env()
-    all_files  = [(v["csv"], v["name"]) for v in vendors] + [(PC_csv, "PC")]
-    statuses   = []
+    all_files = [(v["csv"], v["name"]) for v in vendors] + [(PC_csv, "PC")]
+    statuses  = []
     stale_warn = []
-
     for fpath, label in all_files:
         status = check_file_age(fpath, label)
         statuses.append(status)
         if not status["ok"] and status["status"] == "STALE":
             stale_warn.append(status)
-
     status_report = {
         "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "all_fresh":  all(s["ok"] for s in statuses),
@@ -672,18 +632,10 @@ def check_all_files_and_run():
     os.makedirs(DIAMOND_FILES_DIR, exist_ok=True)
     with open(FILE_STATUS_JSON, "w") as f:
         json.dump(status_report, f, indent=2)
-    log.info(f"Status report saved → {FILE_STATUS_JSON}")
-
-    if stale_warn:
-        log.warning(f"{len(stale_warn)} file(s) older than {MAX_AGE_DAYS} days:")
-        for s in stale_warn:
-            log.warning(f"  {s['file']} — {s['age_days']}d old, last: {s['last_modified']}")
-
     missing = [s for s in statuses if s["status"] == "MISSING"]
     if missing:
         log.error(f"ABORT: missing files: {[m['file'] for m in missing]}")
         return None
-
     return compare_all_vendors(vendors=vendors, PC_csv=PC_csv, PC_discount=PC_discount)
 
 
