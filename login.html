@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diamond Dashboard — Login</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: #12121a;
+        --card: #1a1a26;
+        --border: #2a2a3e;
+        --accent: #c9a84c;
+        --accent2: #7c6fcd;
+        --green: #3ecf8e;
+        --red: #f87171;
+        --text: #e8e8f0;
+        --muted: #6b6b8a;
+        --font-mono: "DM Mono", monospace;
+        --font-display: "Playfair Display", serif;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-mono);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      /* Animated background */
+      .bg-grid {
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(201, 168, 76, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(201, 168, 76, 0.04) 1px, transparent 1px);
+        background-size: 48px 48px;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .bg-glow {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(
+          circle,
+          rgba(201, 168, 76, 0.07) 0%,
+          transparent 70%
+        );
+        pointer-events: none;
+        z-index: 0;
+        animation: breathe 4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.6;
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.15);
+          opacity: 1;
+        }
+      }
+
+      .login-wrap {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 420px;
+        padding: 0 20px;
+      }
+      .login-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 48px 44px;
+        width: 100%;
+        position: relative;
+        overflow: hidden;
+        box-shadow:
+          0 0 80px rgba(201, 168, 76, 0.08),
+          0 32px 64px rgba(0, 0, 0, 0.6);
+        animation: loginIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      @keyframes loginIn {
+        from {
+          opacity: 0;
+          transform: translateY(28px) scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      .login-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent),
+          var(--accent2),
+          var(--accent),
+          transparent
+        );
+        background-size: 200% 100%;
+        animation: shimmer 2.4s linear infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+      .login-card::after {
+        content: "💎";
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        font-size: 1.5rem;
+        opacity: 0.12;
+      }
+
+      .login-gem {
+        text-align: center;
+        font-size: 2.8rem;
+        margin-bottom: 8px;
+        animation: float 3s ease-in-out infinite;
+      }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      .login-title {
+        font-family: var(--font-display);
+        font-size: 1.7rem;
+        color: var(--accent);
+        text-align: center;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+      }
+      .login-sub {
+        font-size: 0.7rem;
+        color: var(--muted);
+        text-align: center;
+        margin-bottom: 36px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .login-field {
+        position: relative;
+        margin-bottom: 20px;
+      }
+      .login-field label {
+        display: block;
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 8px;
+      }
+      .login-field input {
+        width: 100%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.88rem;
+        padding: 12px 44px 12px 44px;
+        border-radius: 8px;
+        outline: none;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+        letter-spacing: 0.08em;
+      }
+      .login-field input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
+      }
+      .login-field input.error {
+        border-color: var(--red);
+        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+        animation: shake 0.35s ease;
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        20% {
+          transform: translateX(-6px);
+        }
+        40% {
+          transform: translateX(6px);
+        }
+        60% {
+          transform: translateX(-4px);
+        }
+        80% {
+          transform: translateX(4px);
+        }
+      }
+      .login-field-icon {
+        position: absolute;
+        left: 14px;
+        bottom: 13px;
+        color: var(--muted);
+        font-size: 1rem;
+        pointer-events: none;
+      }
+      .eye-btn {
+        position: absolute;
+        right: 12px;
+        bottom: 11px;
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 1.05rem;
+        padding: 2px 4px;
+        transition: color 0.2s;
+      }
+      .eye-btn:hover {
+        color: var(--accent);
+      }
+
+      .login-error {
+        font-size: 0.7rem;
+        color: var(--red);
+        margin-bottom: 16px;
+        min-height: 18px;
+        text-align: center;
+      }
+      .login-btn {
+        width: 100%;
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: 8px;
+        padding: 13px;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+        text-transform: uppercase;
+        transition: all 0.2s;
+      }
+      .login-btn:hover {
+        opacity: 0.88;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(201, 168, 76, 0.3);
+      }
+      .login-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .login-btn.success-state {
+        background: var(--green);
+        pointer-events: none;
+      }
+
+      /* Success overlay inside card */
+      .login-success-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: var(--card);
+        border-radius: 16px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+      }
+      .login-success-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .success-check {
+        font-size: 3.5rem;
+        animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      @keyframes popIn {
+        from {
+          transform: scale(0);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .success-text {
+        font-family: var(--font-display);
+        font-size: 1.3rem;
+        color: var(--green);
+      }
+      .success-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+      }
+
+      @media (max-width: 480px) {
+        .login-card {
+          padding: 32px 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-success-overlay" id="loginSuccess">
+          <div class="success-check">✓</div>
+          <div class="success-text">Access Granted</div>
+          <div class="success-sub">Loading dashboard…</div>
+        </div>
+
+        <div class="login-gem">💎</div>
+        <div class="login-title">Diamond Dashboard</div>
+        <div class="login-sub">Secure Access Required</div>
+
+        <div class="login-field">
+          <label>Password</label>
+          <input
+            type="password"
+            id="loginPassword"
+            placeholder="Enter password"
+            autocomplete="current-password"
+            onkeydown="if (event.key === 'Enter') attemptLogin();"
+          />
+          <span class="login-field-icon">🔒</span>
+          <button
+            class="eye-btn"
+            id="eyeBtn"
+            onclick="toggleEye()"
+            type="button"
+          >
+            👁
+          </button>
+        </div>
+
+        <div class="login-error" id="loginError"></div>
+        <button class="login-btn" id="loginBtn" onclick="attemptLogin()">
+          Unlock Dashboard
+        </button>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = "";
+
+      // Auto-focus
+      window.addEventListener("load", () =>
+        setTimeout(() => document.getElementById("loginPassword").focus(), 300),
+      );
+
+      function toggleEye() {
+        const inp = document.getElementById("loginPassword");
+        const btn = document.getElementById("eyeBtn");
+        inp.type = inp.type === "password" ? "text" : "password";
+        btn.textContent = inp.type === "password" ? "👁" : "🙈";
+      }
+
+      async function attemptLogin() {
+        const pw = document.getElementById("loginPassword").value;
+        const inp = document.getElementById("loginPassword");
+        const err = document.getElementById("loginError");
+        const btn = document.getElementById("loginBtn");
+
+        if (!pw) {
+          inp.classList.remove("error");
+          void inp.offsetWidth;
+          inp.classList.add("error");
+          err.textContent = "Please enter the password.";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Checking…";
+        err.textContent = "";
+
+        try {
+          const res = await fetch(API_BASE + "/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pw }),
+          });
+
+          if (res.ok) {
+            // Store token in sessionStorage so dashboard.html can pick it up
+            sessionStorage.setItem("diamond_token", pw);
+
+            inp.classList.remove("error");
+            btn.classList.add("success-state");
+            btn.textContent = "✓ Access Granted";
+            document.getElementById("loginSuccess").classList.add("show");
+
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 1300);
+          } else {
+            const data = await res.json().catch(() => ({}));
+            inp.classList.remove("error");
+            void inp.offsetWidth;
+            inp.classList.add("error");
+            err.textContent =
+              res.status === 401
+                ? "Incorrect password. Please try again."
+                : data.detail || "Login failed.";
+            inp.value = "";
+            inp.focus();
+            btn.disabled = false;
+            btn.textContent = "Unlock Dashboard";
+          }
+        } catch (e) {
+          err.textContent = "Cannot reach server — is the API running?";
+          btn.disabled = false;
+          btn.textContent = "Unlock Dashboard";
+        }
+      }
+    </script>
+  </body>
+</html>

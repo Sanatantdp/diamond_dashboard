@@ -38,270 +38,6 @@
         min-height: 100vh;
       }
 
-      /* ── LOGIN ─────────────────────────────────────────────── */
-      #loginOverlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(10, 10, 15, 0.97);
-        backdrop-filter: blur(14px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 99999;
-        transition: opacity 0.5s ease;
-      }
-      #loginOverlay.fade-out {
-        opacity: 0;
-        pointer-events: none;
-      }
-      #loginOverlay.hidden {
-        display: none;
-      }
-      .login-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 48px 44px;
-        width: 100%;
-        max-width: 420px;
-        position: relative;
-        overflow: hidden;
-        box-shadow:
-          0 0 80px rgba(201, 168, 76, 0.08),
-          0 32px 64px rgba(0, 0, 0, 0.6);
-        animation: loginIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-      }
-      @keyframes loginIn {
-        from {
-          opacity: 0;
-          transform: translateY(28px) scale(0.97);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-      .login-card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(
-          90deg,
-          transparent,
-          var(--accent),
-          var(--accent2),
-          var(--accent),
-          transparent
-        );
-        background-size: 200% 100%;
-        animation: shimmer 2.4s linear infinite;
-      }
-      @keyframes shimmer {
-        0% {
-          background-position: 200% 0;
-        }
-        100% {
-          background-position: -200% 0;
-        }
-      }
-      .login-card::after {
-        content: "💎";
-        position: absolute;
-        bottom: 20px;
-        right: 20px;
-        font-size: 1.5rem;
-        opacity: 0.12;
-      }
-      .login-gem {
-        text-align: center;
-        font-size: 2.8rem;
-        margin-bottom: 8px;
-        animation: float 3s ease-in-out infinite;
-      }
-      @keyframes float {
-        0%,
-        100% {
-          transform: translateY(0);
-        }
-        50% {
-          transform: translateY(-6px);
-        }
-      }
-      .login-title {
-        font-family: var(--font-display);
-        font-size: 1.7rem;
-        color: var(--accent);
-        text-align: center;
-        letter-spacing: -0.02em;
-        margin-bottom: 6px;
-      }
-      .login-sub {
-        font-size: 0.7rem;
-        color: var(--muted);
-        text-align: center;
-        margin-bottom: 36px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-      }
-      .login-field {
-        position: relative;
-        margin-bottom: 20px;
-      }
-      .login-field label {
-        display: block;
-        font-size: 0.62rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 8px;
-      }
-      .login-field input {
-        width: 100%;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        color: var(--text);
-        font-family: var(--font-mono);
-        font-size: 0.88rem;
-        padding: 12px 44px 12px 44px;
-        border-radius: 8px;
-        outline: none;
-        transition:
-          border-color 0.2s,
-          box-shadow 0.2s;
-        letter-spacing: 0.08em;
-      }
-      .login-field input:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
-      }
-      .login-field input.error {
-        border-color: var(--red);
-        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
-        animation: shake 0.35s ease;
-      }
-      @keyframes shake {
-        0%,
-        100% {
-          transform: translateX(0);
-        }
-        20% {
-          transform: translateX(-6px);
-        }
-        40% {
-          transform: translateX(6px);
-        }
-        60% {
-          transform: translateX(-4px);
-        }
-        80% {
-          transform: translateX(4px);
-        }
-      }
-      .login-field-icon {
-        position: absolute;
-        left: 14px;
-        bottom: 13px;
-        color: var(--muted);
-        font-size: 1rem;
-        pointer-events: none;
-      }
-      .eye-btn {
-        position: absolute;
-        right: 12px;
-        bottom: 11px;
-        background: none;
-        border: none;
-        color: var(--muted);
-        cursor: pointer;
-        font-size: 1.05rem;
-        padding: 2px 4px;
-        transition: color 0.2s;
-      }
-      .eye-btn:hover {
-        color: var(--accent);
-      }
-      .login-error {
-        font-size: 0.7rem;
-        color: var(--red);
-        margin-bottom: 16px;
-        min-height: 18px;
-        text-align: center;
-      }
-      .login-btn {
-        width: 100%;
-        background: var(--accent);
-        color: var(--bg);
-        border: none;
-        border-radius: 8px;
-        padding: 13px;
-        font-family: var(--font-mono);
-        font-size: 0.82rem;
-        font-weight: 500;
-        letter-spacing: 0.08em;
-        cursor: pointer;
-        text-transform: uppercase;
-        transition: all 0.2s;
-      }
-      .login-btn:hover {
-        opacity: 0.88;
-        transform: translateY(-1px);
-        box-shadow: 0 6px 20px rgba(201, 168, 76, 0.3);
-      }
-      .login-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-      }
-      .login-btn.success-state {
-        background: var(--green);
-        pointer-events: none;
-      }
-      .login-success-overlay {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 14px;
-        background: var(--card);
-        border-radius: 16px;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.4s ease;
-      }
-      .login-success-overlay.show {
-        opacity: 1;
-        pointer-events: auto;
-      }
-      .success-check {
-        font-size: 3.5rem;
-        animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-      }
-      @keyframes popIn {
-        from {
-          transform: scale(0);
-          opacity: 0;
-        }
-        to {
-          transform: scale(1);
-          opacity: 1;
-        }
-      }
-      .success-text {
-        font-family: var(--font-display);
-        font-size: 1.3rem;
-        color: var(--green);
-      }
-      .success-sub {
-        font-size: 0.68rem;
-        color: var(--muted);
-        letter-spacing: 0.08em;
-      }
-
       /* ── LOADING ───────────────────────────────────────────── */
       #loadingOverlay {
         position: fixed;
@@ -493,7 +229,6 @@
         color: var(--red);
         background: color-mix(in srgb, var(--red) 10%, var(--surface));
       }
-
       .modal-controls {
         padding: 12px 28px;
         border-bottom: 1px solid var(--border);
@@ -548,7 +283,6 @@
       .modal-search-inp::placeholder {
         color: var(--muted);
       }
-
       .modal-body {
         flex: 1;
         overflow: auto;
@@ -600,24 +334,6 @@
         padding: 8px 14px;
         white-space: nowrap;
       }
-      .in-pc-badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.6rem;
-        font-weight: 600;
-      }
-      .in-pc-yes {
-        background: color-mix(in srgb, var(--green) 15%, transparent);
-        color: var(--green);
-        border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
-      }
-      .in-pc-no {
-        background: color-mix(in srgb, var(--red) 15%, transparent);
-        color: var(--red);
-        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
-      }
-
       .modal-footer {
         padding: 12px 28px;
         border-top: 1px solid var(--border);
@@ -757,6 +473,16 @@
       .btn-sm {
         padding: 5px 12px;
         font-size: 0.7rem;
+      }
+      .btn-logout {
+        background: color-mix(in srgb, var(--red) 12%, var(--card));
+        color: var(--red);
+        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+        margin-left: auto;
+      }
+      .btn-logout:hover {
+        background: color-mix(in srgb, var(--red) 22%, var(--card));
+        border-color: var(--red);
       }
       .loaded-indicator {
         font-size: 0.7rem;
@@ -1327,8 +1053,6 @@
         font-size: 0.62rem;
         font-weight: 600;
       }
-
-      /* ── BR vs LG stats card special styles ──────────────── */
       .brvslg-card {
         cursor: pointer;
         transition: all 0.2s;
@@ -1374,10 +1098,6 @@
         .controls {
           flex-direction: column;
         }
-        .login-card {
-          padding: 32px 24px;
-          margin: 16px;
-        }
         .modal-box {
           max-height: 95vh;
         }
@@ -1393,43 +1113,6 @@
     </style>
   </head>
   <body>
-    <!-- ── LOGIN ──────────────────────────────────────────────── -->
-    <div id="loginOverlay">
-      <div class="login-card">
-        <div class="login-success-overlay" id="loginSuccess">
-          <div class="success-check">✓</div>
-          <div class="success-text">Access Granted</div>
-          <div class="success-sub">Loading dashboard…</div>
-        </div>
-        <div class="login-gem">💎</div>
-        <div class="login-title">Diamond Dashboard</div>
-        <div class="login-sub">Secure Access Required</div>
-        <div class="login-field">
-          <label>Password</label>
-          <input
-            type="password"
-            id="loginPassword"
-            placeholder="Enter password"
-            autocomplete="current-password"
-            onkeydown="if (event.key === 'Enter') attemptLogin();"
-          />
-          <span class="login-field-icon">🔒</span>
-          <button
-            class="eye-btn"
-            id="eyeBtn"
-            onclick="toggleEye()"
-            type="button"
-          >
-            👁
-          </button>
-        </div>
-        <div class="login-error" id="loginError"></div>
-        <button class="login-btn" id="loginBtn" onclick="attemptLogin()">
-          Unlock Dashboard
-        </button>
-      </div>
-    </div>
-
     <div id="loadingOverlay" style="display: none">
       <div class="spinner"></div>
       <div class="loading-text">💎 Diamond Dashboard</div>
@@ -1437,9 +1120,7 @@
     </div>
     <div id="toast"></div>
 
-    <!-- ═══════════════════════════════════════════════════════════
-         BR vs LG MODAL
-    ═══════════════════════════════════════════════════════════ -->
+    <!-- BR vs LG MODAL -->
     <div
       id="brVsLgModal"
       onclick="if (event.target === this) closeBrVsLgModal();"
@@ -1448,8 +1129,7 @@
         <div class="modal-header">
           <div class="modal-header-left">
             <div class="modal-title">
-              <span>💠</span>
-              Brilliance × Loose-Grown Overlap
+              <span>💠</span> Brilliance × Loose-Grown Overlap
             </div>
             <div class="modal-sub">
               Diamonds whose certificate ID appears in
@@ -1476,7 +1156,6 @@
             </button>
           </div>
         </div>
-
         <div class="modal-controls">
           <span class="modal-filter-label">Filter:</span>
           <button
@@ -1494,7 +1173,6 @@
             oninput="onModalSearch()"
           />
         </div>
-
         <div class="modal-body">
           <table class="modal-table">
             <thead>
@@ -1515,7 +1193,6 @@
             <tbody id="modalTableBody"></tbody>
           </table>
         </div>
-
         <div class="modal-footer">
           <div class="modal-footer-info" id="modalFooterInfo"></div>
           <div class="modal-pagination" id="modalPagination"></div>
@@ -1523,7 +1200,7 @@
       </div>
     </div>
 
-    <!-- ── TOPBAR ──────────────────────────────────────────────── -->
+    <!-- TOPBAR -->
     <div class="topbar">
       <div class="topbar-section">
         <label>Dataset</label>
@@ -1590,9 +1267,10 @@
         <div class="loaded-dot"></div>
         <span id="loadedLabel">—</span>
       </div>
+      <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
 
-    <!-- ── HEADER ──────────────────────────────────────────────── -->
+    <!-- HEADER -->
     <div class="header">
       <div>
         <h1>💎 Diamond Price Dashboard</h1>
@@ -1613,7 +1291,7 @@
       </div>
     </div>
 
-    <!-- ── CONTROLS ────────────────────────────────────────────── -->
+    <!-- CONTROLS -->
     <div class="controls">
       <div class="control-group">
         <label>PC Price Range</label>
@@ -1654,9 +1332,8 @@
       </div>
     </div>
 
-    <!-- ── MAIN ───────────────────────────────────────────────── -->
+    <!-- MAIN -->
     <div class="main">
-      <!-- Vendor Stats -->
       <div class="section-title" style="margin-bottom: 12px">
         Vendor Statistics
         <span
@@ -1681,7 +1358,6 @@
         </div>
       </div>
 
-      <!-- % Range Buckets -->
       <div class="section-title">
         % Range Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
@@ -1695,8 +1371,8 @@
         class="bucket-filter-tag"
         onclick="clearBucketFilter()"
       >
-        <span id="activeBucketTagText">Filtered</span>
-        <span class="x">✕ clear</span>
+        <span id="activeBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
       </div>
       <div class="buckets-grid" id="bucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
@@ -1708,7 +1384,6 @@
         </div>
       </div>
 
-      <!-- Vendor Price Buckets -->
       <div class="section-title" style="margin-top: 4px">
         Vendor Price Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
@@ -1723,8 +1398,8 @@
         class="bucket-filter-tag"
         onclick="clearPriceBucketFilter()"
       >
-        <span id="activePriceBucketTagText">Filtered</span>
-        <span class="x">✕ clear</span>
+        <span id="activePriceBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
       </div>
       <div class="price-buckets-grid" id="priceBucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
@@ -1733,7 +1408,6 @@
         </div>
       </div>
 
-      <!-- Records Table -->
       <div class="section-title" style="margin-top: 32px">
         Records
         <span
@@ -1781,70 +1455,18 @@
     <script>
       const API_BASE = "";
 
-      // ── LOGIN ────────────────────────────────────────────────
-      function toggleEye() {
-        const inp = document.getElementById("loginPassword");
-        const btn = document.getElementById("eyeBtn");
-        inp.type = inp.type === "password" ? "text" : "password";
-        btn.textContent = inp.type === "password" ? "👁" : "🙈";
+      // ── AUTH TOKEN ────────────────────────────────────────────
+      let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+
+      // Guard: if no token, send back to login
+      if (!AUTH_TOKEN) {
+        window.location.href = "/";
       }
-      async function attemptLogin() {
-        const pw = document.getElementById("loginPassword").value;
-        const inp = document.getElementById("loginPassword");
-        const err = document.getElementById("loginError");
-        const btn = document.getElementById("loginBtn");
-        if (!pw) {
-          inp.classList.remove("error");
-          void inp.offsetWidth;
-          inp.classList.add("error");
-          err.textContent = "Please enter the password.";
-          return;
-        }
-        btn.disabled = true;
-        btn.textContent = "Checking…";
-        err.textContent = "";
-        try {
-          const res = await fetch(API_BASE + "/api/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password: pw }),
-          });
-          if (res.ok) {
-            inp.classList.remove("error");
-            btn.classList.add("success-state");
-            btn.textContent = "✓ Access Granted";
-            document.getElementById("loginSuccess").classList.add("show");
-            setTimeout(() => {
-              const ov = document.getElementById("loginOverlay");
-              ov.classList.add("fade-out");
-              setTimeout(() => {
-                ov.classList.add("hidden");
-                startDashboard();
-              }, 500);
-            }, 1200);
-          } else {
-            const data = await res.json().catch(() => ({}));
-            inp.classList.remove("error");
-            void inp.offsetWidth;
-            inp.classList.add("error");
-            err.textContent =
-              res.status === 401
-                ? "Incorrect password. Please try again."
-                : data.detail || "Login failed.";
-            inp.value = "";
-            inp.focus();
-            btn.disabled = false;
-            btn.textContent = "Unlock Dashboard";
-          }
-        } catch (e) {
-          err.textContent = "Cannot reach server — is the API running?";
-          btn.disabled = false;
-          btn.textContent = "Unlock Dashboard";
-        }
+
+      function logout() {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
       }
-      window.addEventListener("load", () =>
-        setTimeout(() => document.getElementById("loginPassword").focus(), 300),
-      );
 
       // ── DASHBOARD STATE ──────────────────────────────────────
       let ALL_DATA = [],
@@ -1950,6 +1572,7 @@
       // ── API ───────────────────────────────────────────────────
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
+        if (AUTH_TOKEN) opts.headers["Authorization"] = "Bearer " + AUTH_TOKEN;
         if (body) {
           if (isForm) {
             opts.body = body;
@@ -1959,6 +1582,12 @@
           }
         }
         const res = await fetch(API_BASE + path, opts);
+        if (res.status === 401) {
+          AUTH_TOKEN = "";
+          sessionStorage.removeItem("diamond_token");
+          window.location.href = "/";
+          throw new Error("Session expired");
+        }
         if (!res.ok) {
           const e = await res.json().catch(() => ({ detail: res.statusText }));
           throw new Error(e.detail || res.statusText);
@@ -2467,9 +2096,8 @@
             <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
             <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
-                 <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
+            <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
-         
             <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td>
             <td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
             <td class="${diffCls(brD)}">${fmtDiff(brD)}</td>
@@ -2557,86 +2185,66 @@
         }
       }
 
-      // ══════════════════════════════════════════════════════════
-      // BR vs LG MODAL
-      // ══════════════════════════════════════════════════════════
-      let BR_VS_LG_DATA = [];
-      let brVsLgSearch = "";
-      let brVsLgPage = 1;
+      // ── BR vs LG MODAL ────────────────────────────────────────
+      let BR_VS_LG_DATA = [],
+        brVsLgSearch = "",
+        brVsLgPage = 1;
       const BR_PAGE_SIZE = 25;
-      let brVsLgSortCol = null;
-      let brVsLgSortDir = 1; // 1=asc, -1=desc
+      let brVsLgSortCol = null,
+        brVsLgSortDir = 1;
 
       async function openBrVsLgModal() {
         document.getElementById("brVsLgModal").classList.add("open");
         document.body.style.overflow = "hidden";
-
         if (!BR_VS_LG_DATA.length) {
           document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
-              <div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading Brilliance × LG data…
-            </td></tr>`;
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading…</td></tr>`;
           try {
             const data = await api("GET", "/api/br-vs-lg");
             BR_VS_LG_DATA = Array.isArray(data) ? data : [];
             if (!BR_VS_LG_DATA.length) {
               document.getElementById("modalTableBody").innerHTML =
-                `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
-                  <div style="font-size:1.4rem;margin-bottom:8px">⚠️</div>
-                  No data found. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first.
-                </td></tr>`;
+                `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⚠️</div>No data found. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first.</td></tr>`;
               return;
             }
           } catch (e) {
             document.getElementById("modalTableBody").innerHTML =
-              `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)">
-                <div style="font-size:1.4rem;margin-bottom:8px">✗</div>
-                ${e.message.includes("404") ? "compare_br_vs_lg.json not found — run the pipeline first." : e.message}
-              </td></tr>`;
+              `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "compare_br_vs_lg.json not found — run the pipeline first." : e.message}</td></tr>`;
             return;
           }
         }
         renderModalTable();
       }
-
       function closeBrVsLgModal() {
         document.getElementById("brVsLgModal").classList.remove("open");
         document.body.style.overflow = "";
       }
-
-      // Escape key closes modal
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") closeBrVsLgModal();
       });
-
       function setModalFilter(f) {
         brVsLgPage = 1;
         document.getElementById("mfAll").classList.add("active");
         renderModalTable();
       }
-
       function onModalSearch() {
         brVsLgSearch = document.getElementById("modalSearchInp").value.trim();
         brVsLgPage = 1;
         renderModalTable();
       }
-
       function sortModal(col) {
         if (brVsLgSortCol === col) brVsLgSortDir *= -1;
         else {
           brVsLgSortCol = col;
           brVsLgSortDir = 1;
         }
-        // Update header classes
         document.querySelectorAll(".modal-table thead th").forEach((th) => {
           th.classList.remove("sort-asc", "sort-desc");
-          if (th.getAttribute("onclick") === `sortModal('${col}')`) {
+          if (th.getAttribute("onclick") === `sortModal('${col}')`)
             th.classList.add(brVsLgSortDir === 1 ? "sort-asc" : "sort-desc");
-          }
         });
         renderModalTable();
       }
-
       function getModalFiltered() {
         let rows = BR_VS_LG_DATA;
         if (brVsLgSearch)
@@ -2660,38 +2268,31 @@
         }
         return rows;
       }
-
       function renderModalTable() {
-        const all = BR_VS_LG_DATA;
-        const filtered = getModalFiltered();
+        const all = BR_VS_LG_DATA,
+          filtered = getModalFiltered();
         const tp = Math.ceil(filtered.length / BR_PAGE_SIZE);
         brVsLgPage = Math.min(brVsLgPage, tp || 1);
         const page = filtered.slice(
           (brVsLgPage - 1) * BR_PAGE_SIZE,
           brVsLgPage * BR_PAGE_SIZE,
         );
-
-        // Stat pill
-        document.getElementById("modalStatPills").innerHTML = `
-          <div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">
-            Total <strong style="color:var(--br-vs-lg)">${all.length.toLocaleString()}</strong>
-          </div>`;
-
+        document.getElementById("modalStatPills").innerHTML =
+          `<div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">Total <strong style="color:var(--br-vs-lg)">${all.length.toLocaleString()}</strong></div>`;
         if (!page.length) {
           document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">
-              <div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
         } else {
           document.getElementById("modalTableBody").innerHTML = page
             .map((r) => {
               const cert = String(
                 r["diamond_id"] ?? r["certificate_number"] ?? "—",
               );
-              const sh = r["shape"] || r["Shape"] || "—";
-              const co = r["color"] || r["Color"] || "—";
-              const cl = r["clarity"] || r["Clarity"] || "—";
-              const cu = r["cut"] || r["Cut"] || "—";
-              const ca = r["caratWeight"] || r["Carat"] || "—";
+              const sh = r["shape"] || r["Shape"] || "—",
+                co = r["color"] || r["Color"] || "—",
+                cl = r["clarity"] || r["Clarity"] || "—",
+                cu = r["cut"] || r["Cut"] || "—",
+                ca = r["caratWeight"] || r["Carat"] || "—";
               const caD =
                 ca === "" || ca === "nan" || ca === "Na" || ca === "None"
                   ? "—"
@@ -2724,12 +2325,8 @@
             })
             .join("");
         }
-
-        // Footer
         document.getElementById("modalFooterInfo").textContent =
           `Showing ${Math.min((brVsLgPage - 1) * BR_PAGE_SIZE + 1, filtered.length)}–${Math.min(brVsLgPage * BR_PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} records`;
-
-        // Pagination
         const d = 2;
         let pages = "";
         for (let p = 1; p <= tp; p++) {
@@ -2744,7 +2341,6 @@
         }
         document.getElementById("modalPagination").innerHTML = pages;
       }
-
       function brVsLgGoPage(p) {
         brVsLgPage = p;
         renderModalTable();
@@ -2775,7 +2371,6 @@
             ingestData(data, "compare.json");
             document.getElementById("fileSelect").value = "compare.json";
             loadPartialData();
-            // Reset BR vs LG cache so next open re-fetches
             BR_VS_LG_DATA = [];
           } else {
             st.textContent = `✗ Error (code ${r.returncode})`;
@@ -2803,7 +2398,6 @@
           panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div><div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div></div>`;
         }
       }
-
       function renderStats(s) {
         const panel = document.getElementById("statsPanel");
         if (!s) {
@@ -2824,11 +2418,7 @@
           luvansh: "#c9a84c",
           PC: "#e879f9",
         };
-
-        // PC card
         let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 PC (Precious Carbon)</div><div class="stats-card-value">${pcTotal.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div></div></div>`;
-
-        // Vendor cards
         for (const [name, v] of Object.entries(vendors)) {
           const color = COLORS[name] || "var(--accent2)",
             matched = v.matched || 0,
@@ -2840,34 +2430,9 @@
               : 0;
           html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div></div></div>`;
         }
-
-        // Dataset sizes card
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
-
-        // ═══ NEW: BR vs LG card ═══
         const brVsLgCount = datasets.br_vs_lg || 0;
-        const brVsLgInPc = "—"; // we don't store this in status, shown in modal
-        html += `
-          <div class="stats-card brvslg-card" style="--card-color:var(--br-vs-lg)" onclick="openBrVsLgModal()">
-            <div class="stats-card-title" style="color:var(--br-vs-lg)">💠 Brilliance × LG Overlap</div>
-            <div class="stats-card-value" style="color:var(--br-vs-lg)">${brVsLgCount.toLocaleString()}</div>
-            <div class="stats-card-sub">Cert IDs in both BR &amp; Loose-Grown CSVs</div>
-            <div class="stats-row-grid" style="margin-top:10px">
-              <div class="stats-row-item">
-                <span class="label">Source</span>
-                <span class="val" style="font-size:.68rem;color:var(--muted)">compare_br_vs_lg.json</span>
-              </div>
-              <div class="stats-row-item">
-                <span class="label">PC price data</span>
-                <span class="val" style="font-size:.68rem;color:var(--muted)">where available</span>
-              </div>
-            </div>
-            <div class="brvslg-open-hint">
-              <span>Click to view full table</span>
-              <span class="brvslg-arrow">→</span>
-            </div>
-          </div>`;
-
+        html += `<div class="stats-card brvslg-card" style="--card-color:var(--br-vs-lg)" onclick="openBrVsLgModal()"><div class="stats-card-title" style="color:var(--br-vs-lg)">💠 Brilliance × LG Overlap</div><div class="stats-card-value" style="color:var(--br-vs-lg)">${brVsLgCount.toLocaleString()}</div><div class="stats-card-sub">Cert IDs in both BR &amp; Loose-Grown CSVs</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Source</span><span class="val" style="font-size:.68rem;color:var(--muted)">compare_br_vs_lg.json</span></div><div class="stats-row-item"><span class="label">PC price data</span><span class="val" style="font-size:.68rem;color:var(--muted)">where available</span></div></div><div class="brvslg-open-hint"><span>Click to view full table</span><span class="brvslg-arrow">→</span></div></div>`;
         panel.innerHTML = html;
       }
 
@@ -2901,6 +2466,8 @@
           );
         }
       }
+
+      startDashboard();
     </script>
   </body>
 </html>

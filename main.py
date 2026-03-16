@@ -1,5 +1,6 @@
 """
 main.py — FastAPI Diamond Price Dashboard API
+Two-page setup: GET / → login.html, GET /dashboard → dashboard.html
 """
 
 import os
@@ -8,9 +9,10 @@ import datetime
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
 from pydantic import BaseModel
 
 BASE_DIR                 = Path(os.getcwd())
@@ -18,7 +20,7 @@ COMPARE_DIR              = BASE_DIR / "compare"
 COMPARE_JSON             = COMPARE_DIR / "compare.json"
 COMPARE_PARTIAL_JSON     = COMPARE_DIR / "compare_partial.json"
 COMPARE_ALL_JSON         = COMPARE_DIR / "compare_all.json"
-COMPARE_BR_VS_LG_JSON    = COMPARE_DIR / "compare_br_vs_lg.json"   # ← NEW
+COMPARE_BR_VS_LG_JSON    = COMPARE_DIR / "compare_br_vs_lg.json"
 COMPARE_CSV              = COMPARE_DIR / "compare.csv"
 DIAMOND_STATUS_JSON      = COMPARE_DIR / "diamond_status.json"
 COMPARE_DIR.mkdir(exist_ok=True)
@@ -28,7 +30,65 @@ DASHBOARD_PASSWORD = "diamond-6087"
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Diamond Price Dashboard API", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── BEARER TOKEN AUTH MIDDLEWARE ──────────────────────────────────────────────
+# Paths that do NOT require a Bearer token
+PUBLIC_PATHS = {
+    "/",
+    "/dashboard",
+    "/api/login",
+    "/api/login/config",
+    "/api/health",
+}
+
+@app.middleware("http")
+async def bearer_auth_middleware(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer ") or auth_header[7:] != DASHBOARD_PASSWORD:
+        return Response(
+            content='{"detail": "Unauthorized - provide a valid Bearer token"}',
+            status_code=401,
+            media_type="application/json",
+        )
+    return await call_next(request)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── PAGES ─────────────────────────────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_login():
+    """Serve the login page."""
+    html_path = BASE_DIR / "login.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="login.html not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard():
+    """
+    Serve the dashboard page.
+    Token verification happens on the client side (sessionStorage) and on
+    every API call via the Bearer middleware — this route itself is public
+    so the browser can load the HTML.
+    """
+    html_path = BASE_DIR / "dashboard.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="dashboard.html not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 # ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -49,8 +109,8 @@ async def login_config():
     pw_hash = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()
     return {"pw_hash": pw_hash}
 
-
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _clean_json_text(raw: str) -> str:
     import re
@@ -96,25 +156,20 @@ def _load_json_file(path: Path):
     return data
 
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
-    html_path = BASE_DIR / "dashboard.html"
-    if not html_path.exists():
-        raise HTTPException(status_code=404, detail="dashboard.html not found")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
-
 @app.get("/api/compare")
 async def get_default_compare():
     if not COMPARE_JSON.exists():
-        raise HTTPException(status_code=404, detail="compare/compare.json not found. Run diamond_compare.py first.")
+        raise HTTPException(
+            status_code=404,
+            detail="compare/compare.json not found. Run diamond_compare.py first."
+        )
     try:
         return JSONResponse(content=_load_json_file(COMPARE_JSON))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read compare.json: {e}")
 
 
-# ── NEW: Brilliance vs LG endpoint ───────────────────────────────────────────
+# ── Brilliance vs LG endpoint ─────────────────────────────────────────────────
 @app.get("/api/br-vs-lg")
 async def get_br_vs_lg():
     """
@@ -147,8 +202,13 @@ async def convert_csv(csv_filename: str = Form(...), output_name: str = Form(Non
         summary = csv_to_json(csv_path, output_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return {"status": "ok", "message": f"Converted {csv_filename} -> compare/{out_name}",
-            "rows": summary["rows"], "columns": summary["columns"], "file": out_name}
+    return {
+        "status": "ok",
+        "message": f"Converted {csv_filename} -> compare/{out_name}",
+        "rows": summary["rows"],
+        "columns": summary["columns"],
+        "file": out_name,
+    }
 
 
 @app.post("/api/upload")
@@ -172,9 +232,14 @@ async def upload_and_convert(file: UploadFile = File(...), output_name: str = Fo
         out_name    = output_name or filename
         output_path = COMPARE_DIR / out_name
         output_path.write_text(raw, encoding="utf-8")
-        return {"status": "ok", "message": f"Uploaded JSON -> compare/{out_name}",
-                "rows": len(data), "columns": list(data[0].keys()) if data else [],
-                "file": out_name, "type": "json"}
+        return {
+            "status": "ok",
+            "message": f"Uploaded JSON -> compare/{out_name}",
+            "rows": len(data),
+            "columns": list(data[0].keys()) if data else [],
+            "file": out_name,
+            "type": "json",
+        }
 
     import tempfile
     out_name    = output_name or f"{stem}.json"
@@ -191,9 +256,14 @@ async def upload_and_convert(file: UploadFile = File(...), output_name: str = Fo
             tmp_path.unlink(missing_ok=True)
         except Exception:
             pass
-    return {"status": "ok", "message": f"Uploaded & converted {filename} -> compare/{out_name}",
-            "rows": summary["rows"], "columns": summary["columns"],
-            "file": out_name, "type": "csv->json"}
+    return {
+        "status": "ok",
+        "message": f"Uploaded & converted {filename} -> compare/{out_name}",
+        "rows": summary["rows"],
+        "columns": summary["columns"],
+        "file": out_name,
+        "type": "csv->json",
+    }
 
 
 @app.get("/api/data/{filename}")
@@ -201,7 +271,7 @@ async def get_json_data(filename: str):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not filename.endswith(".json"):
-        raise HTTPException(status_code=400, detail=f"Only .json files are supported")
+        raise HTTPException(status_code=400, detail="Only .json files are supported")
     json_path = COMPARE_DIR / filename
     if not json_path.exists():
         raise HTTPException(status_code=404, detail=f"JSON file not found: {filename}")
@@ -234,10 +304,12 @@ async def run_compare():
     if not compare_script.exists():
         raise HTTPException(status_code=404, detail="diamond_compare.py not found in project root")
     try:
-        result = subprocess.run([sys.executable, str(compare_script)],
-                                capture_output=True, text=True, timeout=600)
-        success    = result.returncode == 0
-        rows       = 0
+        result = subprocess.run(
+            [sys.executable, str(compare_script)],
+            capture_output=True, text=True, timeout=600,
+        )
+        success      = result.returncode == 0
+        rows         = 0
         compare_data = None
         if COMPARE_JSON.exists():
             try:
@@ -250,11 +322,11 @@ async def run_compare():
             "returncode": result.returncode,
             "rows":       rows,
             "files": {
-                "common":    {**_file_info(COMPARE_JSON),          "filename": "compare.json"},
-                "partial":   {**_file_info(COMPARE_PARTIAL_JSON),  "filename": "compare_partial.json"},
-                "all":       {**_file_info(COMPARE_ALL_JSON),      "filename": "compare_all.json"},
-                "br_vs_lg":  {**_file_info(COMPARE_BR_VS_LG_JSON), "filename": "compare_br_vs_lg.json"},
-                "csv":       {**_file_info(COMPARE_CSV),           "filename": "compare.csv"},
+                "common":   {**_file_info(COMPARE_JSON),          "filename": "compare.json"},
+                "partial":  {**_file_info(COMPARE_PARTIAL_JSON),  "filename": "compare_partial.json"},
+                "all":      {**_file_info(COMPARE_ALL_JSON),      "filename": "compare_all.json"},
+                "br_vs_lg": {**_file_info(COMPARE_BR_VS_LG_JSON), "filename": "compare_br_vs_lg.json"},
+                "csv":      {**_file_info(COMPARE_CSV),           "filename": "compare.csv"},
             },
             "compare_json": compare_data,
             "stdout": result.stdout[-3000:] if result.stdout else "",
@@ -269,7 +341,10 @@ async def run_compare():
 @app.get("/api/status")
 async def get_diamond_status():
     if not DIAMOND_STATUS_JSON.exists():
-        raise HTTPException(status_code=404, detail="diamond_status.json not found — run pipeline first")
+        raise HTTPException(
+            status_code=404,
+            detail="diamond_status.json not found — run pipeline first"
+        )
     try:
         raw  = DIAMOND_STATUS_JSON.read_text(encoding="utf-8")
         raw  = _clean_json_text(raw)
@@ -287,10 +362,10 @@ async def health():
         "json_files":      len(list(COMPARE_DIR.glob("*.json"))),
         "default_dataset": COMPARE_JSON.exists(),
         "datasets": {
-            "common":    COMPARE_JSON.exists(),
-            "partial":   COMPARE_PARTIAL_JSON.exists(),
-            "all":       COMPARE_ALL_JSON.exists(),
-            "br_vs_lg":  COMPARE_BR_VS_LG_JSON.exists(),
+            "common":   COMPARE_JSON.exists(),
+            "partial":  COMPARE_PARTIAL_JSON.exists(),
+            "all":      COMPARE_ALL_JSON.exists(),
+            "br_vs_lg": COMPARE_BR_VS_LG_JSON.exists(),
         },
         "compare_csv": COMPARE_CSV.exists(),
         "timestamp":   datetime.datetime.now().isoformat(),
