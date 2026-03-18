@@ -1,4 +1,4 @@
-import requests, os, csv, re, html
+import requests, os, csv, re, html, datetime
 from bs4 import BeautifulSoup
 from logger import get_logger
 
@@ -24,17 +24,52 @@ CSV_FILE   = os.path.join(down_files, "loosegrowndiamond.csv")
 STATE_FILE = os.path.join(down_files, "lgd_state.txt")
 
 
-def clean_id(v):
-    return v.replace('"', "").strip() if v else ""
+# ── FILE DATE CHECK ───────────────────────────────────────────────────────────
 
+def rotate_old_file(filepath):
+    """
+    If `filepath` exists but was last modified MORE than 1 day ago,
+    rename it to  <stem>_YYYY-MM-DD.<ext>  (using its modification date)
+    and reset the state file so the scraper starts fresh.
 
-def clean_html(v):
-    if not v:
-        return ""
-    v = html.unescape(v)
-    v = re.sub(r"<[^>]+>", "", v)
-    v = v.replace("\\n", " ").replace("\\t", " ").replace("\\", "")
-    return re.sub(r"\s+", " ", v).strip()
+    Returns True if the file was rotated (caller should start fresh).
+    Returns False if the file is fresh (≤1 day old) or did not exist.
+    """
+    if not os.path.exists(filepath):
+        return False
+
+    mtime      = os.path.getmtime(filepath)
+    mod_date   = datetime.datetime.fromtimestamp(mtime)
+    age        = datetime.datetime.now() - mod_date
+
+    if age.total_seconds() <= 86400:          # 86 400 s = 1 day
+        log.info(
+            f"File is fresh ({age.seconds // 3600}h {(age.seconds % 3600) // 60}m old) — continuing."
+        )
+        return False
+
+    # File is older than 1 day → rename it
+    date_str  = mod_date.strftime("%Y-%m-%d")
+    stem, ext = os.path.splitext(filepath)
+    new_name  = f"{stem}_{date_str}{ext}"
+
+    # If a file with that name already exists, add a counter to avoid collisions
+    counter = 1
+    while os.path.exists(new_name):
+        new_name = f"{stem}_{date_str}_{counter}{ext}"
+        counter += 1
+
+    os.rename(filepath, new_name)
+    log.info(f"Old file renamed → {os.path.basename(new_name)}  (was {age.days}d {age.seconds // 3600}h old)")
+
+    # Reset state so we start from offset 1
+    if os.path.exists(STATE_FILE):
+        os.remove(STATE_FILE)
+        log.info("State file reset — will start from offset 1")
+
+    return True
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def get_payload(start):
@@ -53,6 +88,19 @@ def get_payload(start):
         "lwratio": "1.00,2.75",
         "heartarrow": "0"
     }
+
+
+def clean_id(v):
+    return v.replace('"', "").strip() if v else ""
+
+
+def clean_html(v):
+    if not v:
+        return ""
+    v = html.unescape(v)
+    v = re.sub(r"<[^>]+>", "", v)
+    v = v.replace("\\n", " ").replace("\\t", " ").replace("\\", "")
+    return re.sub(r"\s+", " ", v).strip()
 
 
 def load_existing_skus():
@@ -163,6 +211,12 @@ def parse_rows(html_block, existing_ids, writer):
 def loose_grown_diamonds_scrappe():
     log.info("=" * 50)
     log.info("Starting Loose Grown Diamond scrape")
+
+    # ── Rotate CSV if older than 1 day ───────────────────────────
+    rotated = rotate_old_file(CSV_FILE)
+    if rotated:
+        log.info("Fresh run — old data archived, starting from scratch.")
+    # ─────────────────────────────────────────────────────────────
 
     init_csv()
     existing_ids = load_existing_skus()

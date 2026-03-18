@@ -3,7 +3,7 @@ import csv
 import time
 import os
 import json
-from datetime import datetime
+from datetime import datetime,timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from logger import get_logger
@@ -22,6 +22,21 @@ os.makedirs(down_files, exist_ok=True)
 
 OUTPUT_CSV    = os.path.join(down_files, "precious_carbon.csv")
 PROGRESS_FILE = os.path.join(down_files, "pc_progress.json")
+
+def delete_if_older_than_1_day(file_path):
+    if os.path.exists(file_path):
+        file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+        if datetime.now() - file_time > timedelta(days=1):
+            os.remove(file_path)
+            print(f"Deleted old file: {file_path}")
+
+# Paths
+OUTPUT_CSV = os.path.join(down_files, "precious_carbon.csv")
+PROGRESS_FILE = os.path.join(down_files, "pc_progress.json")
+
+# Check and delete
+delete_if_older_than_1_day(OUTPUT_CSV)
+delete_if_older_than_1_day(PROGRESS_FILE)
 
 HEADERS = {
     "Accept":             "application/json, text/plain, */*",
@@ -139,23 +154,27 @@ def save_progress(done_pages: set, total_saved: int, total_pages: int):
     except Exception as e:
         log.warning(f"Could not save progress: {e}")
 
-
-def load_existing_certs(csv_path: str) -> set:
+def load_existing_certs(csv_path: str) -> tuple:
+    """Returns (seen_certs: set, resume_page: int)"""
     seen = set()
     if not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0:
-        return seen
+        return seen, 1
     try:
         with open(csv_path, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 cert = str(row.get("certificateNumber", "")).strip()
                 if cert:
                     seen.add(cert)
-        log.info(f"Existing CSV has {len(seen):,} unique certificate numbers — duplicates will be skipped")
+        diamond_count = len(seen)
+        resume_page   = (diamond_count // PAGE_SIZE) + 1
+        log.info(
+            f"Existing CSV has {diamond_count:,} unique diamonds — "
+            f"resuming from page {resume_page} (skipping pages 1–{resume_page - 1})"
+        )
     except Exception as e:
         log.warning(f"Could not read existing CSV for deduplication: {e}")
-    return seen
-
-
+        return seen, 1
+    return seen, resume_page
 def fetch_page(page: int, session: requests.Session) -> tuple:
     for attempt in range(1, 5):
         try:

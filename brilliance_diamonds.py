@@ -4,6 +4,7 @@ import random
 import csv
 import os
 import json
+import datetime
 from logger import get_logger
 
 log = get_logger("brilliance")
@@ -17,9 +18,9 @@ os.makedirs('diamond_files', exist_ok=True)
 CSV_FILE        = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
 CHECKPOINT_FILE = f"{base_dir}/diamond_files/checkpoint.json"
 
-SLEEP_MIN   = 0.0   # min sleep between normal pages (seconds)
-SLEEP_MAX   = 1.0   # max sleep between normal pages (seconds)
-SLEEP_EMPTY = 2.0   # sleep when a page returns 0 new diamonds
+SLEEP_MIN   = 1.0
+SLEEP_MAX   = 3.0
+SLEEP_EMPTY = 2.0
 RETRY_SLEEP = 20
 MAX_RETRIES = 5
 
@@ -30,8 +31,56 @@ FIELDS = [
     "reportNumber","info","alias","fast"
 ]
 
-# ---------------- SESSION ---------------- #
 
+# ── FILE DATE CHECK ───────────────────────────────────────────────────────────
+
+def rotate_old_file(filepath):
+    """
+    If `filepath` exists but was last modified MORE than 1 day ago,
+    rename it to  <stem>_YYYY-MM-DD.<ext>  (using its modification date)
+    and clear the checkpoint so the scraper starts fresh.
+
+    Returns True if the file was rotated (caller should start fresh).
+    Returns False if the file is fresh (≤1 day old) or did not exist.
+    """
+    if not os.path.exists(filepath):
+        return False
+
+    mtime    = os.path.getmtime(filepath)
+    mod_date = datetime.datetime.fromtimestamp(mtime)
+    age      = datetime.datetime.now() - mod_date
+
+    if age.total_seconds() <= 86400:          # 86 400 s = 1 day
+        log.info(
+            f"File is fresh ({age.seconds // 3600}h {(age.seconds % 3600) // 60}m old) — continuing."
+        )
+        return False
+
+    # File is older than 1 day → rename it with its modification date
+    date_str  = mod_date.strftime("%Y-%m-%d")
+    stem, ext = os.path.splitext(filepath)
+    new_name  = f"{stem}_{date_str}{ext}"
+
+    # Avoid overwriting an existing archive file
+    counter = 1
+    while os.path.exists(new_name):
+        new_name = f"{stem}_{date_str}_{counter}{ext}"
+        counter += 1
+
+    os.rename(filepath, new_name)
+    log.info(f"Old file renamed → {os.path.basename(new_name)}  (was {age.days}d {age.seconds // 3600}h old)")
+
+    # Clear checkpoint so pagination restarts from page 1
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+        log.info("Checkpoint cleared — will start from page 1")
+
+    return True
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ---------------- SESSION ---------------- #
 session = requests.Session(impersonate="chrome124")
 
 HEADERS = {
@@ -186,6 +235,12 @@ def write_diamond(writer, d, cert):
 def brilliance_diamonds_scraper():
     log.info("=" * 50)
     log.info("Starting Brilliance scraper")
+
+    # ── Rotate CSV if older than 1 day ───────────────────────────
+    rotated = rotate_old_file(CSV_FILE)
+    if rotated:
+        log.info("Fresh run — old data archived, starting from page 1.")
+    # ─────────────────────────────────────────────────────────────
 
     existing_certs             = load_existing_certs()
     file, writer               = get_writer()

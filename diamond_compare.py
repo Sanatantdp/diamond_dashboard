@@ -19,7 +19,7 @@ COMPARE_CSV              = os.path.join(COMPARE_DIR, "compare.csv")
 COMPARE_JSON             = os.path.join(COMPARE_DIR, "compare.json")
 COMPARE_PARTIAL_JSON     = os.path.join(COMPARE_DIR, "compare_partial.json")
 COMPARE_ALL_JSON         = os.path.join(COMPARE_DIR, "compare_all.json")
-COMPARE_BR_VS_LG_JSON    = os.path.join(COMPARE_DIR, "compare_br_vs_lg.json")   # ← NEW
+COMPARE_BR_VS_LG_JSON    = os.path.join(COMPARE_DIR, "compare_br_vs_lg.json")
 DIAMOND_STATUS_JSON      = os.path.join(COMPARE_DIR, "diamond_status.json")
 MAX_AGE_DAYS             = 7
 
@@ -71,11 +71,7 @@ def load_PC(csv_path):
 
 
 # ══════════════════════════════════════════════════════════════
-# NEW — BUILD compare_br_vs_lg.json
-#   Diamonds present in BOTH Brilliance AND Loose-Grown CSVs,
-#   regardless of whether they exist in PC.
-#   Includes their raw prices, any PC price if found, and
-#   % diff columns so the dashboard table can render them.
+# BUILD compare_br_vs_lg.json
 # ══════════════════════════════════════════════════════════════
 
 LG_EXTRA_COLS = {
@@ -92,7 +88,6 @@ def load_lg_with_attrs(csv_path: str, cert_col: str, price_col: str) -> pd.DataF
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
     log.info(f"  LG CSV columns: {list(df.columns)}")
 
-    # Normalise column names to lowercase for lookup
     col_map = {c.lower().strip(): c for c in df.columns}
 
     df["certificate_number"] = df[cert_col].astype(str).str.strip()
@@ -117,18 +112,9 @@ def load_lg_with_attrs(csv_path: str, cert_col: str, price_col: str) -> pd.DataF
 
 
 def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
-    """
-    Build compare_br_vs_lg.json:
-      - Inner join of Brilliance ∩ Loose-Grown on certificate_number
-      - Uses LG CSV directly (with attrs) so shape/carat/cut/color/clarity are populated
-      - Renames certificate_number → diamond_id, fixes _x/_y merge cols
-      - NO PC data — only BR and LG prices + BR -30% vs LG comparison
-      - Returns count of records saved
-    """
     log.info("=" * 50)
     log.info("BUILDING compare_br_vs_lg.json (Brilliance ∩ LG)")
 
-    # Re-load LG with attribute columns (the loaded dict only has cert+price)
     from dotenv import load_dotenv
     load_dotenv()
     lg_csv   = os.path.join(DIAMOND_FILES_DIR, get_env("LOOSE_GROWN_CSV", "loosegrowndiamond.csv"))
@@ -137,17 +123,14 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
     lg_df    = load_lg_with_attrs(lg_csv, lg_cert, lg_price)
 
     br_df = loaded.get("brilliance")
-    pc_df = loaded.get("PC")
 
     if br_df is None:
         log.warning("brilliance not loaded — skipping br_vs_lg build")
         return 0
 
-    # Inner join: only certs present in BOTH BR and LG
     merged = pd.merge(lg_df, br_df, on="certificate_number", how="inner")
     log.info(f"  LG rows: {len(lg_df):,}  |  BR rows: {len(br_df):,}  |  Inner join: {len(merged):,}")
 
-    # Keep only rows where BOTH LG and BR prices are present
     before = len(merged)
     merged = merged.dropna(subset=["loose-grown Price USD", "brilliance Price USD"])
     merged = merged[merged["loose-grown Price USD"] > 0]
@@ -160,18 +143,16 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
             json.dump([], f)
         return 0
 
-    # ── Fix _x / _y duplicate columns from merge ──────────────
-    # LG has attrs (shape_x, color_x ...), BR has none → drop _y cols, rename _x → clean
+    # Fix _x / _y duplicate columns from merge
     for col in list(merged.columns):
         if col.endswith("_y"):
             merged = merged.drop(columns=[col])
         elif col.endswith("_x"):
             merged = merged.rename(columns={col: col[:-2]})
 
-    # ── Rename certificate_number → diamond_id ─────────────────
     merged = merged.rename(columns={"certificate_number": "diamond_id"})
 
-    # ── Add discounted price columns (BR only, skip PC) ────────
+    # Add discounted price columns (BR only, skip PC)
     for name, disc in discounts.items():
         if name == "PC":
             continue
@@ -182,7 +163,7 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
             merged[price_col] = pd.to_numeric(merged[price_col], errors="coerce").round(0)
             merged[disc_col]  = (merged[price_col] * disc).round(0)
 
-    # ── Add BR -30% vs LG price comparison ────────────────────
+    # Add BR -30% vs LG price comparison
     br_disc      = discounts.get("brilliance", 0.70)
     br_label     = f"-{round((1 - br_disc) * 100)}%"
     br_disc_col  = f"brilliance {br_label} USD"
@@ -194,18 +175,16 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
         merged["BR -30% vs LG %"]   = ((br_vals - lg_vals) / lg_vals * 100).round(2)
         log.info(f"Added BR -30% vs LG comparison  ({merged['BR -30% vs LG %'].notna().sum():,} valid rows)")
 
-    # ── Drop all PC-related and helper columns ─────────────────
+    # Drop all PC-related columns
     pc_cols_to_drop = (
         ["PC Price USD", "loose-grown vs PC %", "brilliance vs PC %",
-         "luvansh vs PC %", "vendors_matched", "in_pc",
+         "vendors_matched", "in_pc",
          "_all_matched", "_some_matched", "_vendor_count"]
         + [c for c in merged.columns if c.startswith("PC ")]
     )
     merged = merged.drop(columns=pc_cols_to_drop, errors="ignore")
 
-    # Clean for JSON
     import math
-
     records = merged.where(merged.notna(), other=None).to_dict(orient="records")
     clean = []
     for row in records:
@@ -248,7 +227,6 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             pc_vs[name] = {"matched": 0, "vendor_total": vendor_totals.get(name, 0)}
             continue
         matched   = int(combined[price_col].notna().sum())
-        unmatched = int(combined[price_col].isna().sum())
         pc_vs[name] = {
             "matched":          matched,
             "vendor_total":     vendor_totals.get(name, 0),
@@ -265,7 +243,7 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             "common":     len(common_records),
             "partial":    len(partial_records),
             "all_pc":     len(all_records),
-            "br_vs_lg":   br_vs_lg_count,      # ← NEW
+            "br_vs_lg":   br_vs_lg_count,
         },
     }
 
@@ -276,9 +254,8 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 def load_vendors_from_env():
     vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",                "default_price": "price",            "default_disc": "0.70"},
-        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber",       "default_price": "price",            "default_disc": "0.70"},
-        {"name": "luvansh",     "env_csv": "LUVANSH_CSV",      "env_cert": "LUVANSH_CERT_COL",      "env_price": "LUVANSH_PRICE_COL",      "env_disc": "LUVANSH_DISCOUNT",      "default_csv": "luvansh_diamonds.csv",    "default_cert": "certificate_number", "default_price": "discounted_price", "default_disc": "1.00"},
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "sku",          "default_price": "price", "default_disc": "0.70"},
+        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.70"},
     ]
 
     vendors = []
@@ -364,8 +341,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 combined[pct_col] = ((vendor_price - PC_price) / PC_price * 100).round(2)
                 log.info(f"Added % diff: {pct_col}  ({combined[pct_col].notna().sum():,} valid rows)")
 
-            # ── PC vs vendor $ diff columns ───────────────────────
-            # LG vs PC $  (LG price - PC -30%)
+            # LG vs PC $
             lg_price_col = "loose-grown Price USD"
             if lg_price_col in combined.columns:
                 pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
@@ -373,7 +349,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 combined["loose-grown vs PC USD"] = (lg_vals - pc_vals).round(0)
                 log.info(f"Added loose-grown vs PC USD  ({combined['loose-grown vs PC USD'].notna().sum():,} valid rows)")
 
-            # Brilliance vs PC $  (BR -30% - PC -30%)
+            # Brilliance vs PC $
             br_disc     = discounts.get("brilliance", 0.70)
             br_label    = f"-{round((1 - br_disc) * 100)}%"
             br_disc_col = f"brilliance {br_label} USD"
@@ -390,14 +366,13 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     # Column ordering
     attr_cols = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
     base_cols = ["certificate_number", "vendors_matched"] + attr_cols
-    VENDOR_ORDER = ["loose-grown", "brilliance", "luvansh", "PC"]
+    VENDOR_ORDER = ["loose-grown", "brilliance", "PC"]
     extra_vendors = [n for n in loaded.keys() if n not in VENDOR_ORDER and n != "PC"]
     ordered_vendors = ([n for n in VENDOR_ORDER if n in loaded and n != "PC"] + extra_vendors + (["PC"] if "PC" in loaded else []))
     vendor_cols = []
     for name in ordered_vendors:
         disc  = discounts.get(name, 0.70)
         label = f"-{round((1 - disc) * 100)}%"
-        # Price → discounted price → $ vs PC → % vs PC
         for col in [
             f"{name} Price USD",
             f"{name} {label} USD",
@@ -564,7 +539,7 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
         loaded["PC"]    = load_PC(PC_csv)
         discounts["PC"] = PC_discount
 
-    # ── STEP 1: build compare files ───────────────────────────
+    # STEP 1: build compare files
     result = build_compare_files(loaded, discounts)
     if isinstance(result, tuple):
         combined, common_records, partial_records, all_records = result
@@ -576,10 +551,10 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
         log.error("compare.csv is empty — aborting.")
         return {}
 
-    # ── NEW: build BR vs LG file ──────────────────────────────
+    # Build BR vs LG file
     br_vs_lg_count = build_br_vs_lg(loaded, discounts)
 
-    # ── Save status ───────────────────────────────────────────
+    # Save status
     _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records, br_vs_lg_count)
 
 
@@ -618,12 +593,9 @@ def check_all_files_and_run():
     vendors, PC_csv, PC_discount = load_vendors_from_env()
     all_files = [(v["csv"], v["name"]) for v in vendors] + [(PC_csv, "PC")]
     statuses  = []
-    stale_warn = []
     for fpath, label in all_files:
         status = check_file_age(fpath, label)
         statuses.append(status)
-        if not status["ok"] and status["status"] == "STALE":
-            stale_warn.append(status)
     status_report = {
         "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "all_fresh":  all(s["ok"] for s in statuses),
