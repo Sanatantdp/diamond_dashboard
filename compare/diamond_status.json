@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-05-15 17:05:14",
+  "generated_at": "2026-05-15 18:03:57",
   "pc_total": 103637,
   "vendor_totals": {
     "loose-grown": 422539,
-    "brilliance": 334563
+    "brilliance": 356752
   },
   "pc_vs_vendors": {
     "loose-grown": {
@@ -14,8 +14,8 @@
     },
     "brilliance": {
       "matched": 328,
-      "vendor_total": 334563,
-      "vendor_not_in_pc": 334235,
+      "vendor_total": 356752,
+      "vendor_not_in_pc": 356424,
       "match_rate_pct": 0.32
     }
   },

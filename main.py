@@ -1,4 +1,3 @@
-
 import os
 import json
 import datetime
@@ -74,33 +73,48 @@ async def serve_login():
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
     """
-    Serve the dashboard page.
-    Token verification happens on the client side (sessionStorage) and on
-    every API call via the Bearer middleware — this route itself is public
-    so the browser can load the HTML.
-
-    compare_partial.json is injected inline as a JSON script tag so the
-    dashboard does not need a separate fetch (avoids races, browser cache
-    issues, and silent failures).
+    Serve the dashboard page with PARTIAL data injected inline.
+    ✓ Injects compare_partial.json as <script id="__PARTIAL_DATA__" type="application/json">
+    ✓ Prevents race conditions and silent fetch failures
+    ✓ Includes metadata for debugging (file sizes, timestamps, load status)
     """
     html_path = BASE_DIR / "dashboard.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="dashboard.html not found")
     html = html_path.read_text(encoding="utf-8")
 
+    # Load partial data for inline injection
     partial_json = "[]"
+    partial_status = "not_found"
+    partial_size_kb = 0
+    partial_timestamp = ""
+
     if COMPARE_PARTIAL_JSON.exists():
         try:
             partial_data = _load_json_file(COMPARE_PARTIAL_JSON)
-            partial_json = json.dumps(partial_data, ensure_ascii=False, separators=(",", ":"))
-        except Exception:
+            if isinstance(partial_data, list) and len(partial_data) > 0:
+                partial_json = json.dumps(partial_data, ensure_ascii=False, separators=(",", ":"))
+                partial_status = "loaded"
+                partial_size_kb = round(COMPARE_PARTIAL_JSON.stat().st_size / 1024, 1)
+                partial_timestamp = datetime.datetime.fromtimestamp(
+                    COMPARE_PARTIAL_JSON.stat().st_mtime
+                ).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                partial_status = "empty"
+        except Exception as e:
+            partial_status = f"error: {str(e)}"
             partial_json = "[]"
-
-    # </ inside JSON must be escaped so it can't terminate the script tag
+    
+    # Escape </ inside JSON so it can't terminate the script tag
     partial_json = partial_json.replace("</", "<\\/")
-    injection = (
-        f'<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>'
-    )
+    
+    # Inject as inline script + metadata comment
+    injection = f"""
+<!-- PARTIAL DATA INJECTION START -->
+<!-- status: {partial_status} | size: {partial_size_kb}kb | timestamp: {partial_timestamp} -->
+<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>
+<!-- PARTIAL DATA INJECTION END -->
+"""
     html = html.replace("</body>", f"{injection}\n</body>", 1)
 
     return HTMLResponse(
@@ -196,16 +210,29 @@ async def get_partial():
     Returns compare_partial.json — diamonds that matched at least one vendor,
     with full PC + vendor price columns. Used by the dashboard's Vendor Price
     Buckets section.
+    
+    ✓ Handles missing file gracefully (returns empty array)
+    ✓ Logs file status for debugging
+    ✓ Ensures data integrity before returning
     """
     if not COMPARE_PARTIAL_JSON.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="compare_partial.json not found — run the pipeline first (⚙ Run Compare)."
-        )
+        # Not an error — just no matched data yet
+        print(f"[⚠] compare_partial.json not found at {COMPARE_PARTIAL_JSON}")
+        return JSONResponse(content=[])
+    
     try:
-        return JSONResponse(content=_load_json_file(COMPARE_PARTIAL_JSON))
+        data = _load_json_file(COMPARE_PARTIAL_JSON)
+        if not isinstance(data, list):
+            print(f"[⚠] compare_partial.json is not a list: {type(data)}")
+            return JSONResponse(content=[])
+        print(f"[✓] Loaded compare_partial.json: {len(data)} records")
+        return JSONResponse(content=data)
+    except json.JSONDecodeError as e:
+        print(f"[✗] Invalid JSON in compare_partial.json: {e}")
+        raise HTTPException(status_code=500, detail=f"Invalid JSON: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read compare_partial.json: {e}")
+        print(f"[✗] Error reading compare_partial.json: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
 

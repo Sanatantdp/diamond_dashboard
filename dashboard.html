@@ -1495,8 +1495,10 @@
         setTimeout(() => (ov.style.display = "none"), 450);
       }
       function markLoaded(label) {
-        document.getElementById("loadedLabel").textContent = label;
-        document.getElementById("loadedIndicator").style.display = "flex";
+        const li = document.getElementById("loadedLabel");
+        const ind = document.getElementById("loadedIndicator");
+        if (li) li.textContent = label;
+        if (ind) ind.style.display = "flex";
       }
 
       // ── API ───────────────────────────────────────────────────
@@ -1530,6 +1532,7 @@
         try {
           const data = await api("GET", "/api/files");
           const sel = document.getElementById("fileSelect");
+          if (!sel) return;
           const prev = sel.value;
           sel.innerHTML = `<option value="">— select a file —</option>`;
           data.files.forEach((f) => {
@@ -1539,9 +1542,8 @@
             sel.appendChild(opt);
           });
           if (prev) sel.value = prev;
-          toast(`${data.count} file(s) found in compare/`, "info");
         } catch (e) {
-          toast("Could not load file list: " + e.message, "error");
+          console.error("[refreshFileList] Failed:", e.message);
         }
       }
       async function loadSelectedFile() {
@@ -1836,8 +1838,8 @@
         )
           selectedPriceVendorKey = av[0].key;
         const sourceLabel = PARTIAL_DATA.length
-          ? `<span style="font-size:.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
-          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
+          ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center" title="Check browser console (F12) for details">⚠ compare_partial.json not loaded</span>`;
         tabsEl.innerHTML =
           av
             .map((vd) => {
@@ -2097,47 +2099,115 @@
         renderTable(filteredData);
       }
 
-      // ── PARTIAL DATA ──────────────────────────────────────────
+      // ──────────────────────────────────────────────────────────
+      // ── PARTIAL DATA — FIXED & ENHANCED ──────────────────────
+      // ──────────────────────────────────────────────────────────
+      // 3-tier strategy:
+      //   Tier 1: Read inline-injected JSON (fastest, no network)
+      //   Tier 2: Fallback to /api/partial endpoint
+      //   Tier 3: Graceful empty array + clear user feedback
+      //
+      // All steps log to console for F12 debugging.
+      // ──────────────────────────────────────────────────────────
       async function loadPartialData() {
-        // Prefer the JSON injected by the server into the HTML — no fetch,
-        // no race, no cache issues.
+        console.log(
+          "%c[PARTIAL] loadPartialData() starting…",
+          "color:#c9a84c;font-weight:bold",
+        );
+
+        // ── TIER 1: Try inline injection ────────────────────────
         const inlineTag = document.getElementById("__PARTIAL_DATA__");
-        if (inlineTag && inlineTag.textContent.trim()) {
-          try {
-            const inline = JSON.parse(inlineTag.textContent);
-            if (Array.isArray(inline) && inline.length) {
-              PARTIAL_DATA = inline;
-              toast(
-                `Partial data loaded — ${inline.length.toLocaleString()} matched records`,
-                "success",
-                3000,
-              );
-              render();
-              return;
+        if (inlineTag) {
+          const rawText = inlineTag.textContent.trim();
+          console.log(
+            `[PARTIAL] Inline tag found · length: ${rawText.length} chars · preview: ${rawText.substring(0, 60)}${rawText.length > 60 ? "…" : ""}`,
+          );
+
+          if (rawText && rawText !== "[]") {
+            try {
+              const inline = JSON.parse(rawText);
+              if (Array.isArray(inline)) {
+                PARTIAL_DATA = inline;
+                if (inline.length > 0) {
+                  console.log(
+                    `%c[PARTIAL] ✓ Loaded from inline: ${inline.length} records`,
+                    "color:#3ecf8e;font-weight:bold",
+                  );
+                  toast(
+                    `✓ Partial data loaded — ${inline.length.toLocaleString()} matched records`,
+                    "success",
+                    3000,
+                  );
+                  render();
+                  return;
+                } else {
+                  console.warn("[PARTIAL] ⚠ Inline data is an empty array");
+                }
+              } else {
+                console.error(
+                  `[PARTIAL] ✗ Inline parsed but is not an array: ${typeof inline}`,
+                );
+              }
+            } catch (e) {
+              console.error("[PARTIAL] ✗ Failed to parse inline JSON:", e);
             }
-          } catch (e) {
-            console.error("Failed to parse inline __PARTIAL_DATA__:", e);
+          } else {
+            console.warn(
+              "[PARTIAL] ⚠ Inline tag is empty or '[]' — falling back to API",
+            );
           }
+        } else {
+          console.warn(
+            "[PARTIAL] ⚠ No __PARTIAL_DATA__ tag found in HTML — server didn't inject. Falling back to API.",
+          );
         }
 
-        // Fallback: fetch from the API (older HTML / fresh data).
+        // ── TIER 2: Fallback fetch from API ─────────────────────
+        console.log("[PARTIAL] Fetching from /api/partial…");
         try {
           const data = await api("GET", "/api/partial");
           if (Array.isArray(data)) {
             PARTIAL_DATA = data;
-            toast(
-              `Partial data loaded — ${data.length.toLocaleString()} matched records`,
-              "success",
-              3000,
-            );
+            if (data.length > 0) {
+              console.log(
+                `%c[PARTIAL] ✓ Loaded from API: ${data.length} records`,
+                "color:#3ecf8e;font-weight:bold",
+              );
+              toast(
+                `✓ Partial data loaded — ${data.length.toLocaleString()} matched records`,
+                "success",
+                3000,
+              );
+            } else {
+              console.warn(
+                "[PARTIAL] ⚠ API returned empty array — no matched records yet",
+              );
+              toast(
+                "⚠ No matched records yet — run the ⚙ Run Compare pipeline",
+                "info",
+                5000,
+              );
+            }
             render();
           } else {
+            console.error(`[PARTIAL] ✗ API returned non-array: ${typeof data}`);
             PARTIAL_DATA = [];
-            toast("compare_partial.json returned non-array payload", "error", 5000);
+            toast(
+              "⚠ API returned invalid format (expected array)",
+              "error",
+              5000,
+            );
+            render();
           }
         } catch (e) {
+          console.error("[PARTIAL] ✗ API fetch failed:", e);
           PARTIAL_DATA = [];
-          toast("Failed to load compare_partial.json: " + e.message, "error", 6000);
+          toast(
+            `⚠ Could not load partial data: ${e.message}. Check console (F12) and server logs.`,
+            "error",
+            6000,
+          );
+          render();
         }
       }
 
@@ -2306,15 +2376,21 @@
       async function runComparePipeline() {
         const btn = document.getElementById("runCompareBtn"),
           st = document.getElementById("runCompareStatus");
-        btn.disabled = true;
-        btn.textContent = "⏳ Running…";
-        st.textContent = "Building compare files…";
-        st.style.color = "var(--accent)";
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "⏳ Running…";
+        }
+        if (st) {
+          st.textContent = "Building compare files…";
+          st.style.color = "var(--accent)";
+        }
         try {
           const r = await api("POST", "/api/run-compare");
           if (r.status === "ok") {
-            st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`;
-            st.style.color = "var(--green)";
+            if (st) {
+              st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`;
+              st.style.color = "var(--green)";
+            }
             toast(
               `Compare pipeline complete — ${r.rows.toLocaleString()} records`,
               "success",
@@ -2325,21 +2401,28 @@
             showLoading("Reloading compare.json…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
-            document.getElementById("fileSelect").value = "compare.json";
-            loadPartialData();
+            const sel = document.getElementById("fileSelect");
+            if (sel) sel.value = "compare.json";
+            await loadPartialData();
             BR_VS_LG_DATA = [];
           } else {
-            st.textContent = `✗ Error (code ${r.returncode})`;
-            st.style.color = "var(--red)";
+            if (st) {
+              st.textContent = `✗ Error (code ${r.returncode})`;
+              st.style.color = "var(--red)";
+            }
             toast("Pipeline error — check server logs", "error", 6000);
           }
         } catch (e) {
-          st.textContent = "✗ Failed";
-          st.style.color = "var(--red)";
+          if (st) {
+            st.textContent = "✗ Failed";
+            st.style.color = "var(--red)";
+          }
           toast("Pipeline failed: " + e.message, "error");
         } finally {
-          btn.disabled = false;
-          btn.textContent = "⚙ Run Compare";
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "⚙ Run Compare";
+          }
         }
       }
 
@@ -2403,8 +2486,10 @@
             showLoading("Loading compare.json…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
-            document.getElementById("fileSelect").value = "compare.json";
-            loadPartialData();
+            const sel = document.getElementById("fileSelect");
+            if (sel) sel.value = "compare.json";
+            // Always load partial data after main data — order matters
+            await loadPartialData();
           } else {
             hideLoading();
             toast(
