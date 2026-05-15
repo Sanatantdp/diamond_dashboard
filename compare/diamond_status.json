@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-05-15 17:05:14",
+  "pc_total": 103637,
+  "vendor_totals": {
+    "loose-grown": 422539,
+    "brilliance": 334563
+  },
+  "pc_vs_vendors": {
+    "loose-grown": {
+      "matched": 14016,
+      "vendor_total": 422539,
+      "vendor_not_in_pc": 408523,
+      "match_rate_pct": 13.52
+    },
+    "brilliance": {
+      "matched": 328,
+      "vendor_total": 334563,
+      "vendor_not_in_pc": 334235,
+      "match_rate_pct": 0.32
+    }
+  },
+  "dataset_counts": {
+    "common": 134,
+    "partial": 14210,
+    "all_pc": 103637,
+    "br_vs_lg": 1534
+  }
+}
