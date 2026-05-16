@@ -141,13 +141,6 @@ def create_formula(cert_no, cert_url):
         return ""
     return f'=HYPERLINK("{cert_url}", "{cert_no}")'
 
-# def extract_certificate_no(cert_url):
-#     """Extract the certificate number from the IGI URL query param ?r=XXXXXXX"""
-#     if not cert_url:
-#         return ""
-#     match = re.search(r"[?&]r=(\d+)", cert_url)
-#     return match.group(1) if match else ""
-
 
 def get_payload(start):
     return {
@@ -220,6 +213,11 @@ def parse_rows(items, existing_ids, writer):
         if not sku or sku in existing_ids:
             continue
 
+        # Skip items with certificate_type == 0
+        cert_type = item.get("certificate_type") or ""
+        if str(cert_type).strip() == "0":
+            continue
+
         cert_url = item.get("certificate") or ""
         cert_no  = extract_certificate_no(cert_url)
 
@@ -237,7 +235,7 @@ def parse_rows(items, existing_ids, writer):
             sku,
             cert_url,
             cert_no,
-            item.get("certificate_type") or "",
+            cert_type,
             item.get("video")           or "",
             item.get("lot_number")      or "",
             (item.get("mm")             or "").strip(),
@@ -319,4 +317,3 @@ def loose_grown_diamonds_scrappe():
 
 if __name__ == "__main__":
     loose_grown_diamonds_scrappe()
-    																																																																							

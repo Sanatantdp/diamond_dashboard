@@ -24,11 +24,11 @@ CSV_FILE        = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
 CHECKPOINT_FILE = f"{base_dir}/diamond_files/checkpoint.json"
 BATCH_REPORT_FILE = f"{base_dir}/diamond_files/batch_reports.json"
 
-SLEEP_MIN       = 1.0          # between normal calls
-SLEEP_MAX       = 3.0
+SLEEP_MIN       = 0.0          # between normal calls
+SLEEP_MAX       = 1.0
 SLEEP_EMPTY     = 2.0          # when page returns 0 diamonds
-BATCH_SLEEP_MIN = 300         # sleep between every 1000-call batch
-BATCH_SLEEP_MAX = 600
+BATCH_SLEEP_MIN = 100         # sleep between every 1000-call batch
+BATCH_SLEEP_MAX = 200
 RETRY_SLEEP     = 20
 MAX_RETRIES     = 5
 BATCH_SIZE      = 1000         # calls per batch before report + sleep
