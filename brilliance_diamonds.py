@@ -1,4 +1,5 @@
 from curl_cffi import requests
+from fake_useragent import UserAgent
 import time
 import random
 import csv
@@ -11,7 +12,7 @@ from logger import get_logger
 from models import BrillianceLabData, truncate_and_load_csv
 
 log = get_logger("brilliance")
-
+ua = UserAgent()
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 URL           = "https://worker.brilliance.com/api/v1/lab-grown-diamond-search"
 COUNT_URL     = "https://worker.brilliance.com/api/v1/lab-grown-diamond-search-count"
@@ -58,8 +59,7 @@ HEADERS = {
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-site",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    "user-agent":ua.random
 }
 
 BASE_PAYLOAD = {
