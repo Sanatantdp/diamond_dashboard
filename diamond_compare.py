@@ -254,7 +254,7 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 def load_vendors_from_env():
     vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "org_price", "default_disc": "0.70"},
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "price", "default_disc": "0.70"},
         {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.70"},
     ]
 
@@ -312,7 +312,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     partial_count = combined["_some_matched"].sum()
     log.info(f"  Common (LG+BR+PC): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All PC: {len(combined):,}")
 
-    # Discounted price columns
+    # ── Discounted price columns (all vendors including LG) ──────
     for name, disc in discounts.items():
         price_col = f"{name} Price USD"
         label     = f"-{round((1 - disc) * 100)}%"
@@ -320,8 +320,9 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         if price_col in combined.columns:
             combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
             combined[disc_col]  = (combined[price_col] * disc).round(0)
+            log.info(f"Added discount col: {disc_col}")
 
-    # % diff vs PC
+    # ── % diff vs PC ─────────────────────────────────────────────
     if "PC" in discounts and "PC Price USD" in combined.columns:
         PC_disc     = discounts["PC"]
         PC_label    = f"-{round((1 - PC_disc) * 100)}%"
@@ -341,15 +342,17 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 combined[pct_col] = ((vendor_price - PC_price) / PC_price * 100).round(2)
                 log.info(f"Added % diff: {pct_col}  ({combined[pct_col].notna().sum():,} valid rows)")
 
-            # LG vs PC $
-            lg_price_col = "loose-grown Price USD"
-            if lg_price_col in combined.columns:
+            # ── LG vs PC $ — use LG -30% (consistent with Brilliance) ──
+            lg_disc     = discounts.get("loose-grown", 0.70)
+            lg_label    = f"-{round((1 - lg_disc) * 100)}%"
+            lg_disc_col = f"loose-grown {lg_label} USD"
+            if lg_disc_col in combined.columns:
                 pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
-                lg_vals = pd.to_numeric(combined[lg_price_col], errors="coerce").replace(0, float("nan"))
+                lg_vals = pd.to_numeric(combined[lg_disc_col], errors="coerce").replace(0, float("nan"))
                 combined["loose-grown vs PC USD"] = (lg_vals - pc_vals).round(0)
-                log.info(f"Added loose-grown vs PC USD  ({combined['loose-grown vs PC USD'].notna().sum():,} valid rows)")
+                log.info(f"Added loose-grown vs PC USD (using {lg_disc_col})  ({combined['loose-grown vs PC USD'].notna().sum():,} valid rows)")
 
-            # Brilliance vs PC $
+            # ── Brilliance vs PC $ ───────────────────────────────────
             br_disc     = discounts.get("brilliance", 0.70)
             br_label    = f"-{round((1 - br_disc) * 100)}%"
             br_disc_col = f"brilliance {br_label} USD"
@@ -363,7 +366,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         return ", ".join(name for name in loaded.keys() if pd.notna(row.get(f"{name} Price USD")))
     combined["vendors_matched"] = combined.apply(vendor_list, axis=1)
 
-    # Column ordering
+    # ── Column ordering ──────────────────────────────────────────
     attr_cols = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
     base_cols = ["certificate_number", "vendors_matched"] + attr_cols
     VENDOR_ORDER = ["loose-grown", "brilliance", "PC"]
@@ -375,7 +378,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         label = f"-{round((1 - disc) * 100)}%"
         for col in [
             f"{name} Price USD",
-            f"{name} {label} USD",
+            f"{name} {label} USD",       # e.g. loose-grown -30% USD ← now included
             f"{name} vs PC USD",
             f"{name} vs PC %",
         ]:

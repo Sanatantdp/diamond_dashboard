@@ -38,7 +38,7 @@
         min-height: 100vh;
       }
 
-      /* ── LOADING ───────────────────────────────────────────── */
+      /* ── LOADING ── */
       #loadingOverlay {
         position: fixed;
         inset: 0;
@@ -78,7 +78,7 @@
         color: var(--muted);
       }
 
-      /* ── TOAST ────────────────────────────────────────────── */
+      /* ── TOAST ── */
       #toast {
         position: fixed;
         bottom: 24px;
@@ -115,7 +115,7 @@
         color: var(--accent);
       }
 
-      /* ── BR vs LG MODAL ───────────────────────────────────── */
+      /* ── BR vs LG MODAL ── */
       #brVsLgModal {
         position: fixed;
         inset: 0;
@@ -376,141 +376,7 @@
         color: var(--br-vs-lg);
       }
 
-      /* ── TOPBAR ───────────────────────────────────────────── */
-      .topbar {
-        background: var(--surface);
-        border-bottom: 1px solid var(--border);
-        padding: 14px 40px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
-      }
-      .topbar-section {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .topbar label {
-        font-size: 0.65rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        white-space: nowrap;
-      }
-      .sep {
-        color: var(--border);
-      }
-      .inp {
-        background: var(--card);
-        border: 1px solid var(--border);
-        color: var(--text);
-        font-family: var(--font-mono);
-        font-size: 0.78rem;
-        padding: 7px 12px;
-        border-radius: 6px;
-        outline: none;
-        transition: border-color 0.2s;
-      }
-      .inp:focus {
-        border-color: var(--accent);
-      }
-      .inp::placeholder {
-        color: var(--muted);
-      }
-      #fileSelect {
-        min-width: 220px;
-        cursor: pointer;
-      }
-      #fileSelect option {
-        background: var(--card);
-      }
-      .upload-zone {
-        border: 1px dashed var(--border);
-        border-radius: 6px;
-        padding: 6px 12px;
-        cursor: pointer;
-        font-size: 0.75rem;
-        color: var(--muted);
-        transition: all 0.2s;
-        white-space: nowrap;
-      }
-      .upload-zone:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      #csvFileInput {
-        display: none;
-      }
-      .btn {
-        border: none;
-        padding: 7px 16px;
-        border-radius: 6px;
-        font-family: var(--font-mono);
-        font-size: 0.74rem;
-        cursor: pointer;
-        font-weight: 500;
-        transition: all 0.2s;
-        white-space: nowrap;
-      }
-      .btn-gold {
-        background: var(--accent);
-        color: var(--bg);
-      }
-      .btn-gold:hover {
-        opacity: 0.85;
-      }
-      .btn-ghost {
-        background: var(--card);
-        color: var(--muted);
-        border: 1px solid var(--border);
-      }
-      .btn-ghost:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .btn-sm {
-        padding: 5px 12px;
-        font-size: 0.7rem;
-      }
-      .btn-logout {
-        background: color-mix(in srgb, var(--red) 12%, var(--card));
-        color: var(--red);
-        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
-        margin-left: auto;
-      }
-      .btn-logout:hover {
-        background: color-mix(in srgb, var(--red) 22%, var(--card));
-        border-color: var(--red);
-      }
-      .loaded-indicator {
-        font-size: 0.7rem;
-        color: var(--green);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .loaded-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--green);
-        animation: pulse 2s ease-in-out infinite;
-      }
-      @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-          transform: scale(1);
-        }
-        50% {
-          opacity: 0.5;
-          transform: scale(0.8);
-        }
-      }
-
-      /* ── HEADER ───────────────────────────────────────────── */
+      /* ── HEADER ── */
       .header {
         padding: 28px 40px 22px;
         background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
@@ -558,7 +424,7 @@
         letter-spacing: 0.08em;
       }
 
-      /* ── CONTROLS ─────────────────────────────────────────── */
+      /* ── CONTROLS ── */
       .controls {
         padding: 16px 40px;
         background: var(--surface);
@@ -579,8 +445,56 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
       }
+      .inp {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        padding: 7px 12px;
+        border-radius: 6px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .inp:focus {
+        border-color: var(--accent);
+      }
+      .inp::placeholder {
+        color: var(--muted);
+      }
+      .btn {
+        border: none;
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .btn-gold {
+        background: var(--accent);
+        color: var(--bg);
+      }
+      .btn-gold:hover {
+        opacity: 0.85;
+      }
+      .btn-ghost {
+        background: var(--card);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .btn-sm {
+        padding: 5px 12px;
+        font-size: 0.7rem;
+      }
 
-      /* ── MAIN ─────────────────────────────────────────────── */
+      /* ── MAIN ── */
       .main {
         padding: 28px 40px;
       }
@@ -600,7 +514,7 @@
         background: var(--border);
       }
 
-      /* ── VENDOR TABS ──────────────────────────────────────── */
+      /* ── VENDOR TABS ── */
       .vendor-tabs {
         display: flex;
         gap: 6px;
@@ -656,7 +570,7 @@
         color: var(--vcolor, var(--accent));
       }
 
-      /* ── BUCKET CARDS ─────────────────────────────────────── */
+      /* ── BUCKET CARDS ── */
       .buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -745,7 +659,7 @@
         opacity: 0.7;
       }
 
-      /* ── PRICE BUCKETS ────────────────────────────────────── */
+      /* ── PRICE BUCKETS ── */
       .price-buckets-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -841,7 +755,7 @@
         transition: width 0.5s ease;
       }
 
-      /* ── TABLE ────────────────────────────────────────────── */
+      /* ── TABLE ── */
       .tabs {
         display: flex;
         gap: 4px;
@@ -974,7 +888,7 @@
         margin-bottom: 8px;
       }
 
-      /* ── STATS PANEL ──────────────────────────────────────── */
+      /* ── STATS PANEL ── */
       .stats-panel {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1091,8 +1005,7 @@
       @media (max-width: 768px) {
         .header,
         .controls,
-        .main,
-        .topbar {
+        .main {
           padding: 14px 16px;
         }
         .controls {
@@ -1368,6 +1281,8 @@
               <th>PC Price</th>
               <th>PC -30%</th>
               <th>LG Price</th>
+              <th>LG -30%</th>
+              <!-- ★ NEW COLUMN -->
               <th>Brilliance Price</th>
               <th>Brilliance -30%</th>
               <th>LG vs PC $</th>
@@ -1387,18 +1302,15 @@
 
       // ── AUTH TOKEN ────────────────────────────────────────────
       let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
-
-      // Guard: if no token, send back to login
       if (!AUTH_TOKEN) {
         window.location.href = "/";
       }
-
       function logout() {
         sessionStorage.removeItem("diamond_token");
         window.location.href = "/";
       }
 
-      // ── DASHBOARD STATE ──────────────────────────────────────
+      // ── STATE ─────────────────────────────────────────────────
       let ALL_DATA = [],
         _RAW_DATA = [],
         filteredData = [],
@@ -1430,13 +1342,16 @@
         { label: "$801 – $1,200", min: 801, max: 1201, color: "#e879f9" },
         { label: "$1,200+", min: 1201, max: Infinity, color: "#818cf8" },
       ];
+
+      // ── VENDOR DEFS ───────────────────────────────────────────
+      // FIX: bucketPriceCol for LG now uses the discounted price (loose-grown -30% USD)
       const VENDOR_DEFS = [
         {
           key: "lg",
           label: "Loose-Grown",
           color: "#3ecf8e",
           priceCol: "loose-grown Price USD",
-          bucketPriceCol: "loose-grown Price USD",
+          bucketPriceCol: "loose-grown -30% USD", // ★ FIXED: was "loose-grown Price USD"
           pctPattern: /loose/i,
         },
         {
@@ -1473,7 +1388,7 @@
         });
       }
 
-      // ── TOAST / LOADING ──────────────────────────────────────
+      // ── TOAST / LOADING ───────────────────────────────────────
       let toastTimer;
       function toast(msg, type = "info", dur = 3500) {
         const el = document.getElementById("toast");
@@ -1527,7 +1442,7 @@
         return res.json();
       }
 
-      // ── FILE MANAGEMENT ──────────────────────────────────────
+      // ── FILE MANAGEMENT ───────────────────────────────────────
       async function refreshFileList() {
         try {
           const data = await api("GET", "/api/files");
@@ -1583,26 +1498,6 @@
           toast("Upload failed: " + e.message, "error");
         }
         event.target.value = "";
-      }
-      async function convertByName() {
-        const name = document.getElementById("csvNameInput").value.trim();
-        if (!name) {
-          toast("Enter a CSV filename first", "error");
-          return;
-        }
-        showLoading("Converting " + name + "…");
-        const form = new FormData();
-        form.append("csv_filename", name);
-        try {
-          const r = await api("POST", "/api/convert", form, true);
-          toast(r.message + ` (${r.rows.toLocaleString()} rows)`, "success");
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Convert failed: " + e.message, "error");
-        }
       }
       function ingestData(json, label = "") {
         if (!Array.isArray(json)) {
@@ -1978,6 +1873,7 @@
               ? "pct-neg"
               : "pct-zero";
       }
+
       function renderTable(data) {
         document.getElementById("tableCount").textContent =
           `— ${data.length.toLocaleString()} records`;
@@ -1991,7 +1887,7 @@
         );
         if (!pr.length) {
           document.getElementById("tableBody").innerHTML =
-            `<tr><td colspan="15"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+            `<tr><td colspan="16"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
           document.getElementById("pagination").innerHTML = "";
           return;
         }
@@ -2025,9 +1921,15 @@
               v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
             return `<tr>
             <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
-            <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
+            <td class="attr">${sh}</td>
+            <td class="attr">${co}</td>
+            <td class="attr">${cl}</td>
+            <td class="attr">${cu}</td>
+            <td class="attr">${caD}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
+            <td class="lg-disc">${fmtUSD(r["loose-grown -30% USD"])}</td><!-- ★ NEW: LG -30% -->
             <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
             <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td>
@@ -2099,70 +2001,37 @@
         renderTable(filteredData);
       }
 
-      // ──────────────────────────────────────────────────────────
-      // ── PARTIAL DATA — FIXED & ENHANCED ──────────────────────
-      // ──────────────────────────────────────────────────────────
-      // 3-tier strategy:
-      //   Tier 1: Read inline-injected JSON (fastest, no network)
-      //   Tier 2: Fallback to /api/partial endpoint
-      //   Tier 3: Graceful empty array + clear user feedback
-      //
-      // All steps log to console for F12 debugging.
-      // ──────────────────────────────────────────────────────────
+      // ── PARTIAL DATA ──────────────────────────────────────────
       async function loadPartialData() {
         console.log(
           "%c[PARTIAL] loadPartialData() starting…",
           "color:#c9a84c;font-weight:bold",
         );
-
-        // ── TIER 1: Try inline injection ────────────────────────
         const inlineTag = document.getElementById("__PARTIAL_DATA__");
         if (inlineTag) {
           const rawText = inlineTag.textContent.trim();
-          console.log(
-            `[PARTIAL] Inline tag found · length: ${rawText.length} chars · preview: ${rawText.substring(0, 60)}${rawText.length > 60 ? "…" : ""}`,
-          );
-
           if (rawText && rawText !== "[]") {
             try {
               const inline = JSON.parse(rawText);
-              if (Array.isArray(inline)) {
+              if (Array.isArray(inline) && inline.length > 0) {
                 PARTIAL_DATA = inline;
-                if (inline.length > 0) {
-                  console.log(
-                    `%c[PARTIAL] ✓ Loaded from inline: ${inline.length} records`,
-                    "color:#3ecf8e;font-weight:bold",
-                  );
-                  toast(
-                    `✓ Partial data loaded — ${inline.length.toLocaleString()} matched records`,
-                    "success",
-                    3000,
-                  );
-                  render();
-                  return;
-                } else {
-                  console.warn("[PARTIAL] ⚠ Inline data is an empty array");
-                }
-              } else {
-                console.error(
-                  `[PARTIAL] ✗ Inline parsed but is not an array: ${typeof inline}`,
+                console.log(
+                  `%c[PARTIAL] ✓ Loaded from inline: ${inline.length} records`,
+                  "color:#3ecf8e;font-weight:bold",
                 );
+                toast(
+                  `✓ Partial data loaded — ${inline.length.toLocaleString()} matched records`,
+                  "success",
+                  3000,
+                );
+                render();
+                return;
               }
             } catch (e) {
               console.error("[PARTIAL] ✗ Failed to parse inline JSON:", e);
             }
-          } else {
-            console.warn(
-              "[PARTIAL] ⚠ Inline tag is empty or '[]' — falling back to API",
-            );
           }
-        } else {
-          console.warn(
-            "[PARTIAL] ⚠ No __PARTIAL_DATA__ tag found in HTML — server didn't inject. Falling back to API.",
-          );
         }
-
-        // ── TIER 2: Fallback fetch from API ─────────────────────
         console.log("[PARTIAL] Fetching from /api/partial…");
         try {
           const data = await api("GET", "/api/partial");
@@ -2179,9 +2048,6 @@
                 3000,
               );
             } else {
-              console.warn(
-                "[PARTIAL] ⚠ API returned empty array — no matched records yet",
-              );
               toast(
                 "⚠ No matched records yet — run the ⚙ Run Compare pipeline",
                 "info",
@@ -2190,7 +2056,6 @@
             }
             render();
           } else {
-            console.error(`[PARTIAL] ✗ API returned non-array: ${typeof data}`);
             PARTIAL_DATA = [];
             toast(
               "⚠ API returned invalid format (expected array)",
@@ -2202,11 +2067,7 @@
         } catch (e) {
           console.error("[PARTIAL] ✗ API fetch failed:", e);
           PARTIAL_DATA = [];
-          toast(
-            `⚠ Could not load partial data: ${e.message}. Check console (F12) and server logs.`,
-            "error",
-            6000,
-          );
+          toast(`⚠ Could not load partial data: ${e.message}`, "error", 6000);
           render();
         }
       }
@@ -2488,7 +2349,6 @@
             ingestData(data, "compare.json");
             const sel = document.getElementById("fileSelect");
             if (sel) sel.value = "compare.json";
-            // Always load partial data after main data — order matters
             await loadPartialData();
           } else {
             hideLoading();
