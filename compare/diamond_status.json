@@ -1,28 +1,28 @@
 {
-  "generated_at": "2026-05-18 18:03:05",
+  "generated_at": "2026-05-19 11:47:26",
   "pc_total": 106222,
   "vendor_totals": {
-    "loose-grown": 361167,
-    "brilliance": 174544
+    "loose-grown": 302457,
+    "brilliance": 388401
   },
   "pc_vs_vendors": {
     "loose-grown": {
-      "matched": 18677,
-      "vendor_total": 361167,
-      "vendor_not_in_pc": 342490,
-      "match_rate_pct": 17.58
+      "matched": 14260,
+      "vendor_total": 302457,
+      "vendor_not_in_pc": 288197,
+      "match_rate_pct": 13.42
     },
     "brilliance": {
-      "matched": 361,
-      "vendor_total": 174544,
-      "vendor_not_in_pc": 174183,
+      "matched": 362,
+      "vendor_total": 388401,
+      "vendor_not_in_pc": 388039,
       "match_rate_pct": 0.34
     }
   },
   "dataset_counts": {
-    "common": 233,
-    "partial": 18805,
+    "common": 140,
+    "partial": 14482,
     "all_pc": 106222,
-    "br_vs_lg": 1893
+    "br_vs_lg": 1426
   }
 }

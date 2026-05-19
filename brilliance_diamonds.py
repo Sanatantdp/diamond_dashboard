@@ -59,7 +59,7 @@ HEADERS = {
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-site",
-    "user-agent":ua.random
+    "user-agent": ua.random
 }
 
 BASE_PAYLOAD = {
@@ -178,20 +178,35 @@ def fetch_total_pages():
 
 # ── CHECKPOINT ────────────────────────────────────────────────────────────────
 def save_checkpoint(page, total_inserted):
-    with open(CHECKPOINT_FILE, "w") as f:
+    # ✅ FIX: write to a temp file first, then atomically replace — prevents
+    #         an empty/corrupt checkpoint.json if the process is killed mid-write
+    tmp = CHECKPOINT_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump({"last_completed_page": page, "total_inserted": total_inserted}, f, indent=2)
+    os.replace(tmp, CHECKPOINT_FILE)   # atomic on Windows & Linux
     log.debug(f"Checkpoint saved → page={page}, total={total_inserted}")
 
 
 def load_checkpoint():
     if not os.path.exists(CHECKPOINT_FILE):
         return 1, 0
-    with open(CHECKPOINT_FILE, "r") as f:
-        data = json.load(f)
-    page  = data.get("last_completed_page", 1) + 1
-    total = data.get("total_inserted", 0)
-    log.info(f"Resuming from page {page} (previously inserted: {total})")
-    return page, total
+
+    # ✅ FIX: handle empty or corrupted checkpoint file gracefully
+    try:
+        with open(CHECKPOINT_FILE, "r") as f:
+            content = f.read().strip()
+        if not content:
+            log.warning("Checkpoint file is empty — starting from page 1")
+            return 1, 0
+        data  = json.loads(content)
+        page  = data.get("last_completed_page", 1) + 1
+        total = data.get("total_inserted", 0)
+        log.info(f"Resuming from page {page} (previously inserted: {total})")
+        return page, total
+    except json.JSONDecodeError as e:
+        log.warning(f"Checkpoint file corrupted ({e}) — deleting and starting from page 1")
+        os.remove(CHECKPOINT_FILE)
+        return 1, 0
 
 
 def clear_checkpoint():
