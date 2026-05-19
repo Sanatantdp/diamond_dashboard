@@ -1,19 +1,3 @@
-"""
-loosegrowndiamond.py
-~~~~~~~~~~~~~~~~~~~~
-Production-grade scraper for loosegrowndiamond.com inventory.
-
-Design principles
------------------
-* Exponential back-off with jitter on every transient failure.
-* Explicit separation of concerns: config / HTTP / parsing / persistence.
-* Context-manager for the CSV writer so the file is never left half-open.
-* A single dataclass represents one diamond row — no magic string indexes.
-* Rotating / archiving old data files is handled before any I/O begins.
-* Random User-Agent via fake-useragent (graceful fallback pool if service unavailable).
-* Fresh requests.Session per page — rotates UA + clears connection state to avoid fingerprinting.
-* All public surface area is type-annotated.
-"""
 
 from __future__ import annotations
 
@@ -201,7 +185,7 @@ def _build_session() -> requests.Session:
         max_retries=Retry(
             total=3,
             connect=3,
-            read=0,           # application-level back-off handles read retries
+            read=0,           
             backoff_factor=2,
             status_forcelist=[502, 503, 504],
             allowed_methods=["POST"],
