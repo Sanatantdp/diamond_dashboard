@@ -38,7 +38,6 @@
         min-height: 100vh;
       }
 
-      /* ── LOADING ── */
       #loadingOverlay {
         position: fixed;
         inset: 0;
@@ -78,7 +77,6 @@
         color: var(--muted);
       }
 
-      /* ── TOAST ── */
       #toast {
         position: fixed;
         bottom: 24px;
@@ -115,7 +113,7 @@
         color: var(--accent);
       }
 
-      /* ── BR vs LG MODAL ── */
+      /* Modal */
       #brVsLgModal {
         position: fixed;
         inset: 0;
@@ -126,18 +124,9 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        animation: modalFadeIn 0.25s ease both;
       }
       #brVsLgModal.open {
         display: flex;
-      }
-      @keyframes modalFadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
       }
       .modal-box {
         background: var(--card);
@@ -151,8 +140,8 @@
         box-shadow:
           0 0 60px rgba(244, 114, 182, 0.15),
           0 32px 80px rgba(0, 0, 0, 0.7);
-        animation: modalSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
         overflow: hidden;
+        animation: modalSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
       }
       @keyframes modalSlideIn {
         from {
@@ -160,7 +149,7 @@
           opacity: 0;
         }
         to {
-          transform: translateY(0) scale(1);
+          transform: none;
           opacity: 1;
         }
       }
@@ -227,7 +216,6 @@
       .modal-close:hover {
         border-color: var(--red);
         color: var(--red);
-        background: color-mix(in srgb, var(--red) 10%, var(--surface));
       }
       .modal-controls {
         padding: 12px 28px;
@@ -255,10 +243,6 @@
         color: var(--muted);
         background: var(--card);
         transition: all 0.18s;
-      }
-      .modal-filter-btn:hover {
-        border-color: var(--br-vs-lg);
-        color: var(--br-vs-lg);
       }
       .modal-filter-btn.active {
         background: color-mix(in srgb, var(--br-vs-lg) 15%, var(--card));
@@ -324,9 +308,6 @@
         border-bottom: 1px solid var(--border);
         transition: background 0.1s;
       }
-      .modal-table tbody tr:last-child {
-        border-bottom: none;
-      }
       .modal-table tbody tr:hover {
         background: var(--surface);
       }
@@ -376,7 +357,7 @@
         color: var(--br-vs-lg);
       }
 
-      /* ── HEADER ── */
+      /* Header */
       .header {
         padding: 28px 40px 22px;
         background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
@@ -424,7 +405,7 @@
         letter-spacing: 0.08em;
       }
 
-      /* ── CONTROLS ── */
+      /* Controls */
       .controls {
         padding: 16px 40px;
         background: var(--surface);
@@ -494,7 +475,7 @@
         font-size: 0.7rem;
       }
 
-      /* ── MAIN ── */
+      /* Main */
       .main {
         padding: 28px 40px;
       }
@@ -514,7 +495,32 @@
         background: var(--border);
       }
 
-      /* ── VENDOR TABS ── */
+      /* Sub-divider between the two % sections */
+      .sub-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 18px 0 14px;
+      }
+      .sub-divider-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .sub-divider-line {
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .sub-divider-hint {
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      /* Vendor tabs */
       .vendor-tabs {
         display: flex;
         gap: 6px;
@@ -541,8 +547,6 @@
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: var(--vcolor, var(--muted));
-        transition: all 0.18s;
       }
       .vendor-tab:hover {
         border-color: var(--vcolor, var(--accent));
@@ -570,102 +574,17 @@
         color: var(--vcolor, var(--accent));
       }
 
-      /* ── BUCKET CARDS ── */
-      .buckets-grid {
+      /* Shared card grid */
+      .price-buckets-grid,
+      .pct-buckets-top-grid,
+      .pct-buckets-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
         gap: 12px;
-        margin-bottom: 32px;
-      }
-      .bucket-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 16px 18px;
-        cursor: pointer;
-        transition: all 0.2s;
-        position: relative;
-        overflow: hidden;
-      }
-      .bucket-card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: var(--bucket-color, var(--accent));
-      }
-      .bucket-card:hover {
-        border-color: var(--bucket-color, var(--accent));
-        transform: translateY(-2px);
-      }
-      .bucket-card.active {
-        border-color: var(--bucket-color, var(--accent));
-        background: color-mix(
-          in srgb,
-          var(--bucket-color, var(--accent)) 10%,
-          var(--card)
-        );
-      }
-      .bucket-range {
-        font-size: 0.66rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 5px;
-      }
-      .bucket-count {
-        font-size: 1.8rem;
-        font-weight: 500;
-        color: var(--text);
-        line-height: 1;
-      }
-      .bucket-pct {
-        font-size: 0.68rem;
-        margin-top: 4px;
-      }
-      .bucket-bar {
-        height: 3px;
-        background: var(--border);
-        border-radius: 2px;
-        margin-top: 10px;
-      }
-      .bucket-bar-fill {
-        height: 100%;
-        border-radius: 2px;
-        background: var(--bucket-color, var(--accent));
-        transition: width 0.5s ease;
-      }
-      .bucket-filter-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: color-mix(in srgb, var(--accent) 12%, var(--card));
-        border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-        color: var(--accent);
-        font-size: 0.68rem;
-        padding: 4px 12px;
-        border-radius: 20px;
-        margin-bottom: 16px;
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-      .bucket-filter-tag:hover {
-        background: color-mix(in srgb, var(--accent) 20%, var(--card));
-      }
-      .bucket-filter-tag .x {
-        font-size: 0.8rem;
-        opacity: 0.7;
+        margin-bottom: 8px;
       }
 
-      /* ── PRICE BUCKETS ── */
-      .price-buckets-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 12px;
-        margin-bottom: 32px;
-      }
+      /* Price bucket cards */
       .price-bucket-card {
         background: var(--card);
         border: 1px solid var(--border);
@@ -697,14 +616,6 @@
           var(--card)
         );
       }
-      .price-bucket-card.empty {
-        opacity: 0.42;
-        cursor: default;
-      }
-      .price-bucket-card.empty:hover {
-        transform: none;
-        border-color: var(--border);
-      }
       .pb-range {
         font-size: 0.64rem;
         color: var(--muted);
@@ -722,26 +633,6 @@
         font-size: 0.68rem;
         margin-top: 4px;
       }
-      .pb-avg-row {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        margin-top: 10px;
-        padding-top: 9px;
-        border-top: 1px solid var(--border);
-      }
-      .pb-avg-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 0.62rem;
-      }
-      .pb-avg-label {
-        color: var(--muted);
-      }
-      .pb-avg-val {
-        font-weight: 500;
-      }
       .pb-bar {
         height: 3px;
         background: var(--border);
@@ -751,11 +642,96 @@
       .pb-bar-fill {
         height: 100%;
         border-radius: 2px;
-        background: var(--pb-color, #a78bfa);
         transition: width 0.5s ease;
       }
 
-      /* ── TABLE ── */
+      /* % bucket cards (same style as price cards) */
+      .pct-bucket-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 18px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .pct-bucket-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--pc-color, var(--accent));
+      }
+      .pct-bucket-card:hover {
+        border-color: var(--pc-color, var(--accent));
+        transform: translateY(-2px);
+      }
+      .pct-bucket-card.active {
+        border-color: var(--pc-color, var(--accent));
+        background: color-mix(
+          in srgb,
+          var(--pc-color, var(--accent)) 10%,
+          var(--card)
+        );
+      }
+      .pct-bucket-card.empty {
+        opacity: 0.42;
+        cursor: default;
+      }
+      .pct-bucket-card.empty:hover {
+        transform: none;
+        border-color: var(--border);
+      }
+
+      /* Shared avg-info rows */
+      .avg-info-row {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid var(--border);
+      }
+      .avg-info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.62rem;
+      }
+      .avg-info-label {
+        color: var(--muted);
+      }
+      .avg-info-val {
+        font-weight: 500;
+      }
+
+      /* Filter tags */
+      .bucket-filter-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: color-mix(in srgb, var(--accent) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+        color: var(--accent);
+        font-size: 0.68rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .bucket-filter-tag:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+      }
+      .bucket-filter-tag .x {
+        font-size: 0.8rem;
+        opacity: 0.7;
+      }
+
+      /* Table */
       .tabs {
         display: flex;
         gap: 4px;
@@ -831,6 +807,7 @@
       }
       .price {
         color: var(--text);
+        text-decoration: none !important;
       }
       .pct-pos {
         color: var(--green);
@@ -888,7 +865,7 @@
         margin-bottom: 8px;
       }
 
-      /* ── STATS PANEL ── */
+      /* Stats */
       .stats-panel {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1019,9 +996,6 @@
         .modal-footer {
           padding: 14px 16px;
         }
-        .modal-body table {
-          font-size: 0.68rem;
-        }
       }
     </style>
   </head>
@@ -1033,7 +1007,7 @@
     </div>
     <div id="toast"></div>
 
-    <!-- BR vs LG MODAL -->
+    <!-- MODAL -->
     <div
       id="brVsLgModal"
       onclick="if (event.target === this) closeBrVsLgModal();"
@@ -1045,10 +1019,8 @@
               <span>💠</span> Brilliance × Loose-Grown Overlap
             </div>
             <div class="modal-sub">
-              Diamonds whose certificate ID appears in
-              <strong style="color: #60a5fa">Brilliance</strong> AND
-              <strong style="color: #3ecf8e">Loose-Grown</strong> — with PC
-              price where available
+              Diamonds in <strong style="color: #60a5fa">Brilliance</strong> AND
+              <strong style="color: #3ecf8e">Loose-Grown</strong>
             </div>
           </div>
           <div
@@ -1060,13 +1032,7 @@
             "
           >
             <div class="modal-pills" id="modalStatPills"></div>
-            <button
-              class="modal-close"
-              onclick="closeBrVsLgModal()"
-              title="Close"
-            >
-              ✕
-            </button>
+            <button class="modal-close" onclick="closeBrVsLgModal()">✕</button>
           </div>
         </div>
         <div class="modal-controls">
@@ -1118,8 +1084,8 @@
       <div>
         <h1>💎 Diamond Price Dashboard USA</h1>
         <p>
-          loose-grown · brilliance · luvansh · PC — parallel % buckets per
-          vendor · click to filter
+          loose-grown · brilliance · luvansh · PC — price &amp; % range buckets
+          · click to filter
         </p>
       </div>
       <div class="stats-row">
@@ -1177,6 +1143,7 @@
 
     <!-- MAIN -->
     <div class="main">
+      <!-- STATS -->
       <div class="section-title" style="margin-bottom: 12px">
         Vendor Statistics
         <span
@@ -1201,10 +1168,61 @@
         </div>
       </div>
 
+      <!-- ══════════════════════════════════════════════════
+           VENDOR PRICE BUCKETS  (original position, unchanged)
+      ══════════════════════════════════════════════════ -->
       <div class="section-title">
-        % Range Buckets
+        Vendor Price Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
-          >select vendor · click bucket to filter</span
+          >bucketed by vendor price · select vendor · avg % vs PC shown · click
+          to filter</span
+        >
+      </div>
+
+      <!-- Price vendor tabs -->
+      <div class="vendor-tabs" id="priceVendorTabs"></div>
+      <div
+        id="activePriceBucketTag"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearPriceBucketFilter()"
+      >
+        <span id="activePriceBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+
+      <!-- ① PRICE BUCKET CARDS -->
+      <div class="price-buckets-grid" id="priceBucketsGrid">
+        <div class="empty-state" style="grid-column: 1/-1">
+          <div class="icon">💎</div>
+          <h3>No data loaded</h3>
+        </div>
+      </div>
+
+      <!-- ② % BUCKET CARDS — immediately after price cards, same vendor, no extra tabs -->
+      <div
+        id="activeBucketTagTop"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearBucketFilter()"
+      >
+        <span id="activeBucketTagTopText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+      <div
+        class="pct-buckets-top-grid"
+        id="pctBucketsTopGrid"
+        style="margin-top: 4px"
+      >
+        <!-- populated by renderPctBucketsTop() using selectedPriceVendorKey -->
+      </div>
+
+      <!-- ③ SUB-DIVIDER + independent % filter -->
+      <div class="sub-divider">
+        <span class="sub-divider-label">% Range Filter</span>
+        <span class="sub-divider-line"></span>
+        <span class="sub-divider-hint"
+          >select vendor · click to filter by % vs PC</span
         >
       </div>
       <div class="vendor-tabs" id="vendorTabs"></div>
@@ -1217,41 +1235,21 @@
         <span id="activeBucketTagText">Filtered</span
         ><span class="x">✕ clear</span>
       </div>
-      <div class="buckets-grid" id="bucketsGrid">
-        <div class="empty-state" style="grid-column: 1/-1">
-          <div class="icon">💎</div>
-          <h3>No data loaded</h3>
-          <p style="font-size: 0.78rem; margin-top: 6px">
-            Load a dataset above to see distribution
-          </p>
-        </div>
-      </div>
 
-      <div class="section-title" style="margin-top: 4px">
-        Vendor Price Buckets
-        <span style="font-size: 0.68rem; color: var(--muted)"
-          >bucketed by vendor price · select vendor · avg % vs PC shown · click
-          to filter</span
-        >
-      </div>
-      <div class="vendor-tabs" id="priceVendorTabs"></div>
+      <!-- ④ INDEPENDENT % BUCKET CARDS (own vendor tab) -->
       <div
-        id="activePriceBucketTag"
-        style="display: none"
-        class="bucket-filter-tag"
-        onclick="clearPriceBucketFilter()"
+        class="pct-buckets-grid"
+        id="pctBucketsGrid"
+        style="margin-bottom: 32px"
       >
-        <span id="activePriceBucketTagText">Filtered</span
-        ><span class="x">✕ clear</span>
-      </div>
-      <div class="price-buckets-grid" id="priceBucketsGrid">
         <div class="empty-state" style="grid-column: 1/-1">
           <div class="icon">💎</div>
           <h3>No data loaded</h3>
         </div>
       </div>
 
-      <div class="section-title" style="margin-top: 32px">
+      <!-- RECORDS TABLE -->
+      <div class="section-title" style="margin-top: 8px">
         Records
         <span
           id="tableCount"
@@ -1282,7 +1280,6 @@
               <th>PC -30%</th>
               <th>LG Price</th>
               <th>LG -30%</th>
-              <!-- ★ NEW COLUMN -->
               <th>Brilliance Price</th>
               <th>Brilliance -30%</th>
               <th>LG vs PC $</th>
@@ -1299,8 +1296,6 @@
 
     <script>
       const API_BASE = "";
-
-      // ── AUTH TOKEN ────────────────────────────────────────────
       let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
       if (!AUTH_TOKEN) {
         window.location.href = "/";
@@ -1310,7 +1305,6 @@
         window.location.href = "/";
       }
 
-      // ── STATE ─────────────────────────────────────────────────
       let ALL_DATA = [],
         _RAW_DATA = [],
         filteredData = [],
@@ -1320,8 +1314,8 @@
         PAGE_SIZE = 20,
         priceMin = null,
         priceMax = null;
-      let PARTIAL_DATA = [];
-      let activeBucketFilter = null,
+      let PARTIAL_DATA = [],
+        activeBucketFilter = null,
         activePriceBucket = null;
 
       const BUCKETS = [
@@ -1342,16 +1336,13 @@
         { label: "$801 – $1,200", min: 801, max: 1201, color: "#e879f9" },
         { label: "$1,200+", min: 1201, max: Infinity, color: "#818cf8" },
       ];
-
-      // ── VENDOR DEFS ───────────────────────────────────────────
-      // FIX: bucketPriceCol for LG now uses the discounted price (loose-grown -30% USD)
       const VENDOR_DEFS = [
         {
           key: "lg",
           label: "Loose-Grown",
           color: "#3ecf8e",
           priceCol: "loose-grown Price USD",
-          bucketPriceCol: "loose-grown -30% USD", // ★ FIXED: was "loose-grown Price USD"
+          bucketPriceCol: "loose-grown -30% USD",
           pctPattern: /loose/i,
         },
         {
@@ -1372,10 +1363,9 @@
         },
       ];
 
-      function getPct(row, vendorDef) {
+      function getPct(row, vd) {
         const col = Object.keys(row).find(
-          (k) =>
-            vendorDef.pctPattern.test(k) && /vs/i.test(k) && k.includes("%"),
+          (k) => vd.pctPattern.test(k) && /vs/i.test(k) && k.includes("%"),
         );
         if (!col) return null;
         const n = Number(row[col]);
@@ -1388,7 +1378,93 @@
         });
       }
 
-      // ── TOAST / LOADING ───────────────────────────────────────
+      // Shared avg-info builder
+      function buildAvgInfoRows(rows, activeVendors, avgPC) {
+        const vh = activeVendors
+          .map((av) => {
+            const vals = rows
+              .map((r) => getPct(r, av))
+              .filter((v) => v !== null);
+            const avg = vals.length
+              ? vals.reduce((a, x) => a + x, 0) / vals.length
+              : null;
+            const str =
+              avg === null ? "—" : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
+            const col =
+              avg === null
+                ? "var(--muted)"
+                : avg < 0
+                  ? "#3ecf8e"
+                  : avg < 100
+                    ? "#60a5fa"
+                    : avg < 200
+                      ? "#c9a84c"
+                      : "#f87171";
+            return `<div class="avg-info-item"><span class="avg-info-label" style="color:${av.color}">${av.label} vs PC</span><span class="avg-info-val" style="color:${col}">${str}</span></div>`;
+          })
+          .join("");
+        const ph =
+          avgPC !== null
+            ? `<div class="avg-info-item"><span class="avg-info-label">Avg PC Price</span><span class="avg-info-val" style="color:var(--muted)">$${avgPC.toFixed(0)}</span></div>`
+            : "";
+        return `<div class="avg-info-row">${vh}${ph}</div>`;
+      }
+
+      // Build % card HTML (shared for both grids)
+      function buildPctCards(
+        vd,
+        activeVendors,
+        activeBucketVendorKey,
+        SRC,
+        filterSrc,
+      ) {
+        // SRC is passed explicitly — top row uses PARTIAL_DATA, bottom uses ALL_DATA
+        if (!SRC) SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!filterSrc) filterSrc = SRC === ALL_DATA ? "common" : "partial";
+        const vendorRows = SRC.filter((r) => {
+          const v = r[vd.priceCol];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+        const total = vendorRows.length || 1;
+        const bucketRows = BUCKETS.map((b) =>
+          vendorRows.filter((r) => {
+            const p = getPct(r, vd);
+            return p !== null && p >= b.min && p < b.max;
+          }),
+        );
+        const counts = bucketRows.map((r) => r.length);
+        const maxC = Math.max(...counts, 1);
+        return BUCKETS.map((b, i) => {
+          const rows = bucketRows[i],
+            cnt = counts[i],
+            isEmpty = cnt === 0;
+          const isActive =
+            activeBucketFilter &&
+            activeBucketFilter.vendorKey === activeBucketVendorKey &&
+            activeBucketFilter.bucketIdx === i &&
+            activeBucketFilter.src === filterSrc;
+          const pct = ((cnt / total) * 100).toFixed(1),
+            barW = ((cnt / maxC) * 100).toFixed(1);
+          const color = isEmpty ? "var(--border)" : b.color;
+          const pcVals = rows
+            .map((r) => Number(r["PC Price USD"]))
+            .filter((v) => !isNaN(v) && v > 0);
+          const avgPC = pcVals.length
+            ? pcVals.reduce((a, x) => a + x, 0) / pcVals.length
+            : null;
+          return `<div class="pct-bucket-card ${isActive ? "active" : ""} ${isEmpty ? "empty" : ""}"
+            style="--pc-color:${color}"
+            onclick="${isEmpty ? "" : "togglePctBucket('" + activeBucketVendorKey + "'," + i + ",'" + filterSrc + "')"}">
+            <div class="pb-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+            <div class="pb-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+            <div class="pb-pct-of-total" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of ${total.toLocaleString()} ${filterSrc === "common" ? "common" : "matched"}</div>
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+            ${!isEmpty ? buildAvgInfoRows(rows, activeVendors, avgPC) : ""}
+          </div>`;
+        }).join("");
+      }
+
+      // Toast / Loading
       let toastTimer;
       function toast(msg, type = "info", dur = 3500) {
         const el = document.getElementById("toast");
@@ -1416,7 +1492,7 @@
         if (ind) ind.style.display = "flex";
       }
 
-      // ── API ───────────────────────────────────────────────────
+      // API
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
         if (AUTH_TOKEN) opts.headers["Authorization"] = "Bearer " + AUTH_TOKEN;
@@ -1442,7 +1518,7 @@
         return res.json();
       }
 
-      // ── FILE MANAGEMENT ───────────────────────────────────────
+      // File management
       async function refreshFileList() {
         try {
           const data = await api("GET", "/api/files");
@@ -1458,7 +1534,7 @@
           });
           if (prev) sel.value = prev;
         } catch (e) {
-          console.error("[refreshFileList] Failed:", e.message);
+          console.error("[refreshFileList]", e.message);
         }
       }
       async function loadSelectedFile() {
@@ -1473,32 +1549,6 @@
           toast("Failed to load: " + e.message, "error");
         }
       }
-      async function uploadAndConvert(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const isJSON = file.name.toLowerCase().endsWith(".json");
-        showLoading(
-          (isJSON ? "Uploading JSON " : "Uploading & converting ") +
-            file.name +
-            "…",
-        );
-        const form = new FormData();
-        form.append("file", file);
-        try {
-          const r = await api("POST", "/api/upload", form, true);
-          toast(
-            `[${isJSON ? "JSON" : "CSV→JSON"}] ${file.name} → ${r.file}  (${r.rows.toLocaleString()} rows)`,
-            "success",
-          );
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Upload failed: " + e.message, "error");
-        }
-        event.target.value = "";
-      }
       function ingestData(json, label = "") {
         if (!Array.isArray(json)) {
           hideLoading();
@@ -1510,6 +1560,7 @@
         activeBucketFilter = null;
         activePriceBucket = null;
         selectedPriceVendorKey = null;
+        selectedVendorKey = null;
         tableMode = "all";
         currentPage = 1;
         priceMin = priceMax = null;
@@ -1522,13 +1573,21 @@
         toast(`Loaded ${json.length.toLocaleString()} records`, "success");
       }
 
-      // ── FILTERS ───────────────────────────────────────────────
+      // Filters
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
-        const BASE =
-          activePriceBucket !== null && PARTIAL_DATA.length
-            ? PARTIAL_DATA
-            : ALL_DATA;
+        // BASE: bottom % filter (common) → ALL_DATA | price bucket or top % filter → PARTIAL_DATA
+        let BASE;
+        if (activeBucketFilter && activeBucketFilter.src === "common") {
+          BASE = ALL_DATA;
+        } else if (
+          (activePriceBucket !== null || activeBucketFilter) &&
+          PARTIAL_DATA.length
+        ) {
+          BASE = PARTIAL_DATA;
+        } else {
+          BASE = ALL_DATA;
+        }
         filteredData = BASE.filter((row) => {
           const PC = row["PC Price USD"];
           if (priceMin !== null && PC < priceMin) return false;
@@ -1596,109 +1655,33 @@
         currentPage = 1;
         render();
       }
+      function clearPriceBucketFilter() {
+        activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
       function clearBucketFilter() {
         activeBucketFilter = null;
         currentPage = 1;
         render();
       }
 
-      // ── VENDOR TABS ───────────────────────────────────────────
-      let selectedVendorKey = null;
-      function renderVendorTabs() {
-        const tabsEl = document.getElementById("vendorTabs");
-        if (!ALL_DATA.length) {
-          tabsEl.innerHTML = "";
-          return;
-        }
-        const av = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
-        if (!av.length) {
-          tabsEl.innerHTML = "";
-          return;
-        }
-        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
-          selectedVendorKey = av[0].key;
-        tabsEl.innerHTML = av
-          .map((vd) => {
-            const total = ALL_DATA.filter((r) => {
-              const v = r[vd.priceCol];
-              return (
-                v !== null && v !== undefined && v !== "" && Number(v) !== 0
-              );
-            }).length;
-            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')">
-            <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
-          })
-          .join("");
-      }
-      function selectVendor(key) {
-        selectedVendorKey = key;
-        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
-          activeBucketFilter = null;
-        currentPage = 1;
-        render();
-      }
-      function renderBuckets() {
-        const grid = document.getElementById("bucketsGrid");
-        if (!ALL_DATA.length) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
-          return;
-        }
-        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
-        if (!vd) {
-          grid.innerHTML = "";
-          return;
-        }
-        const counts = BUCKETS.map(
-          (b) =>
-            ALL_DATA.filter((r) => {
-              const p = getPct(r, vd);
-              return p !== null && p >= b.min && p < b.max;
-            }).length,
-        );
-        const total = ALL_DATA.length,
-          maxC = Math.max(...counts, 1);
-        grid.innerHTML = BUCKETS.map((b, i) => {
-          const cnt = counts[i],
-            isEmpty = cnt === 0;
-          const isActive =
-            activeBucketFilter &&
-            activeBucketFilter.vendorKey === vd.key &&
-            activeBucketFilter.bucketIdx === i;
-          const pct = ((cnt / total) * 100).toFixed(1),
-            barW = ((cnt / maxC) * 100).toFixed(1);
-          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="${isEmpty ? "" : "toggleBucket(" + i + ")"}">
-            <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
-            <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
-            <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
-            <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
-        }).join("");
-        const tag = document.getElementById("activeBucketTag");
-        if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
-          document.getElementById("activeBucketTagText").textContent =
-            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
-          tag.style.display = "inline-flex";
-        } else tag.style.display = "none";
-      }
-      function toggleBucket(bucketIdx) {
-        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
-        if (!vd) return;
-        activeBucketFilter =
+      // Toggle % bucket — src: 'partial' (top row) or 'common' (bottom independent)
+      function togglePctBucket(vendorKey, i, src) {
+        const same =
           activeBucketFilter &&
-          activeBucketFilter.vendorKey === vd.key &&
-          activeBucketFilter.bucketIdx === bucketIdx
-            ? null
-            : { vendorKey: vd.key, bucketIdx };
+          activeBucketFilter.vendorKey === vendorKey &&
+          activeBucketFilter.bucketIdx === i &&
+          activeBucketFilter.src === src;
+        activeBucketFilter = same
+          ? null
+          : { vendorKey, bucketIdx: i, src: src || "partial" };
         currentPage = 1;
         render();
       }
 
-      // ── PRICE BUCKETS ─────────────────────────────────────────
+      // ── PRICE BUCKET SECTION ─────────────────────────────────
       let selectedPriceVendorKey = null;
-      function clearPriceBucketFilter() {
-        activePriceBucket = null;
-        currentPage = 1;
-        render();
-      }
       function togglePriceBucket(i) {
         activePriceBucket = activePriceBucket === i ? null : i;
         currentPage = 1;
@@ -1710,6 +1693,7 @@
         currentPage = 1;
         render();
       }
+
       function renderPriceVendorTabs() {
         const tabsEl = document.getElementById("priceVendorTabs");
         const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
@@ -1732,9 +1716,9 @@
           !av.find((v) => v.key === selectedPriceVendorKey)
         )
           selectedPriceVendorKey = av[0].key;
-        const sourceLabel = PARTIAL_DATA.length
+        const srcLabel = PARTIAL_DATA.length
           ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
-          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center" title="Check browser console (F12) for details">⚠ compare_partial.json not loaded</span>`;
+          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
         tabsEl.innerHTML =
           av
             .map((vd) => {
@@ -1744,11 +1728,11 @@
                   v !== null && v !== undefined && v !== "" && Number(v) !== 0
                 );
               }).length;
-              return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')">
-            <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
+              return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
             })
-            .join("") + sourceLabel;
+            .join("") + srcLabel;
       }
+
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
         const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
@@ -1763,11 +1747,6 @@
           grid.innerHTML = "";
           return;
         }
-        const vendorRows = SRC.filter((r) => {
-          const v = r[vd.bucketPriceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
-        const total = vendorRows.length || 1;
         const activeVendors = VENDOR_DEFS.filter((v) =>
           SRC.some((r) => {
             const val = r[v.bucketPriceCol];
@@ -1779,20 +1758,15 @@
             );
           }),
         );
+        const vendorRows = SRC.filter((r) => {
+          const v = r[vd.bucketPriceCol];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+        const total = vendorRows.length || 1;
         const bucketData = PRICE_BUCKETS.map((pb, i) => {
           const rows = vendorRows.filter((r) => {
             const p = Number(r[vd.bucketPriceCol]);
             return !isNaN(p) && p >= pb.min && p < pb.max;
-          });
-          const count = rows.length;
-          const allAvgPcts = activeVendors.map((av) => {
-            const vals = rows
-              .map((r) => getPct(r, av))
-              .filter((v) => v !== null);
-            const avg = vals.length
-              ? vals.reduce((a, b) => a + b, 0) / vals.length
-              : null;
-            return { vd: av, avg };
           });
           const pcVals = rows
             .map((r) => Number(r["PC Price USD"]))
@@ -1800,7 +1774,7 @@
           const avgPC = pcVals.length
             ? pcVals.reduce((a, b) => a + b, 0) / pcVals.length
             : null;
-          return { pb, count, allAvgPcts, avgPC, idx: i };
+          return { pb, count: rows.length, rows, avgPC, idx: i };
         });
         const nonEmpty = bucketData.filter((b) => b.count > 0);
         const maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
@@ -1811,38 +1785,17 @@
           return;
         }
         grid.innerHTML = nonEmpty
-          .map(({ pb, count, allAvgPcts, avgPC, idx }) => {
+          .map(({ pb, count, rows, avgPC, idx }) => {
             const isActive = activePriceBucket === idx;
             const pctOfTotal = ((count / total) * 100).toFixed(1),
               barW = ((count / maxCount) * 100).toFixed(1);
-            const avgRows = allAvgPcts
-              .map(({ vd: av, avg }) => {
-                const valStr =
-                  avg === null
-                    ? "—"
-                    : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
-                const valColor =
-                  avg === null
-                    ? "var(--muted)"
-                    : avg < 0
-                      ? "#3ecf8e"
-                      : avg < 100
-                        ? "#60a5fa"
-                        : avg < 200
-                          ? "#c9a84c"
-                          : "#f87171";
-                return `<div class="pb-avg-item"><span class="pb-avg-label" style="color:${av.color}">${av.label} vs PC</span><span class="pb-avg-val" style="color:${valColor}">${valStr}</span></div>`;
-              })
-              .join("");
-            const avgPCStr =
-              avgPC !== null
-                ? `<div class="pb-avg-item"><span class="pb-avg-label">Avg PC Price</span><span class="pb-avg-val" style="color:var(--muted)">$${avgPC.toFixed(0)}</span></div>`
-                : "";
             return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})">
-            <div class="pb-range">${pb.label}</div><div class="pb-count">${count.toLocaleString()}</div>
+            <div class="pb-range">${pb.label}</div>
+            <div class="pb-count">${count.toLocaleString()}</div>
             <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
-            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-            <div class="pb-avg-row">${avgRows}${avgPCStr}</div></div>`;
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${pb.color}"></div></div>
+            ${buildAvgInfoRows(rows, activeVendors, avgPC)}
+          </div>`;
           })
           .join("");
         const tag = document.getElementById("activePriceBucketTag");
@@ -1855,7 +1808,138 @@
         } else tag.style.display = "none";
       }
 
-      // ── TABLE ─────────────────────────────────────────────────
+      // ── ② % CARDS — directly below price cards, same vendor, no extra tabs ──
+      function renderPctBucketsTop() {
+        const grid = document.getElementById("pctBucketsTopGrid");
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!SRC.length) {
+          grid.innerHTML = "";
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
+        const activeVendors = VENDOR_DEFS.filter((v) =>
+          SRC.some((r) => {
+            const val = r[v.priceCol];
+            return (
+              val !== null &&
+              val !== undefined &&
+              val !== "" &&
+              Number(val) !== 0
+            );
+          }),
+        );
+        grid.innerHTML = buildPctCards(
+          vd,
+          activeVendors,
+          selectedPriceVendorKey,
+          SRC,
+          "partial",
+        );
+        // Show TOP active tag only when a 'partial' src filter is active for this vendor
+        const tagTop = document.getElementById("activeBucketTagTop");
+        if (
+          activeBucketFilter &&
+          activeBucketFilter.src === "partial" &&
+          activeBucketFilter.vendorKey === selectedPriceVendorKey
+        ) {
+          document.getElementById("activeBucketTagTopText").textContent =
+            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
+          tagTop.style.display = "inline-flex";
+        } else tagTop.style.display = "none";
+      }
+
+      // ── ③ INDEPENDENT % SECTION — own vendor tabs ─────────────
+      let selectedVendorKey = null;
+      function selectVendor(key) {
+        selectedVendorKey = key;
+        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
+          activeBucketFilter = null;
+        currentPage = 1;
+        render();
+      }
+
+      function renderVendorTabs() {
+        const tabsEl = document.getElementById("vendorTabs");
+        // Bottom independent % filter uses ALL_DATA (compare.json = common records)
+        const SRC = ALL_DATA;
+        if (!SRC.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        const av = VENDOR_DEFS.filter((vd) =>
+          SRC.some((r) => {
+            const v = r[vd.priceCol];
+            return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+          }),
+        );
+        if (!av.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
+          selectedVendorKey = av[0].key;
+        tabsEl.innerHTML = av
+          .map((vd) => {
+            const total = SRC.filter((r) => {
+              const v = r[vd.priceCol];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            }).length;
+            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
+          })
+          .join("");
+      }
+
+      function renderPctBuckets() {
+        const grid = document.getElementById("pctBucketsGrid");
+        // Bottom independent % filter uses ALL_DATA (compare.json = common records)
+        const SRC = ALL_DATA;
+        if (!SRC.length) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
+        const activeVendors = VENDOR_DEFS.filter((v) =>
+          SRC.some((r) => {
+            const val = r[v.priceCol];
+            return (
+              val !== null &&
+              val !== undefined &&
+              val !== "" &&
+              Number(val) !== 0
+            );
+          }),
+        );
+        grid.innerHTML = buildPctCards(
+          vd,
+          activeVendors,
+          selectedVendorKey,
+          SRC,
+          "common",
+        );
+        // active bucket tag for independent section
+        const tag = document.getElementById("activeBucketTag");
+        if (
+          activeBucketFilter &&
+          activeBucketFilter.src === "common" &&
+          activeBucketFilter.vendorKey === selectedVendorKey
+        ) {
+          document.getElementById("activeBucketTagText").textContent =
+            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
+          tag.style.display = "inline-flex";
+        } else tag.style.display = "none";
+      }
+
+      // TABLE
       function fmtPct(v) {
         return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
       }
@@ -1921,21 +2005,14 @@
               v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
             return `<tr>
             <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
-            <td class="attr">${sh}</td>
-            <td class="attr">${co}</td>
-            <td class="attr">${cl}</td>
-            <td class="attr">${cu}</td>
-            <td class="attr">${caD}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
+            <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC -30% USD"])}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
-            <td class="lg-disc">${fmtUSD(r["loose-grown -30% USD"])}</td><!-- ★ NEW: LG -30% -->
+            <td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
-            <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td>
-            <td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
-            <td class="${diffCls(brD)}">${fmtDiff(brD)}</td>
-            <td class="${pctClass(brP)}">${fmtPct(brP)}</td>
+            <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
+            <td class="${diffCls(brD)}">${fmtDiff(brD)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td>
           </tr>`;
           })
           .join("");
@@ -1979,7 +2056,7 @@
         }, 200);
       }
 
-      // ── MASTER RENDER ─────────────────────────────────────────
+      // MASTER RENDER
       function render() {
         applyFiltersLocal();
         document.getElementById("totalCount").textContent =
@@ -1994,19 +2071,16 @@
             tl.style.color = "var(--muted)";
           }
         }
-        renderVendorTabs();
-        renderBuckets();
         renderPriceVendorTabs();
         renderPriceBuckets();
+        renderPctBucketsTop(); // ② % cards immediately after price cards
+        renderVendorTabs();
+        renderPctBuckets(); // ④ independent % cards
         renderTable(filteredData);
       }
 
-      // ── PARTIAL DATA ──────────────────────────────────────────
+      // Partial data
       async function loadPartialData() {
-        console.log(
-          "%c[PARTIAL] loadPartialData() starting…",
-          "color:#c9a84c;font-weight:bold",
-        );
         const inlineTag = document.getElementById("__PARTIAL_DATA__");
         if (inlineTag) {
           const rawText = inlineTag.textContent.trim();
@@ -2015,10 +2089,6 @@
               const inline = JSON.parse(rawText);
               if (Array.isArray(inline) && inline.length > 0) {
                 PARTIAL_DATA = inline;
-                console.log(
-                  `%c[PARTIAL] ✓ Loaded from inline: ${inline.length} records`,
-                  "color:#3ecf8e;font-weight:bold",
-                );
                 toast(
                   `✓ Partial data loaded — ${inline.length.toLocaleString()} matched records`,
                   "success",
@@ -2028,75 +2098,56 @@
                 return;
               }
             } catch (e) {
-              console.error("[PARTIAL] ✗ Failed to parse inline JSON:", e);
+              console.error("[PARTIAL]", e);
             }
           }
         }
-        console.log("[PARTIAL] Fetching from /api/partial…");
         try {
           const data = await api("GET", "/api/partial");
           if (Array.isArray(data)) {
             PARTIAL_DATA = data;
-            if (data.length > 0) {
-              console.log(
-                `%c[PARTIAL] ✓ Loaded from API: ${data.length} records`,
-                "color:#3ecf8e;font-weight:bold",
-              );
+            if (data.length > 0)
               toast(
                 `✓ Partial data loaded — ${data.length.toLocaleString()} matched records`,
                 "success",
                 3000,
               );
-            } else {
-              toast(
-                "⚠ No matched records yet — run the ⚙ Run Compare pipeline",
-                "info",
-                5000,
-              );
-            }
+            else toast("⚠ No matched records yet", "info", 5000);
             render();
           } else {
             PARTIAL_DATA = [];
-            toast(
-              "⚠ API returned invalid format (expected array)",
-              "error",
-              5000,
-            );
             render();
           }
         } catch (e) {
-          console.error("[PARTIAL] ✗ API fetch failed:", e);
           PARTIAL_DATA = [];
-          toast(`⚠ Could not load partial data: ${e.message}`, "error", 6000);
           render();
         }
       }
 
-      // ── BR vs LG MODAL ────────────────────────────────────────
+      // Modal
       let BR_VS_LG_DATA = [],
         brVsLgSearch = "",
         brVsLgPage = 1;
       const BR_PAGE_SIZE = 25;
       let brVsLgSortCol = null,
         brVsLgSortDir = 1;
-
       async function openBrVsLgModal() {
         document.getElementById("brVsLgModal").classList.add("open");
         document.body.style.overflow = "hidden";
         if (!BR_VS_LG_DATA.length) {
           document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading…</td></tr>`;
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>`;
           try {
             const data = await api("GET", "/api/br-vs-lg");
             BR_VS_LG_DATA = Array.isArray(data) ? data : [];
             if (!BR_VS_LG_DATA.length) {
               document.getElementById("modalTableBody").innerHTML =
-                `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⚠️</div>No data found. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first.</td></tr>`;
+                `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">⚠️ No data. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> first.</td></tr>`;
               return;
             }
           } catch (e) {
             document.getElementById("modalTableBody").innerHTML =
-              `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "compare_br_vs_lg.json not found — run the pipeline first." : e.message}</td></tr>`;
+              `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)">✗ ${e.message}</td></tr>`;
             return;
           }
         }
@@ -2144,10 +2195,8 @@
           rows = [...rows].sort((a, b) => {
             let va = a[brVsLgSortCol],
               vb = b[brVsLgSortCol];
-            if (va === null || va === undefined)
-              va = brVsLgSortDir === 1 ? Infinity : -Infinity;
-            if (vb === null || vb === undefined)
-              vb = brVsLgSortDir === 1 ? Infinity : -Infinity;
+            if (va == null) va = brVsLgSortDir === 1 ? Infinity : -Infinity;
+            if (vb == null) vb = brVsLgSortDir === 1 ? Infinity : -Infinity;
             if (typeof va === "string" && typeof vb === "string")
               return brVsLgSortDir * va.localeCompare(vb);
             return brVsLgSortDir * (va - vb);
@@ -2168,7 +2217,7 @@
           `<div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">Total <strong style="color:var(--br-vs-lg)">${all.length.toLocaleString()}</strong></div>`;
         if (!page.length) {
           document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+            `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">🔍 No records match</td></tr>`;
         } else {
           document.getElementById("modalTableBody").innerHTML = page
             .map((r) => {
@@ -2200,15 +2249,7 @@
                     : brLgD < 0
                       ? "pct-neg"
                       : "pct-zero";
-              return `<tr>
-              <td class="cert">${cert}</td>
-              <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
-              <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
-              <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
-              <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
-              <td class="${diffCls}">${brLgD === null ? "—" : (brLgD >= 0 ? "+" : "") + fmtUSD(brLgD)}</td>
-              <td class="${pctClass(brLgP)}">${fmtPct(brLgP)}</td>
-            </tr>`;
+              return `<tr><td class="cert">${cert}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${diffCls}">${brLgD === null ? "—" : (brLgD >= 0 ? "+" : "") + fmtUSD(brLgD)}</td><td class="${pctClass(brLgP)}">${fmtPct(brLgP)}</td></tr>`;
             })
             .join("");
         }
@@ -2224,7 +2265,7 @@
           )
             pages += `<button class="mpg-btn ${p === brVsLgPage ? "active" : ""}" onclick="brVsLgGoPage(${p})">${p}</button>`;
           else if (p === brVsLgPage - d - 1 || p === brVsLgPage + d + 1)
-            pages += `<span style="color:var(--muted);padding:4px 4px;font-size:.68rem">…</span>`;
+            pages += `<span style="color:var(--muted);padding:4px;font-size:.68rem">…</span>`;
         }
         document.getElementById("modalPagination").innerHTML = pages;
       }
@@ -2233,7 +2274,7 @@
         renderModalTable();
       }
 
-      // ── PIPELINE ──────────────────────────────────────────────
+      // Pipeline
       async function runComparePipeline() {
         const btn = document.getElementById("runCompareBtn"),
           st = document.getElementById("runCompareStatus");
@@ -2242,7 +2283,7 @@
           btn.textContent = "⏳ Running…";
         }
         if (st) {
-          st.textContent = "Building compare files…";
+          st.textContent = "Building…";
           st.style.color = "var(--accent)";
         }
         try {
@@ -2253,13 +2294,13 @@
               st.style.color = "var(--green)";
             }
             toast(
-              `Compare pipeline complete — ${r.rows.toLocaleString()} records`,
+              `Pipeline complete — ${r.rows.toLocaleString()} records`,
               "success",
               5000,
             );
             await refreshFileList();
             loadStats();
-            showLoading("Reloading compare.json…");
+            showLoading("Reloading…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             const sel = document.getElementById("fileSelect");
@@ -2268,10 +2309,10 @@
             BR_VS_LG_DATA = [];
           } else {
             if (st) {
-              st.textContent = `✗ Error (code ${r.returncode})`;
+              st.textContent = "✗ Error";
               st.style.color = "var(--red)";
             }
-            toast("Pipeline error — check server logs", "error", 6000);
+            toast("Pipeline error", "error", 6000);
           }
         } catch (e) {
           if (st) {
@@ -2287,7 +2328,7 @@
         }
       }
 
-      // ── STATS ─────────────────────────────────────────────────
+      // Stats
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
@@ -2295,7 +2336,7 @@
           const s = await api("GET", "/api/status");
           renderStats(s);
         } catch (e) {
-          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div><div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div></div>`;
+          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> to generate statistics</div></div>`;
         }
       }
       function renderStats(s) {
@@ -2332,11 +2373,11 @@
         }
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
         const brVsLgCount = datasets.br_vs_lg || 0;
-        html += `<div class="stats-card brvslg-card" style="--card-color:var(--br-vs-lg)" onclick="openBrVsLgModal()"><div class="stats-card-title" style="color:var(--br-vs-lg)">💠 Brilliance × LG Overlap</div><div class="stats-card-value" style="color:var(--br-vs-lg)">${brVsLgCount.toLocaleString()}</div><div class="stats-card-sub">Cert IDs in both BR &amp; Loose-Grown CSVs</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Source</span><span class="val" style="font-size:.68rem;color:var(--muted)">compare_br_vs_lg.json</span></div><div class="stats-row-item"><span class="label">PC price data</span><span class="val" style="font-size:.68rem;color:var(--muted)">where available</span></div></div><div class="brvslg-open-hint"><span>Click to view full table</span><span class="brvslg-arrow">→</span></div></div>`;
+        html += `<div class="stats-card brvslg-card" style="--card-color:var(--br-vs-lg)" onclick="openBrVsLgModal()"><div class="stats-card-title" style="color:var(--br-vs-lg)">💠 Brilliance × LG Overlap</div><div class="stats-card-value" style="color:var(--br-vs-lg)">${brVsLgCount.toLocaleString()}</div><div class="stats-card-sub">Cert IDs in both BR &amp; Loose-Grown CSVs</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Source</span><span class="val" style="font-size:.68rem;color:var(--muted)">compare_br_vs_lg.json</span></div></div><div class="brvslg-open-hint"><span>Click to view full table</span><span class="brvslg-arrow">→</span></div></div>`;
         panel.innerHTML = html;
       }
 
-      // ── STARTUP ───────────────────────────────────────────────
+      // Startup
       async function startDashboard() {
         showLoading("Connecting to API…");
         try {
@@ -2367,7 +2408,6 @@
           );
         }
       }
-
       startDashboard();
     </script>
   </body>
