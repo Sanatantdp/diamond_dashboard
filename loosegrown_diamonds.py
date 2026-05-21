@@ -515,4 +515,6 @@ def loose_grown_diamonds_scrappe() -> dict[str, int]:
 
 
 if __name__ == "__main__":
+    # VPN is the launcher's responsibility (see run_with_vpn.py / scheduler.py).
+    # Running this file directly will hit the API from your real IP.
     loose_grown_diamonds_scrappe()

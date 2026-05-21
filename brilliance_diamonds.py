@@ -9,7 +9,6 @@ import math
 import datetime
 import statistics
 from logger import get_logger
-from models import BrillianceLabData, truncate_and_load_csv
 
 log = get_logger("brilliance")
 ua = UserAgent()
@@ -555,18 +554,14 @@ def brilliance_diamonds_scraper():
     print(f"    Full batch report → {BATCH_REPORT_FILE}")
     print(f"    Diamond CSV       → {CSV_FILE}\n")
 
-    # ── Load CSV into DB (TRUNCATE + bulk INSERT) ────────────────────────────
-    try:
-        db_inserted = truncate_and_load_csv(BrillianceLabData, CSV_FILE, logger=log)
-        print(f"    DB rows inserted  → {db_inserted:,} into `brilliance_lab`\n")
-    except Exception as e:
-        log.error(f"DB load failed: {e}")
-
     log.info("=" * 60)
 
     return {"total_inserted": total_inserted, "total_pages": total_pages}
 
 
 # ── RUN ───────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
+    # VPN is the launcher's responsibility (see run_with_vpn.py / scheduler.py).
+    # Running this file directly will hit the API from your real IP.
     brilliance_diamonds_scraper()

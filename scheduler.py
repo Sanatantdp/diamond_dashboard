@@ -1,6 +1,5 @@
 import csv
 import socket
-import paramiko
 import logging
 import shutil
 import subprocess
@@ -35,14 +34,23 @@ COMPARE_FILES = [
     COMPARE_DIR / "compare_br_vs_lg.json",
 ]
 
-# ── SFTP config ───────────────────────────────────────────────────────────────
-SFTP_ENABLED    = True
-SFTP_HOST       = "122.176.221.68"
-SFTP_PORT       = 22
-SFTP_USER       = "qnapadmin"
-SFTP_PASSWORD   = "Passw0rd@123$"
-SFTP_REMOTE_DIR = "/share/CACHEDEV1_DATA/Web/usa/compare"
-LOCAL_FOLDER    = COMPARE_DIR
+# ── Render auto-deploy (git push) config ──────────────────────────────────────
+# After the comparator finishes and the compare files are validated/uploaded,
+# commit them to git and push to origin. Render auto-deploys on push, so the
+# dashboard at https://<your-render-service>.onrender.com picks up the new data
+# without any manual intervention.
+GIT_PUSH_ENABLED  = True
+GIT_REMOTE        = "origin"
+GIT_BRANCH        = "main"
+# Explicit paths — the global .gitignore (*.json*) excludes them otherwise.
+# These 5 are already tracked (force-added previously), so plain `git add` works.
+GIT_COMMIT_FILES = [
+    "compare/compare.json",
+    "compare/compare_partial.json",
+    "compare/compare_all.json",
+    "compare/compare_br_vs_lg.json",
+    "compare/diamond_status.json",
+]
 
 # ── Script definitions ────────────────────────────────────────────────────────
 def _find_script(*candidates) -> Path:
@@ -72,6 +80,9 @@ SCRIPTS = [
         "resume_divisor":  40,
         "stale_days":      2,      # stale if older than 2 days
         "delete_csv_only": True,   # delete CSV only, keep folder
+        # Route through run_with_vpn.py — picks a config from vpnbook/brilliance/
+        # (pre-vetted by test_vpn_scrapers.py) and auto-rotates on failure.
+        "vpn_launcher_key": "brilliance",
     },
     {
         "label":           "Loosegrown Scraper",
@@ -80,6 +91,9 @@ SCRIPTS = [
         "folders":         [SCRIPT_DIR / "loosegrown"],
         "stale_days":      2,      # stale if older than 2 days
         "delete_csv_only": True,   # delete CSV only, keep folder
+        # Route through run_with_vpn.py — picks a config from vpnbook/loosegrown/
+        # (pre-vetted by test_vpn_scrapers.py) and auto-rotates on failure.
+        "vpn_launcher_key": "loosegrown",
     },
     {
         "label":         "Price Comparator",
@@ -300,88 +314,68 @@ def cleanup_compare_backup(log):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SFTP upload
+# Git commit + push (Render auto-deploys on push to GIT_BRANCH)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _sftp_mkdir_recursive(sftp: paramiko.SFTPClient, remote_path: str, log):
-    parts = remote_path.strip("/").split("/")
-    current = ""
-    for part in parts:
-        current += "/" + part
-        try:
-            sftp.mkdir(current)
-            log.info(f"  [sftp] Created remote dir: {current}")
-        except IOError:
-            pass
+def _run_git(args: list[str]) -> tuple[int, str, str]:
+    """Run a git command, return (returncode, stdout, stderr)."""
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=str(SCRIPT_DIR),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
 
 
-def upload_folder(valid_files: list[Path], log) -> dict:
-    if not SFTP_ENABLED:
-        log.info("  [sftp] SFTP_ENABLED=False — skipping upload")
-        return {}
-    if not valid_files:
-        log.info("  [sftp] No valid files to upload")
-        return {}
+def git_commit_and_push(log) -> dict:
+    """
+    Stage the compare files, create a commit, push to GIT_REMOTE/GIT_BRANCH.
 
-    log.info(f"  [sftp] Connecting to {SFTP_HOST}:{SFTP_PORT} as {SFTP_USER}...")
-    result = {}
-    ssh  = None
-    sftp = None
+    Returns a small dict describing the outcome — never raises, so a git
+    failure (auth expired, network down, etc.) is logged but does not break
+    the pipeline. The next scheduled run will retry.
+    """
+    result = {"status": "skipped", "detail": ""}
+    if not GIT_PUSH_ENABLED:
+        log.info("  [git] GIT_PUSH_ENABLED=False — skipping commit/push")
+        return result
 
-    try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            hostname=SFTP_HOST,
-            port=SFTP_PORT,
-            username=SFTP_USER,
-            password=SFTP_PASSWORD,
-            timeout=15,
-        )
-        sftp = ssh.open_sftp()
-        log.info(f"  [sftp] ✅ Connected — logged in as {SFTP_USER}")
+    # Only stage files that actually exist (compare may have run for a subset).
+    files_to_add = [p for p in GIT_COMMIT_FILES if (SCRIPT_DIR / p).exists()]
+    if not files_to_add:
+        log.info("  [git] No compare files exist on disk — nothing to commit")
+        return result
 
-        try:
-            sftp.chdir(SFTP_REMOTE_DIR)
-            log.info(f"  [sftp] Remote dir ready: {SFTP_REMOTE_DIR}")
-        except IOError:
-            log.warning(f"  [sftp] Remote dir not found — creating: {SFTP_REMOTE_DIR}")
-            _sftp_mkdir_recursive(sftp, SFTP_REMOTE_DIR, log)
-            sftp.chdir(SFTP_REMOTE_DIR)
+    log.info(f"  [git] Staging {len(files_to_add)} compare file(s)")
+    rc, _, err = _run_git(["add", "--", *files_to_add])
+    if rc != 0:
+        log.error(f"  [git]  git add failed: {err}")
+        return {"status": "error", "detail": f"git add: {err}"}
 
-        log.info(f"  [sftp] Uploading {len(valid_files)} file(s) → {SFTP_REMOTE_DIR}")
-        for local_path in valid_files:
-            fname       = local_path.name
-            remote_path = SFTP_REMOTE_DIR.rstrip("/") + "/" + fname
-            size_kb     = local_path.stat().st_size / 1024
-            try:
-                sftp.put(str(local_path), remote_path)
-                log.info(f"  [sftp]  ✅ Uploaded: {fname}  ({size_kb:.1f} KB)")
-                result[fname] = "uploaded"
-            except Exception as e:
-                log.error(f"  [sftp]  ❌ Failed:   {fname}  — {e}")
-                result[fname] = "failed"
+    # Anything actually staged?
+    rc, _, _ = _run_git(["diff", "--cached", "--quiet"])
+    if rc == 0:
+        log.info("  [git] Compare files unchanged since last commit — nothing to push")
+        return {"status": "no_changes", "detail": ""}
 
-    except paramiko.AuthenticationException:
-        log.error(f"  [sftp] ❌ Authentication failed — check {SFTP_USER} / password")
-        for p in valid_files:
-            result.setdefault(p.name, "failed")
-    except paramiko.SSHException as e:
-        log.error(f"  [sftp] ❌ SSH error: {e}")
-        for p in valid_files:
-            result.setdefault(p.name, "failed")
-    except Exception as e:
-        log.error(f"  [sftp] ❌ Connection error: {e}")
-        for p in valid_files:
-            result.setdefault(p.name, "failed")
-    finally:
-        if sftp:
-            sftp.close()
-        if ssh:
-            ssh.close()
-            log.info("  [sftp] Connection closed.")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    msg = f"auto: update compare files {timestamp}"
+    log.info(f"  [git] Committing: {msg!r}")
+    rc, _, err = _run_git(["commit", "-m", msg])
+    if rc != 0:
+        log.error(f"  [git]  git commit failed: {err}")
+        return {"status": "error", "detail": f"git commit: {err}"}
 
-    return result
+    log.info(f"  [git] Pushing {GIT_BRANCH} -> {GIT_REMOTE}…")
+    rc, out, err = _run_git(["push", GIT_REMOTE, GIT_BRANCH])
+    if rc != 0:
+        log.error(f"  [git]  git push failed: {err or out}")
+        return {"status": "error", "detail": f"git push: {err or out}"}
+
+    log.info(f"  [git]  ✅ Pushed — Render will redeploy automatically")
+    return {"status": "pushed", "detail": msg}
 
 
 # ── Run a single script ───────────────────────────────────────────────────────
@@ -404,12 +398,27 @@ def run_script(entry: dict, log) -> bool:
         resume_page = (existing // entry.get("resume_divisor", 40)) + 1
         log.info(f"[{label}] Smart resume → approx from page {resume_page}")
 
-    log.info(f"[{label}] ▶ Starting scraper...")
+    # Route through run_with_vpn.py if the entry asks for VPN — otherwise
+    # invoke the scraper script directly.
+    vpn_key = entry.get("vpn_launcher_key")
+    if vpn_key:
+        launcher = SCRIPT_DIR / "run_with_vpn.py"
+        cmd = [
+            sys.executable, str(launcher),
+            "--scraper", vpn_key,
+            "--rotate-on-fail",
+            "--max-attempts", "5",
+        ]
+        log.info(f"[{label}] ▶ Starting via VPN launcher → {' '.join(cmd[1:])}")
+    else:
+        cmd = [sys.executable, str(script)]
+        log.info(f"[{label}] ▶ Starting scraper (no VPN)...")
+
     start = time.time()
 
     try:
         result = subprocess.run(
-            [sys.executable, str(script)],
+            cmd,
             capture_output=False,
             timeout=TIMEOUT_SECONDS,
         )
@@ -475,19 +484,18 @@ def run_pipeline():
                 if status == "kept"
             ]
 
+            # Push compare files to GitHub → triggers Render auto-deploy.
             if kept_paths:
-                log.info(f"  [sftp] {len(kept_paths)} valid file(s) ready for upload")
-                sftp_result = upload_folder(kept_paths, log)
-                uploaded = sum(1 for v in sftp_result.values() if v == "uploaded")
-                failed   = sum(1 for v in sftp_result.values() if v == "failed")
-                if failed:
-                    log.warning(f"  [sftp] {uploaded} uploaded, {failed} failed")
-                    results[label] += f" | SFTP: {uploaded} ✅ {failed} ❌"
-                else:
-                    log.info(f"  [sftp] All {uploaded} file(s) uploaded successfully")
-                    results[label] += f" | SFTP: {uploaded} uploaded"
+                log.info(f"  [git] {len(kept_paths)} valid compare file(s) ready to publish")
+            git_result = git_commit_and_push(log)
+            if git_result["status"] == "pushed":
+                results[label] += " | Render: pushed"
+            elif git_result["status"] == "no_changes":
+                results[label] += " | Render: no changes"
+            elif git_result["status"] == "error":
+                results[label] += f" | Render: ❌ {git_result['detail'][:60]}"
             else:
-                log.info("  [sftp] No newly valid files — skipping upload")
+                results[label] += " | Render: skipped"
 
         elif s["primary_csv"] is not None:
             stale_days      = s.get("stale_days", STALE_THRESHOLD_DAYS)
@@ -543,8 +551,8 @@ def next_run_time(from_dt: datetime) -> datetime:
 def main():
     startup_log.info("Diamond Scheduler Started")
     startup_log.info(f"Schedule     : Every {INTERVAL_DAYS} days at {RUN_HOUR:02d}:{RUN_MINUTE:02d}")
-    startup_log.info(f"SFTP host    : {SFTP_HOST}:{SFTP_PORT}")
-    startup_log.info(f"SFTP remote  : {SFTP_REMOTE_DIR}")
+    startup_log.info(f"Publish      : git push {GIT_REMOTE} {GIT_BRANCH} (Render auto-deploys)")
+    startup_log.info(f"Push enabled : {GIT_PUSH_ENABLED}")
     startup_log.info(f"Block wait   : {BLOCK_WAIT_MINUTES} min on timeout")
     startup_log.info(f"Run logs dir : {LOGS_DIR}")
     startup_log.info(f"Scraper thresholds:")

@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from logger import get_logger
-from models import PcLabData, truncate_and_load_csv
 
 log = get_logger("precious_carbon")
 
@@ -515,13 +514,6 @@ def scrape():
 
     print(f"  Batch report → {BATCH_REPORT_FILE}")
     print(f"  Diamond CSV  → {OUTPUT_CSV}\n")
-
-    # ── Load CSV into DB (TRUNCATE + bulk INSERT) ──────────────────
-    try:
-        db_inserted = truncate_and_load_csv(PcLabData, OUTPUT_CSV, logger=log)
-        print(f"  DB rows inserted → {db_inserted:,} into `pc_lab_data`\n")
-    except Exception as e:
-        log.error(f"DB load failed: {e}")
 
     log.info("=" * 70)
 
