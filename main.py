@@ -63,7 +63,7 @@ COMPARE_DIR = BASE_DIR / "compare"
 COMPARE_DIR.mkdir(exist_ok=True)
 
 # ── MySQL config (env vars with sane local defaults) ─────────────────────────
-DB_HOST     = os.environ.get("DB_HOST", "127.0.0.1")
+DB_HOST     = os.environ.get("DB_HOST", "192.168.1.16")
 DB_PORT     = int(os.environ.get("DB_PORT", "3306"))
 DB_USER     = os.environ.get("DB_USER", "root")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
