@@ -25,11 +25,19 @@ BATCH_SLEEP_MAX = 300          # 5 min
 
 base_dir   = os.getcwd()
 down_files = os.path.join(base_dir, "diamond_files")
+backup_dir = os.path.join(base_dir, "diamond_files_backup")
 os.makedirs(down_files, exist_ok=True)
+os.makedirs(backup_dir, exist_ok=True)
 
-OUTPUT_CSV    = os.path.join(down_files, "precious_carbon.csv")
-PROGRESS_FILE = os.path.join(down_files, "pc_progress.json")
+OUTPUT_CSV        = os.path.join(down_files, "precious_carbon.csv")
+PROGRESS_FILE     = os.path.join(down_files, "pc_progress.json")
 BATCH_REPORT_FILE = os.path.join(down_files, "pc_batch_reports.json")
+BACKUP_DIR        = backup_dir
+
+# ── Scheduler config ─────────────────────────────────────────────────────────
+SCHEDULE_HOUR        = 2     # 24h clock — daily check time
+SCHEDULE_MINUTE      = 0
+STALE_THRESHOLD_DAYS = 1     # CSV older than this -> archive + full re-scrape
 
 HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -58,17 +66,60 @@ CSV_COLS = [
 ]
 
 
-# ── Helpers ────────────────────────────────────────────────────────
-def delete_if_older_than_1_day(file_path):
-    if os.path.exists(file_path):
-        file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-        if datetime.now() - file_time > timedelta(days=1):
-            os.remove(file_path)
-            log.info(f"Deleted old file: {file_path}")
+# ── File backup / rotation ─────────────────────────────────────────
+def csv_age_days(filepath):
+    """Return CSV age in days, or None if missing."""
+    if not os.path.exists(filepath):
+        return None
+    mtime = os.path.getmtime(filepath)
+    return (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds() / 86400
 
 
-delete_if_older_than_1_day(OUTPUT_CSV)
-delete_if_older_than_1_day(PROGRESS_FILE)
+def archive_to_backup(filepath, threshold_days=STALE_THRESHOLD_DAYS):
+    """
+    If `filepath` exists AND is older than `threshold_days`, move it into
+    BACKUP_DIR with a date suffix and clear progress + batch reports so the
+    next scrape restarts from page 1. Returns True if archived, False otherwise.
+    """
+    if not os.path.exists(filepath):
+        log.info(f"No existing CSV at {filepath} — fresh scrape will start from page 1.")
+        return False
+
+    mtime    = os.path.getmtime(filepath)
+    mod_date = datetime.fromtimestamp(mtime)
+    age      = datetime.now() - mod_date
+    age_days = age.total_seconds() / 86400
+
+    if age_days < threshold_days:
+        log.info(
+            f"CSV is fresh ({age.days}d {age.seconds // 3600}h old, "
+            f"threshold: {threshold_days}d) — skipping backup."
+        )
+        return False
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    date_str = mod_date.strftime("%Y-%m-%d")
+    stem     = os.path.splitext(os.path.basename(filepath))[0]
+    ext      = os.path.splitext(filepath)[1]
+    dest     = os.path.join(BACKUP_DIR, f"{stem}_{date_str}{ext}")
+
+    counter = 1
+    while os.path.exists(dest):
+        dest = os.path.join(BACKUP_DIR, f"{stem}_{date_str}_{counter}{ext}")
+        counter += 1
+
+    os.rename(filepath, dest)
+    log.info(f"Archived old CSV -> {dest}  (was {age.days}d {age.seconds // 3600}h old)")
+
+    if os.path.exists(PROGRESS_FILE):
+        os.remove(PROGRESS_FILE)
+        log.info("Progress file cleared — will start from page 1")
+
+    if os.path.exists(BATCH_REPORT_FILE):
+        os.remove(BATCH_REPORT_FILE)
+        log.info("Batch report cleared")
+
+    return True
 
 
 def make_session() -> requests.Session:
@@ -142,15 +193,27 @@ def load_progress():
     return {"done_pages": [], "total_saved": 0, "total_pages": None}
 
 
-def save_progress(done_pages: set, total_saved: int, total_pages: int):
+def save_progress(done_pages: set, total_saved: int, total_pages: int, total_count: int | None = None):
     try:
+        payload = {
+            "done_pages":  sorted(done_pages),
+            "total_saved": total_saved,
+            "total_pages": total_pages,
+            "updated_at":  datetime.now().isoformat(),
+        }
+        if total_count is not None:
+            payload["total_count"] = total_count
+        elif os.path.exists(PROGRESS_FILE):
+            # Preserve any previously-stored total_count when caller didn't pass one
+            try:
+                with open(PROGRESS_FILE, encoding="utf-8") as f:
+                    prev = json.load(f)
+                if "total_count" in prev:
+                    payload["total_count"] = prev["total_count"]
+            except Exception:
+                pass
         with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "done_pages":  sorted(done_pages),
-                "total_saved": total_saved,
-                "total_pages": total_pages,
-                "updated_at":  datetime.now().isoformat()
-            }, f, indent=2)
+            json.dump(payload, f, indent=2)
     except Exception as e:
         log.warning(f"Failed to save progress: {e}")
 
@@ -194,11 +257,18 @@ def fetch_page(page: int, session: requests.Session):
     return page, None, 0, False
 
 
-def get_total_pages(session: requests.Session) -> int:
+def fetch_total_count(session: requests.Session) -> int:
+    """Hit the API once and return the live `dataCount` (total diamonds)."""
     log.info("Fetching total diamond count…")
     resp         = session.post(URL, json=build_query(1), timeout=30)
     diamond_data = resp.json().get("data", {}).get("diamondData", {})
-    total_count  = int(diamond_data.get("dataCount", 0))
+    return int(diamond_data.get("dataCount", 0))
+
+
+def get_total_pages(session: requests.Session, total_count: int | None = None) -> tuple[int, int]:
+    """Return (total_count, total_pages). Reuses a pre-fetched count if given."""
+    if total_count is None:
+        total_count = fetch_total_count(session)
     total_pages  = math.ceil(total_count / PAGE_SIZE)
 
     print(f"\n  {'═'*52}")
@@ -214,7 +284,7 @@ def get_total_pages(session: requests.Session) -> int:
 
     log.info(f"Total diamonds : {total_count:,}")
     log.info(f"Total pages    : {total_pages:,}")
-    return total_pages
+    return total_count, total_pages
 
 
 # ── Batch Report ───────────────────────────────────────────────────
@@ -402,15 +472,49 @@ def scrape():
     session  = make_session()
     progress = load_progress()
 
+    # ── Total-count gate ───────────────────────────────────────────
+    # Compare the live total against what pc_progress.json last saw.
+    #   - same count   → already scraped, skip entirely
+    #   - count changed→ inventory has shifted, wipe and re-scrape from scratch
+    #   - no stored count → first run, just save and proceed
+    live_count   = fetch_total_count(session)
+    stored_count = progress.get("total_count")
+
+    if stored_count is not None and stored_count == live_count and progress.get("done_pages"):
+        log.info(
+            f"✅ Diamond count unchanged ({live_count:,}) since last run — "
+            f"nothing new to scrape. Exiting."
+        )
+        return
+
+    if stored_count is not None and stored_count != live_count:
+        log.info(
+            f"⚠️  Diamond count changed: {stored_count:,} → {live_count:,}. "
+            f"Wiping previous progress and starting fresh."
+        )
+        for path in (OUTPUT_CSV, PROGRESS_FILE, BATCH_REPORT_FILE):
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    log.info(f"  🗑 Deleted {path}")
+                except Exception as e:
+                    log.warning(f"  ⚠️ Could not delete {path}: {e}")
+        progress    = {"done_pages": [], "total_saved": 0, "total_pages": None}
+
+    total_count, total_pages = get_total_pages(session, total_count=live_count)
+
     done_pages  = set(progress.get("done_pages", []))
     total_saved = progress.get("total_saved", 0)
-    total_pages = progress.get("total_pages") or get_total_pages(session)
 
     seen_certs = load_seen_certs(OUTPUT_CSV)
     remaining  = [p for p in range(1, total_pages + 1) if p not in done_pages]
 
     log.info(f"Pages done     : {len(done_pages):,}")
     log.info(f"Pages remaining: {len(remaining):,}")
+
+    # Persist the live count up-front so a crash before the first batch save
+    # still records what we last saw.
+    save_progress(done_pages, total_saved, total_pages, total_count=total_count)
 
     if not remaining:
         log.info("✅ All pages already scraped. Nothing to do.")
@@ -518,5 +622,60 @@ def scrape():
     log.info("=" * 70)
 
 
+# ── Scheduler ──────────────────────────────────────────────────────
+def _next_run_time(from_dt: datetime) -> datetime:
+    candidate = from_dt.replace(
+        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
+    )
+    if candidate <= from_dt:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def run_with_scheduler():
+    """
+    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
+      1. Check the CSV's age.
+      2. If older than STALE_THRESHOLD_DAYS (or missing), move it into
+         diamond_files_backup/, clear progress, and run a full re-scrape
+         from page 1 to the last page.
+      3. Otherwise, log "fresh" and sleep until the next check.
+    """
+    log.info("=" * 70)
+    log.info("PreciousCarbon scheduler started")
+    log.info(f"Daily check       : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
+    log.info(f"Stale threshold   : {STALE_THRESHOLD_DAYS} day(s)")
+    log.info(f"Backup destination: {BACKUP_DIR}")
+    log.info("=" * 70)
+
+    while True:
+        next_run  = _next_run_time(datetime.now())
+        wait_secs = max(0, (next_run - datetime.now()).total_seconds())
+        log.info(
+            f"Sleeping {wait_secs / 3600:.2f}h until next check "
+            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
+        time.sleep(wait_secs)
+
+        age = csv_age_days(OUTPUT_CSV)
+        if age is None:
+            log.info("CSV missing — running fresh scrape.")
+            archived = False
+        else:
+            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
+            archived = archive_to_backup(OUTPUT_CSV)
+
+        if age is None or archived:
+            try:
+                scrape()
+            except Exception as e:
+                log.error(f"Scraper crashed: {e}")
+        else:
+            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
+
+
 if __name__ == "__main__":
-    scrape()
+    # Two entry points:
+    #   run_with_scheduler() -> daily check + auto-backup + full re-scrape
+    #   scrape()             -> one-shot scrape, no rotation, resumes from progress
+    run_with_scheduler()

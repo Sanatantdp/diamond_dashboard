@@ -1,30 +1,79 @@
-import os
-import json
+"""
+main.py
+=======
+
+Diamond Price Dashboard API — backed by MySQL (table `scrapper.*`).
+
+Data source
+-----------
+Reads from the MySQL tables created/refreshed by `compare_to_mysql.py`:
+  • compare_common      (3-vendor matches    -> served at /api/compare)
+  • compare_partial     (>=1 vendor match    -> served at /api/partial)
+  • compare_all         (every PC diamond    -> served at /api/data/compare_all.json)
+  • compare_br_vs_lg    (BR vs LG inner join -> served at /api/br-vs-lg)
+  • diamond_status      (snapshot row        -> served at /api/status)
+
+DB connection (env vars, with localhost defaults)
+-------------------------------------------------
+  DB_HOST     (default 127.0.0.1)
+  DB_PORT     (default 3306)
+  DB_USER     (default root)
+  DB_PASSWORD (default empty)
+  DB_NAME     (default scrapper)
+
+Render deployment
+-----------------
+1. Push this repo to GitHub.
+2. Create a Render **Web Service** -> connect your repo.
+3. Build command   :  pip install -r requirements.txt
+   Start command   :  uvicorn main:app --host 0.0.0.0 --port $PORT
+4. Add environment variables in the Render dashboard pointing at your
+   remote MySQL (Aiven / Railway / PlanetScale / your QNAP, etc.):
+       DB_HOST     = <ip-or-hostname>
+       DB_PORT     = 3306
+       DB_USER     = <user>
+       DB_PASSWORD = <password>
+       DB_NAME     = scrapper
+       DASHBOARD_PASSWORD = diamond-6087
+5. Make sure that DB allows inbound connections from Render's egress IPs
+   (or from 0.0.0.0/0 if it's a sandbox / not production data).
+6. Render automatically sets PORT — the start command above binds to it.
+"""
+
+from __future__ import annotations
+
 import datetime
+import hashlib
+import json
+import os
+from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+import pymysql
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.responses import Response
 
-BASE_DIR                 = Path(os.getcwd())
-COMPARE_DIR              = BASE_DIR / "compare"
-COMPARE_JSON             = COMPARE_DIR / "compare.json"
-COMPARE_PARTIAL_JSON     = COMPARE_DIR / "compare_partial.json"
-COMPARE_ALL_JSON         = COMPARE_DIR / "compare_all.json"
-COMPARE_BR_VS_LG_JSON    = COMPARE_DIR / "compare_br_vs_lg.json"
-COMPARE_CSV              = COMPARE_DIR / "compare.csv"
-DIAMOND_STATUS_JSON      = COMPARE_DIR / "diamond_status.json"
+# ── Paths ────────────────────────────────────────────────────────────────────
+BASE_DIR    = Path(__file__).parent.resolve()
+COMPARE_DIR = BASE_DIR / "compare"
 COMPARE_DIR.mkdir(exist_ok=True)
 
-# ── PASSWORD ──────────────────────────────────────────────────────────────────
-DASHBOARD_PASSWORD = "diamond-6087"
-# ─────────────────────────────────────────────────────────────────────────────
+# ── MySQL config (env vars with sane local defaults) ─────────────────────────
+DB_HOST     = os.environ.get("DB_HOST", "127.0.0.1")
+DB_PORT     = int(os.environ.get("DB_PORT", "3306"))
+DB_USER     = os.environ.get("DB_USER", "root")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_NAME     = os.environ.get("DB_NAME", "scrapper")
 
-app = FastAPI(title="Diamond Price Dashboard API", version="1.0.0")
+# ── Auth ─────────────────────────────────────────────────────────────────────
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "diamond-6087")
+
+# ── FastAPI app ──────────────────────────────────────────────────────────────
+app = FastAPI(title="Diamond Price Dashboard API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,22 +81,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PUBLIC_PATHS = {"/", "/dashboard", "/api/login", "/api/login/config", "/api/health"}
 
-# ── BEARER TOKEN AUTH MIDDLEWARE ──────────────────────────────────────────────
-# Paths that do NOT require a Bearer token
-PUBLIC_PATHS = {
-    "/",
-    "/dashboard",
-    "/api/login",
-    "/api/login/config",
-    "/api/health",
-}
 
 @app.middleware("http")
 async def bearer_auth_middleware(request: Request, call_next):
     if request.url.path in PUBLIC_PATHS:
         return await call_next(request)
-
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer ") or auth_header[7:] != DASHBOARD_PASSWORD:
         return Response(
@@ -56,14 +96,140 @@ async def bearer_auth_middleware(request: Request, call_next):
             media_type="application/json",
         )
     return await call_next(request)
-# ─────────────────────────────────────────────────────────────────────────────
 
 
-# ── PAGES ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# MySQL helpers
+# ═════════════════════════════════════════════════════════════════════════════
+def _get_conn() -> pymysql.connections.Connection:
+    """Open a fresh MySQL connection. One per request keeps things simple."""
+    return pymysql.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True,
+        connect_timeout=10,
+        read_timeout=120,
+    )
 
+
+def _jsonify_value(v: Any) -> Any:
+    """Convert MySQL types into JSON-serialisable Python types."""
+    if isinstance(v, Decimal):
+        # Convert without scientific notation; preserve ints as ints
+        as_float = float(v)
+        return int(as_float) if as_float.is_integer() else as_float
+    if isinstance(v, (datetime.datetime, datetime.date)):
+        return v.strftime("%Y-%m-%d %H:%M:%S") if isinstance(v, datetime.datetime) else v.isoformat()
+    return v
+
+
+# DB column -> original JSON key the dashboard expects
+COMPARE_DB_TO_JSON = {
+    "certificate_number":       "certificate_number",
+    "vendors_matched":          "vendors_matched",
+    "shape":                    "shape",
+    "color":                    "color",
+    "clarity":                  "clarity",
+    "cut":                      "cut",
+    "carat_weight":             "caratWeight",
+    "lg_price_usd":             "loose-grown Price USD",
+    "lg_minus_30_usd":          "loose-grown -30% USD",
+    "lg_vs_pc_usd":             "loose-grown vs PC USD",
+    "lg_vs_pc_pct":             "loose-grown vs PC %",
+    "brilliance_price_usd":     "brilliance Price USD",
+    "brilliance_minus_30_usd":  "brilliance -30% USD",
+    "brilliance_vs_pc_usd":     "brilliance vs PC USD",
+    "brilliance_vs_pc_pct":     "brilliance vs PC %",
+    "pc_price_usd":             "PC Price USD",
+    "pc_minus_30_usd":          "PC -30% USD",
+}
+
+BR_VS_LG_DB_TO_JSON = {
+    "diamond_id":               "diamond_id",
+    "shape":                    "shape",
+    "carat_weight":             "caratWeight",
+    "cut":                      "cut",
+    "color":                    "color",
+    "clarity":                  "clarity",
+    "lg_price_usd":             "loose-grown Price USD",
+    "brilliance_price_usd":     "brilliance Price USD",
+    "lg_minus_30_usd":          "loose-grown -30% USD",
+    "brilliance_minus_30_usd":  "brilliance -30% USD",
+    "br_minus_30_vs_lg_usd":    "BR -30% vs LG USD",
+    "br_minus_30_vs_lg_pct":    "BR -30% vs LG %",
+}
+
+
+def _fetch_compare(table: str, key_map: dict[str, str]) -> list[dict]:
+    """Query a compare_* table and remap columns back to the dashboard's JSON key names."""
+    db_cols = list(key_map.keys())
+    cols_sql = ", ".join(f"`{c}`" for c in db_cols)
+    sql = f"SELECT {cols_sql} FROM `{table}`"
+
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+
+    out: list[dict] = []
+    for r in rows:
+        out.append({key_map[c]: _jsonify_value(r[c]) for c in db_cols})
+    return out
+
+
+def _fetch_status() -> dict | None:
+    """Latest row of diamond_status, rebuilt in the nested JSON shape the UI expects."""
+    sql = "SELECT * FROM `diamond_status` ORDER BY `id` DESC LIMIT 1"
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        r = cur.fetchone()
+    if not r:
+        return None
+    return {
+        "generated_at": _jsonify_value(r["generated_at"]),
+        "pc_total":     r["pc_total"],
+        "vendor_totals": {
+            "loose-grown": r["lg_vendor_total"],
+            "brilliance":  r["brilliance_vendor_total"],
+        },
+        "pc_vs_vendors": {
+            "loose-grown": {
+                "matched":         r["lg_matched"],
+                "match_rate_pct":  _jsonify_value(r["lg_match_rate_pct"]),
+            },
+            "brilliance": {
+                "matched":         r["brilliance_matched"],
+                "match_rate_pct":  _jsonify_value(r["brilliance_match_rate_pct"]),
+            },
+        },
+        "dataset_counts": {
+            "common":   r["common_count"],
+            "partial":  r["partial_count"],
+            "all_pc":   r["all_pc_count"],
+            "br_vs_lg": r["br_vs_lg_count"],
+        },
+    }
+
+
+def _table_row_count(table: str) -> int:
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS c FROM `{table}`")
+            row = cur.fetchone()
+            return int(row["c"]) if row else 0
+    except Exception:
+        return 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Pages
+# ═════════════════════════════════════════════════════════════════════════════
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
-    """Serve the login page."""
     html_path = BASE_DIR / "login.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="login.html not found")
@@ -73,62 +239,52 @@ async def serve_login():
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
     """
-    Serve the dashboard page with PARTIAL data injected inline.
-    ✓ Injects compare_partial.json as <script id="__PARTIAL_DATA__" type="application/json">
-    ✓ Prevents race conditions and silent fetch failures
-    ✓ Includes metadata for debugging (file sizes, timestamps, load status)
+    Serve dashboard.html with the `compare_partial` dataset injected inline,
+    pulled live from MySQL. Avoids dashboard race conditions on first paint.
     """
     html_path = BASE_DIR / "dashboard.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="dashboard.html not found")
     html = html_path.read_text(encoding="utf-8")
 
-    # Load partial data for inline injection
-    partial_json = "[]"
+    partial_json   = "[]"
     partial_status = "not_found"
-    partial_size_kb = 0
-    partial_timestamp = ""
+    partial_rows   = 0
 
-    if COMPARE_PARTIAL_JSON.exists():
-        try:
-            partial_data = _load_json_file(COMPARE_PARTIAL_JSON)
-            if isinstance(partial_data, list) and len(partial_data) > 0:
-                partial_json = json.dumps(partial_data, ensure_ascii=False, separators=(",", ":"))
-                partial_status = "loaded"
-                partial_size_kb = round(COMPARE_PARTIAL_JSON.stat().st_size / 1024, 1)
-                partial_timestamp = datetime.datetime.fromtimestamp(
-                    COMPARE_PARTIAL_JSON.stat().st_mtime
-                ).strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                partial_status = "empty"
-        except Exception as e:
-            partial_status = f"error: {str(e)}"
-            partial_json = "[]"
-    
-    # Escape </ inside JSON so it can't terminate the script tag
+    try:
+        data = _fetch_compare("compare_partial", COMPARE_DB_TO_JSON)
+        if data:
+            partial_json   = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+            partial_rows   = len(data)
+            partial_status = "loaded"
+        else:
+            partial_status = "empty"
+    except Exception as e:
+        partial_status = f"error: {e}"
+
+    # Prevent the JSON from terminating the <script> tag
     partial_json = partial_json.replace("</", "<\\/")
-    
-    # Inject as inline script + metadata comment
-    injection = f"""
-<!-- PARTIAL DATA INJECTION START -->
-<!-- status: {partial_status} | size: {partial_size_kb}kb | timestamp: {partial_timestamp} -->
-<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>
-<!-- PARTIAL DATA INJECTION END -->
-"""
-    html = html.replace("</body>", f"{injection}\n</body>", 1)
+
+    injection = (
+        "\n<!-- PARTIAL DATA INJECTION START -->\n"
+        f"<!-- status: {partial_status} | rows: {partial_rows} | source: mysql:{DB_NAME}.compare_partial -->\n"
+        f'<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>\n'
+        "<!-- PARTIAL DATA INJECTION END -->\n"
+    )
+    html = html.replace("</body>", f"{injection}</body>", 1)
 
     return HTMLResponse(
         content=html,
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
-# ─────────────────────────────────────────────────────────────────────────────
 
-
-# ── LOGIN ─────────────────────────────────────────────────────────────────────
-
+# ═════════════════════════════════════════════════════════════════════════════
+# Auth
+# ═════════════════════════════════════════════════════════════════════════════
 class LoginRequest(BaseModel):
     password: str
+
 
 @app.post("/api/login")
 async def login(req: LoginRequest):
@@ -139,265 +295,130 @@ async def login(req: LoginRequest):
 
 @app.get("/api/login/config")
 async def login_config():
-    import hashlib
-    pw_hash = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()
-    return {"pw_hash": pw_hash}
-
-# ─────────────────────────────────────────────────────────────────────────────
+    return {"pw_hash": hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()}
 
 
-def _clean_json_text(raw: str) -> str:
-    import re
-    raw = re.sub(r'\bNaN\b', 'null', raw)
-    raw = re.sub(r'\bInfinity\b', 'null', raw)
-    raw = re.sub(r'\b-Infinity\b', 'null', raw)
-    return raw
-
-def csv_to_json(csv_path: Path, output_path: Path, fill_na="") -> dict:
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV not found: {csv_path}")
-    df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
-    if fill_na is not None:
-        df = df.fillna(fill_na)
-    data = df.where(df.notna(), other=None).to_dict(orient="records")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    return {"rows": len(df), "columns": list(df.columns), "output": str(output_path)}
-
-
-def _file_info(path: Path) -> dict:
-    if not path.exists():
-        return {"exists": False}
-    stat = path.stat()
-    return {
-        "exists": True,
-        "size_kb": round(stat.st_size / 1024, 1),
-        "last_modified": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-
-INTERNAL_COLS = {"_vendor_count", "_all_matched", "_some_matched"}
-
-def _load_json_file(path: Path):
-    """Read a JSON file, sanitize NaN/Infinity, strip internal columns."""
-    raw  = path.read_text(encoding="utf-8")
-    raw  = _clean_json_text(raw)
-    data = json.loads(raw)
-    if isinstance(data, list) and data:
-        keys_to_strip = INTERNAL_COLS & set(data[0].keys())
-        if keys_to_strip:
-            data = [{k: v for k, v in row.items() if k not in keys_to_strip} for row in data]
-    return data
-
-
+# ═════════════════════════════════════════════════════════════════════════════
+# Data endpoints — all served from MySQL
+# ═════════════════════════════════════════════════════════════════════════════
 @app.get("/api/compare")
 async def get_default_compare():
-    if not COMPARE_JSON.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="compare/compare.json not found. Run diamond_compare.py first."
-        )
+    """3-vendor matches (compare_common table)."""
     try:
-        return JSONResponse(content=_load_json_file(COMPARE_JSON))
+        return JSONResponse(content=_fetch_compare("compare_common", COMPARE_DB_TO_JSON))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read compare.json: {e}")
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
-# ── Partial (matched-only) endpoint ───────────────────────────────────────────
 @app.get("/api/partial")
 async def get_partial():
-    """
-    Returns compare_partial.json — diamonds that matched at least one vendor,
-    with full PC + vendor price columns. Used by the dashboard's Vendor Price
-    Buckets section.
-    
-    ✓ Handles missing file gracefully (returns empty array)
-    ✓ Logs file status for debugging
-    ✓ Ensures data integrity before returning
-    """
-    if not COMPARE_PARTIAL_JSON.exists():
-        # Not an error — just no matched data yet
-        print(f"[⚠] compare_partial.json not found at {COMPARE_PARTIAL_JSON}")
-        return JSONResponse(content=[])
-    
+    """compare_partial — diamonds with >=1 vendor match (used by Vendor Price Buckets)."""
     try:
-        data = _load_json_file(COMPARE_PARTIAL_JSON)
-        if not isinstance(data, list):
-            print(f"[⚠] compare_partial.json is not a list: {type(data)}")
-            return JSONResponse(content=[])
-        print(f"[✓] Loaded compare_partial.json: {len(data)} records")
-        return JSONResponse(content=data)
-    except json.JSONDecodeError as e:
-        print(f"[✗] Invalid JSON in compare_partial.json: {e}")
-        raise HTTPException(status_code=500, detail=f"Invalid JSON: {e}")
+        rows = _fetch_compare("compare_partial", COMPARE_DB_TO_JSON)
+        print(f"[OK] /api/partial -> {len(rows):,} rows from MySQL")
+        return JSONResponse(content=rows)
     except Exception as e:
-        print(f"[✗] Error reading compare_partial.json: {e}")
-        raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
-# ─────────────────────────────────────────────────────────────────────────────
+        print(f"[ERR] /api/partial: {e}")
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
-# ── Brilliance vs LG endpoint ─────────────────────────────────────────────────
 @app.get("/api/br-vs-lg")
 async def get_br_vs_lg():
-    """
-    Returns compare_br_vs_lg.json — diamonds present in BOTH Brilliance AND
-    Loose-Grown CSVs (inner join), with PC price appended where available.
-    """
-    if not COMPARE_BR_VS_LG_JSON.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="compare_br_vs_lg.json not found — run the pipeline first (⚙ Run Compare)."
-        )
+    """compare_br_vs_lg — diamonds present in both Brilliance AND Loose-Grown."""
     try:
-        return JSONResponse(content=_load_json_file(COMPARE_BR_VS_LG_JSON))
+        return JSONResponse(content=_fetch_compare("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read compare_br_vs_lg.json: {e}")
-# ─────────────────────────────────────────────────────────────────────────────
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
-@app.post("/api/convert")
-async def convert_csv(csv_filename: str = Form(...), output_name: str = Form(None)):
-    csv_path = BASE_DIR / "diamond_files" / csv_filename
-    if not csv_path.exists():
-        csv_path = BASE_DIR / csv_filename
-    if not csv_path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {csv_filename}")
-    stem        = Path(csv_filename).stem
-    out_name    = output_name or f"{stem}.json"
-    output_path = COMPARE_DIR / out_name
-    try:
-        summary = csv_to_json(csv_path, output_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {
-        "status": "ok",
-        "message": f"Converted {csv_filename} -> compare/{out_name}",
-        "rows": summary["rows"],
-        "columns": summary["columns"],
-        "file": out_name,
-    }
+@app.get("/api/status")
+async def get_diamond_status():
+    """Latest snapshot from diamond_status table."""
+    data = _fetch_status()
+    if data is None:
+        raise HTTPException(status_code=404, detail="diamond_status table is empty — run the pipeline first")
+    return JSONResponse(content=data)
 
 
-@app.post("/api/upload")
-async def upload_and_convert(file: UploadFile = File(...), output_name: str = Form(None)):
-    filename = file.filename or ""
-    suffix   = Path(filename).suffix.lower()
-    if suffix not in (".csv", ".json"):
-        raise HTTPException(status_code=400, detail="Only .csv or .json files are accepted")
-    content = await file.read()
-    stem    = Path(filename).stem
-
-    if suffix == ".json":
-        try:
-            raw  = content.decode("utf-8")
-            raw  = _clean_json_text(raw)
-            data = json.loads(raw)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-        if not isinstance(data, list):
-            raise HTTPException(status_code=400, detail="JSON must be an array of records")
-        out_name    = output_name or filename
-        output_path = COMPARE_DIR / out_name
-        output_path.write_text(raw, encoding="utf-8")
-        return {
-            "status": "ok",
-            "message": f"Uploaded JSON -> compare/{out_name}",
-            "rows": len(data),
-            "columns": list(data[0].keys()) if data else [],
-            "file": out_name,
-            "type": "json",
-        }
-
-    import tempfile
-    out_name    = output_name or f"{stem}.json"
-    output_path = COMPARE_DIR / out_name
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
-    try:
-        summary = csv_to_json(tmp_path, output_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-    return {
-        "status": "ok",
-        "message": f"Uploaded & converted {filename} -> compare/{out_name}",
-        "rows": summary["rows"],
-        "columns": summary["columns"],
-        "file": out_name,
-        "type": "csv->json",
-    }
+# Legacy filename-based endpoint kept so the dashboard "files" dropdown still works.
+# Maps the old JSON filename -> the corresponding DB table.
+FILENAME_TO_TABLE = {
+    "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
+    "compare_partial.json":  ("compare_partial",  COMPARE_DB_TO_JSON),
+    "compare_all.json":      ("compare_all",      COMPARE_DB_TO_JSON),
+    "compare_br_vs_lg.json": ("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON),
+}
 
 
 @app.get("/api/data/{filename}")
 async def get_json_data(filename: str):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    if not filename.endswith(".json"):
-        raise HTTPException(status_code=400, detail="Only .json files are supported")
-    json_path = COMPARE_DIR / filename
-    if not json_path.exists():
-        raise HTTPException(status_code=404, detail=f"JSON file not found: {filename}")
+    if filename not in FILENAME_TO_TABLE:
+        raise HTTPException(status_code=404, detail=f"Unknown dataset: {filename}")
+    table, key_map = FILENAME_TO_TABLE[filename]
     try:
-        return JSONResponse(content=_load_json_file(json_path))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid JSON in {filename}: {e}")
+        return JSONResponse(content=_fetch_compare(table, key_map))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/files")
-async def list_json_files():
+async def list_datasets():
+    """Lists DB-backed datasets so dashboard.html can populate its dataset picker."""
     files = []
-    for p in sorted(COMPARE_DIR.glob("*.json")):
-        stat = p.stat()
+    for filename, (table, _) in FILENAME_TO_TABLE.items():
+        rows = _table_row_count(table)
         files.append({
-            "filename": p.name,
-            "size_kb": round(stat.st_size / 1024, 1),
-            "last_modified": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-            "is_default": p.name == "compare.json",
+            "filename":      filename,
+            "table":         table,
+            "rows":          rows,
+            "is_default":    filename == "compare.json",
         })
     return {"files": files, "count": len(files)}
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Pipeline trigger — kept for local use (subprocess runs compare + reloads DB)
+# ═════════════════════════════════════════════════════════════════════════════
 @app.post("/api/run-compare")
 async def run_compare():
+    """
+    Local convenience: runs diamond_compare.py (generates compare/*.json) and
+    then compare_to_mysql.py (reloads the DB tables). Not useful on Render
+    because Render's filesystem is ephemeral and the scrapers don't run there.
+    """
     import subprocess, sys
+
     compare_script = BASE_DIR / "diamond_compare.py"
+    mysql_script   = BASE_DIR / "compare_to_mysql.py"
+
     if not compare_script.exists():
-        raise HTTPException(status_code=404, detail="diamond_compare.py not found in project root")
+        raise HTTPException(status_code=404, detail="diamond_compare.py not found")
+
     try:
-        result = subprocess.run(
+        cmp_result = subprocess.run(
             [sys.executable, str(compare_script)],
             capture_output=True, text=True, timeout=600,
         )
-        success      = result.returncode == 0
-        rows         = 0
-        compare_data = None
-        if COMPARE_JSON.exists():
-            try:
-                compare_data = json.loads(COMPARE_JSON.read_text(encoding="utf-8"))
-                rows = len(compare_data)
-            except Exception:
-                pass
+        cmp_ok = cmp_result.returncode == 0
+
+        mysql_ok = False
+        if cmp_ok and mysql_script.exists():
+            ml_result = subprocess.run(
+                [sys.executable, str(mysql_script)],
+                capture_output=True, text=True, timeout=600,
+            )
+            mysql_ok = ml_result.returncode == 0
+
+        common_rows = _table_row_count("compare_common")
         return JSONResponse(content={
-            "status":     "ok" if success else "error",
-            "returncode": result.returncode,
-            "rows":       rows,
-            "files": {
-                "common":   {**_file_info(COMPARE_JSON),          "filename": "compare.json"},
-                "partial":  {**_file_info(COMPARE_PARTIAL_JSON),  "filename": "compare_partial.json"},
-                "all":      {**_file_info(COMPARE_ALL_JSON),      "filename": "compare_all.json"},
-                "br_vs_lg": {**_file_info(COMPARE_BR_VS_LG_JSON), "filename": "compare_br_vs_lg.json"},
-                "csv":      {**_file_info(COMPARE_CSV),           "filename": "compare.csv"},
-            },
-            "compare_json": compare_data,
-            "stdout": result.stdout[-3000:] if result.stdout else "",
-            "stderr": result.stderr[-2000:] if result.stderr else "",
+            "status":     "ok" if (cmp_ok and mysql_ok) else "error",
+            "comparator": "ok" if cmp_ok else "failed",
+            "mysql_load": "ok" if mysql_ok else "failed",
+            "common_rows": common_rows,
+            "stdout":      (cmp_result.stdout or "")[-3000:],
+            "stderr":      (cmp_result.stderr or "")[-2000:],
         })
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Compare pipeline timed out (>10 min)")
@@ -405,40 +426,49 @@ async def run_compare():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/status")
-async def get_diamond_status():
-    if not DIAMOND_STATUS_JSON.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="diamond_status.json not found — run pipeline first"
-        )
-    try:
-        raw  = DIAMOND_STATUS_JSON.read_text(encoding="utf-8")
-        raw  = _clean_json_text(raw)
-        data = json.loads(raw)
-        return JSONResponse(content=data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read diamond_status.json: {e}")
-
-
+# ═════════════════════════════════════════════════════════════════════════════
+# Health
+# ═════════════════════════════════════════════════════════════════════════════
 @app.get("/api/health")
 async def health():
+    db_ok       = False
+    db_error    = None
+    table_counts: dict[str, int] = {}
+
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 AS ok")
+            cur.fetchone()
+            db_ok = True
+            for table in ("compare_common", "compare_partial", "compare_all", "compare_br_vs_lg", "diamond_status"):
+                try:
+                    cur.execute(f"SELECT COUNT(*) AS c FROM `{table}`")
+                    row = cur.fetchone()
+                    table_counts[table] = int(row["c"]) if row else 0
+                except Exception:
+                    table_counts[table] = -1   # table missing
+    except Exception as e:
+        db_error = str(e)
+
     return {
-        "status":          "ok",
-        "compare_dir":     str(COMPARE_DIR),
-        "json_files":      len(list(COMPARE_DIR.glob("*.json"))),
-        "default_dataset": COMPARE_JSON.exists(),
-        "datasets": {
-            "common":   COMPARE_JSON.exists(),
-            "partial":  COMPARE_PARTIAL_JSON.exists(),
-            "all":      COMPARE_ALL_JSON.exists(),
-            "br_vs_lg": COMPARE_BR_VS_LG_JSON.exists(),
-        },
-        "compare_csv": COMPARE_CSV.exists(),
-        "timestamp":   datetime.datetime.now().isoformat(),
+        "status":          "ok" if db_ok else "degraded",
+        "db_host":         DB_HOST,
+        "db_port":         DB_PORT,
+        "db_name":         DB_NAME,
+        "db_ok":           db_ok,
+        "db_error":        db_error,
+        "tables":          table_counts,
+        # Legacy flag the dashboard boot path expects: true when compare_common
+        # has data, so the UI knows to call /api/compare for the initial load.
+        "default_dataset": table_counts.get("compare_common", 0) > 0,
+        "timestamp":       datetime.datetime.now().isoformat(),
     }
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Local dev entrypoint — Render uses its own start command (see top docstring)
+# ═════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=4000, reload=True)
+    port = int(os.environ.get("PORT", "4000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

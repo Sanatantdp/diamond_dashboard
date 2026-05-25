@@ -686,3 +686,103 @@
 2026-05-13 12:11:57 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
 2026-05-13 12:11:57 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
 2026-05-13 12:11:57 [INFO] Sleeping 0.0 hours until next run...
+2026-05-21 14:17:53 [INFO] Diamond Scheduler Started
+2026-05-21 14:17:53 [INFO] Schedule     : Every 3 days at 14:18
+2026-05-21 14:17:53 [INFO] SFTP host    : 122.176.221.68:22
+2026-05-21 14:17:53 [INFO] SFTP remote  : /share/CACHEDEV1_DATA/Web/usa/compare
+2026-05-21 14:17:53 [INFO] Block wait   : 10 min on timeout
+2026-05-21 14:17:53 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-21 14:17:53 [INFO] Scraper thresholds:
+2026-05-21 14:17:53 [INFO]   PreciousCarbon Scraper         stale_days=1  delete=CSV only
+2026-05-21 14:17:53 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
+2026-05-21 14:17:53 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
+2026-05-21 14:17:53 [INFO] Sleeping 0.0 hours until next run...
+2026-05-21 15:46:45 [INFO] Connected (version 2.0, client OpenSSH_9.8)
+2026-05-21 15:46:46 [INFO] Authentication (password) successful!
+2026-05-21 15:46:46 [INFO] [chan 0] Opened sftp connection (server version 3)
+2026-05-21 15:46:48 [INFO] [chan 0] sftp session closed.
+2026-05-21 15:46:48 [INFO] ✅ Pipeline run complete — log: run_20260521_141800.log
+2026-05-21 15:46:48 [INFO] Sleeping 70.52 hours until next run...
+2026-05-21 16:12:43 [INFO] Diamond Scheduler Started
+2026-05-21 16:12:43 [INFO] Schedule     : Every 3 days at 16:13
+2026-05-21 16:12:43 [INFO] Publish      : git push origin main (Render auto-deploys)
+2026-05-21 16:12:43 [INFO] Push enabled : True
+2026-05-21 16:12:43 [INFO] Block wait   : 10 min on timeout
+2026-05-21 16:12:43 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-21 16:12:43 [INFO] Scraper thresholds:
+2026-05-21 16:12:43 [INFO]   PreciousCarbon Scraper         stale_days=1  delete=CSV only
+2026-05-21 16:12:43 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
+2026-05-21 16:12:43 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
+2026-05-21 16:12:43 [INFO] Sleeping 0.0 hours until next run...
+2026-05-21 20:23:56 [INFO] ✅ Pipeline run complete — log: run_20260521_161300.log
+2026-05-21 20:23:56 [INFO] Sleeping 67.82 hours until next run...
+2026-05-23 13:48:43 [INFO] Diamond Scheduler Started
+2026-05-23 13:48:43 [INFO] Schedule     : Every 3 days at 13:49
+2026-05-23 13:48:43 [INFO] SFTP host    : 122.176.221.68:22
+2026-05-23 13:48:43 [INFO] SFTP remote  : /share/CACHEDEV1_DATA/Web/usa/compare
+2026-05-23 13:48:43 [INFO] Block wait   : 10 min on timeout
+2026-05-23 13:48:43 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-23 13:48:43 [INFO] Scraper thresholds:
+2026-05-23 13:48:43 [INFO]   PreciousCarbon Scraper         stale_days=1  delete=CSV only
+2026-05-23 13:48:43 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
+2026-05-23 13:48:43 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
+2026-05-23 13:48:43 [INFO] Sleeping 0.0 hours until next run...
+2026-05-23 14:07:33 [INFO] Diamond Scheduler Started
+2026-05-23 14:07:33 [INFO] Schedule     : Every 3 days at 14:08
+2026-05-23 14:07:33 [INFO] SFTP host    : 122.176.221.68:22
+2026-05-23 14:07:33 [INFO] SFTP remote  : /share/CACHEDEV1_DATA/Web/usa/compare
+2026-05-23 14:07:33 [INFO] Block wait   : 10 min on timeout
+2026-05-23 14:07:33 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-23 14:07:33 [INFO] Scraper thresholds:
+2026-05-23 14:07:33 [INFO]   PreciousCarbon Scraper         stale_days=1  delete=CSV only
+2026-05-23 14:07:33 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
+2026-05-23 14:07:33 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
+2026-05-23 14:07:33 [INFO] Sleeping 0.01 hours until next run...
+2026-05-23 14:20:07 [INFO] Diamond Scheduler Started
+2026-05-23 14:20:07 [INFO] Schedule     : Every 3 days at 14:21
+2026-05-23 14:20:07 [INFO] SFTP host    : 122.176.221.68:22
+2026-05-23 14:20:07 [INFO] SFTP remote  : /share/CACHEDEV1_DATA/Web/usa/compare
+2026-05-23 14:20:07 [INFO] Block wait   : 10 min on timeout
+2026-05-23 14:20:07 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-23 14:20:07 [INFO] Scraper thresholds:
+2026-05-23 14:20:07 [INFO]   PreciousCarbon Scraper         stale_days=1  delete=CSV only
+2026-05-23 14:20:07 [INFO]   Brilliance Diamond Scraper     stale_days=2  delete=CSV only
+2026-05-23 14:20:07 [INFO]   Loosegrown Scraper             stale_days=2  delete=CSV only
+2026-05-23 14:20:07 [INFO] Sleeping 0.01 hours until next run...
+2026-05-23 18:31:34 [INFO] Connected (version 2.0, client OpenSSH_9.8)
+2026-05-23 18:31:36 [INFO] Authentication (password) successful!
+2026-05-23 18:31:38 [INFO] [chan 0] Opened sftp connection (server version 3)
+2026-05-23 18:39:57 [INFO] [chan 0] sftp session closed.
+2026-05-23 18:39:57 [INFO] ✅ Pipeline run complete — log: run_20260523_142100.log
+2026-05-23 18:39:57 [INFO] Sleeping 67.68 hours until next run...
+2026-05-25 15:14:29 [INFO] Diamond Scheduler Started
+2026-05-25 15:14:29 [INFO] Schedule     : Every 3 days at 15:15
+2026-05-25 15:14:29 [INFO] SFTP host    : 122.176.221.68:22
+2026-05-25 15:14:29 [INFO] SFTP remote  : /share/CACHEDEV1_DATA/Web/usa/compare
+2026-05-25 15:14:29 [INFO] Run logs dir : D:\usa_scrapping\logs
+2026-05-25 15:14:29 [INFO] Comparator   : D:\usa_scrapping\diamond_compare.py
+2026-05-25 15:14:29 [INFO] Required diamond files (2):
+2026-05-25 15:14:29 [INFO]   - D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-25 15:14:29 [INFO]   - D:\usa_scrapping\brilliance_diamonds.csv
+2026-05-25 15:14:29 [INFO] Sleeping 0.01 hours until next run...
+2026-05-25 15:15:00 [INFO] Pipeline skipped - missing files. Log: run_20260525_151500.log
+2026-05-25 15:15:00 [INFO] Sleeping 72.0 hours until next run...
+2026-05-25 16:17:04 [INFO] ========================================================================
+2026-05-25 16:17:04 [INFO] Checking 3 required diamond file(s)
+2026-05-25 16:17:04 [INFO] Freshness window: <= 3 day(s) old
+2026-05-25 16:17:04 [INFO] ========================================================================
+2026-05-25 16:17:04 [INFO]   OK       precious_carbon.csv  (36,287.0 KB, age 2.03d)
+2026-05-25 16:17:04 [INFO]   OK       brilliance_diamonds.csv  (33,962.2 KB, age 0.00d)
+2026-05-25 16:17:04 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 0.21d)
+2026-05-25 16:17:04 [INFO] ------------------------------------------------------------------------
+2026-05-25 16:17:04 [INFO] Files check: PASS
+2026-05-25 16:17:04 [INFO] ========================================================================
+2026-05-25 16:17:04 [INFO] PIPELINE STARTED
+2026-05-25 16:17:04 [INFO] ========================================================================
+2026-05-25 16:17:04 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-25 16:18:24 [INFO] [Comparator] Completed in 79.4s
+2026-05-25 16:18:24 [INFO] [MySQL Loader] Starting compare_to_mysql.py …
+2026-05-25 16:18:46 [INFO] [MySQL Loader] Completed in 21.8s
+2026-05-25 16:18:46 [INFO] ========================================================================
+2026-05-25 16:18:46 [INFO] PIPELINE COMPLETE
+2026-05-25 16:18:46 [INFO] ========================================================================

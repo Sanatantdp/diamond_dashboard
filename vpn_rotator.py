@@ -317,32 +317,50 @@ class VPNConnection:
         else:
             provider = stem_lower.split("-", 1)[0]
 
-        provider_auth = directory / f"{provider}_auth.txt"
+        # Walk from the config's directory up to (and including) VPN_DIR so a
+        # single shared credentials file (e.g. vpnbook/proton_credentials.txt)
+        # works for every scraper-specific subfolder.
+        search_dirs: list[Path] = [directory]
+        try:
+            vpn_root = VPN_DIR.resolve()
+            cur = directory.resolve()
+            while cur != vpn_root and vpn_root in cur.parents:
+                cur = cur.parent
+                search_dirs.append(cur)
+        except OSError:
+            pass
+
         provider_creds = directory / f"{provider}_credentials.txt"
 
-        # 1: provider-specific raw auth file
-        if provider_auth.exists():
-            return provider_auth
+        for d in search_dirs:
+            cand_auth = d / f"{provider}_auth.txt"
+            cand_creds = d / f"{provider}_credentials.txt"
 
-        # 2: provider-specific labelled credentials file → auto-convert
-        if provider_creds.exists():
-            user, pwd = parse_credentials_file(provider_creds)
-            write_auth_file(user, pwd, provider_auth)
-            log.info(f"Auto-converted {provider_creds.name} → {provider_auth.name}")
-            return provider_auth
+            # 1: provider-specific raw auth file
+            if cand_auth.exists():
+                return cand_auth
+
+            # 2: provider-specific labelled credentials file → auto-convert
+            if cand_creds.exists():
+                user, pwd = parse_credentials_file(cand_creds)
+                target = d / f"{provider}_auth.txt"
+                write_auth_file(user, pwd, target)
+                log.info(f"Auto-converted {cand_creds} → {target.name}")
+                return target
 
         # 3+4: legacy fallback — ONLY for `vpnbook` provider
         if provider == "vpnbook":
-            legacy_auth = directory / "auth.txt"
-            legacy_creds = directory / "credentials.txt"
-            if legacy_auth.exists():
-                return legacy_auth
-            if legacy_creds.exists():
-                user, pwd = parse_credentials_file(legacy_creds)
-                target = directory / "auth.txt"
-                write_auth_file(user, pwd, target)
-                log.info(f"Auto-converted credentials.txt → auth.txt")
-                return target
+            for d in search_dirs:
+                legacy_auth = d / "auth.txt"
+                legacy_creds = d / "credentials.txt"
+                if legacy_auth.exists():
+                    return legacy_auth
+                if legacy_creds.exists():
+                    user, pwd = parse_credentials_file(legacy_creds)
+                    target = d / "auth.txt"
+                    write_auth_file(user, pwd, target)
+                    log.info(f"Auto-converted credentials.txt → auth.txt")
+                    return target
 
         # Strict failure — never send wrong provider's credentials
         raise VPNError(

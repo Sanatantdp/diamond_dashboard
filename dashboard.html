@@ -1717,8 +1717,8 @@
         )
           selectedPriceVendorKey = av[0].key;
         const srcLabel = PARTIAL_DATA.length
-          ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
-          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
+          ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from MySQL · compare_partial (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ MySQL · compare_partial not loaded</span>`;
         tabsEl.innerHTML =
           av
             .map((vd) => {
@@ -2064,10 +2064,10 @@
         const tl = document.getElementById("tableSourceLabel");
         if (tl) {
           if (activePriceBucket !== null && PARTIAL_DATA.length) {
-            tl.textContent = "· showing compare_partial.json (matched)";
+            tl.textContent = "· showing MySQL · compare_partial (matched)";
             tl.style.color = "#60a5fa";
           } else {
-            tl.textContent = "· showing compare.json";
+            tl.textContent = "· showing MySQL · compare_common";
             tl.style.color = "var(--muted)";
           }
         }
@@ -2385,7 +2385,7 @@
           await refreshFileList();
           loadStats();
           if (health.default_dataset) {
-            showLoading("Loading compare.json…");
+            showLoading("Loading from MySQL · compare_common…");
             const data = await api("GET", "/api/compare");
             ingestData(data, "compare.json");
             const sel = document.getElementById("fileSelect");
@@ -2394,7 +2394,7 @@
           } else {
             hideLoading();
             toast(
-              "No compare.json found — run pipeline or upload a CSV/JSON",
+              "MySQL · compare_common is empty — run the pipeline first",
               "info",
               6000,
             );

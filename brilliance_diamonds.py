@@ -19,10 +19,33 @@ PER_PAGE      = 48             # diamonds per API page
 
 base_dir = os.getcwd()
 os.makedirs("diamond_files", exist_ok=True)
+os.makedirs("diamond_files_backup", exist_ok=True)
 
-CSV_FILE        = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
-CHECKPOINT_FILE = f"{base_dir}/diamond_files/checkpoint.json"
+CSV_FILE          = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
+CHECKPOINT_FILE   = f"{base_dir}/diamond_files/checkpoint.json"
 BATCH_REPORT_FILE = f"{base_dir}/diamond_files/batch_reports.json"
+BACKUP_DIR        = f"{base_dir}/diamond_files_backup"
+
+# ── Scheduler config ─────────────────────────────────────────────────────────
+SCHEDULE_HOUR        = 11     # 24h clock — daily check time (11 AM)
+SCHEDULE_MINUTE      = 0
+STALE_THRESHOLD_DAYS = 2     # CSV older than this -> archive + full re-scrape
+
+# ── VPN rotation config ──────────────────────────────────────────────────────
+VPN_ROTATE_AFTER_FAILS = 5       # consecutive failed pages -> rotate VPN
+MAX_VPN_ROTATIONS      = 10      # max VPN switches per scheduler run
+VPN_CONFIG_SUBDIR      = "brilliance"  # vpnbook/brilliance/*.ovpn
+
+
+class VPNRotateNeeded(Exception):
+    """Raised by the scraper when consecutive 403s indicate the IP is burned."""
+    def __init__(self, page, consecutive_fails):
+        self.page = page
+        self.consecutive_fails = consecutive_fails
+        super().__init__(
+            f"VPN rotate signal: {consecutive_fails} consecutive failed page(s) "
+            f"ending at page {page}"
+        )
 
 SLEEP_MIN       = 0.0          # between normal calls
 SLEEP_MAX       = 1.0
@@ -81,34 +104,58 @@ BASE_PAYLOAD = {
     }
 }
 
-# ── FILE ROTATION ─────────────────────────────────────────────────────────────
-def rotate_old_file(filepath):
+# ── FILE BACKUP / ROTATION ────────────────────────────────────────────────────
+def csv_age_days(filepath):
+    """Return CSV age in days, or None if missing."""
     if not os.path.exists(filepath):
+        return None
+    mtime = os.path.getmtime(filepath)
+    return (datetime.datetime.now() - datetime.datetime.fromtimestamp(mtime)).total_seconds() / 86400
+
+
+def archive_to_backup(filepath, threshold_days=STALE_THRESHOLD_DAYS):
+    """
+    If `filepath` exists AND is older than `threshold_days`, move it into
+    BACKUP_DIR with a date suffix and clear checkpoint + batch reports so the
+    next scrape restarts from page 1. Returns True if archived, False otherwise.
+    """
+    if not os.path.exists(filepath):
+        log.info(f"No existing CSV at {filepath} — fresh scrape will start from page 1.")
         return False
 
     mtime    = os.path.getmtime(filepath)
     mod_date = datetime.datetime.fromtimestamp(mtime)
     age      = datetime.datetime.now() - mod_date
+    age_days = age.total_seconds() / 86400
 
-    if age.total_seconds() <= 86400:
-        log.info(f"File is fresh ({age.seconds // 3600}h {(age.seconds % 3600) // 60}m old) — continuing.")
+    if age_days < threshold_days:
+        log.info(
+            f"CSV is fresh ({age.days}d {age.seconds // 3600}h old, "
+            f"threshold: {threshold_days}d) — skipping backup."
+        )
         return False
 
+    os.makedirs(BACKUP_DIR, exist_ok=True)
     date_str  = mod_date.strftime("%Y-%m-%d")
-    stem, ext = os.path.splitext(filepath)
-    new_name  = f"{stem}_{date_str}{ext}"
+    stem      = os.path.splitext(os.path.basename(filepath))[0]
+    ext       = os.path.splitext(filepath)[1]
+    dest      = os.path.join(BACKUP_DIR, f"{stem}_{date_str}{ext}")
 
     counter = 1
-    while os.path.exists(new_name):
-        new_name = f"{stem}_{date_str}_{counter}{ext}"
+    while os.path.exists(dest):
+        dest = os.path.join(BACKUP_DIR, f"{stem}_{date_str}_{counter}{ext}")
         counter += 1
 
-    os.rename(filepath, new_name)
-    log.info(f"Old file renamed → {os.path.basename(new_name)}  (was {age.days}d {age.seconds // 3600}h old)")
+    os.rename(filepath, dest)
+    log.info(f"Archived old CSV → {dest}  (was {age.days}d {age.seconds // 3600}h old)")
 
     if os.path.exists(CHECKPOINT_FILE):
         os.remove(CHECKPOINT_FILE)
         log.info("Checkpoint cleared — will start from page 1")
+
+    if os.path.exists(BATCH_REPORT_FILE):
+        os.remove(BATCH_REPORT_FILE)
+        log.info("Batch report cleared")
 
     return True
 
@@ -424,23 +471,36 @@ def print_final_summary(all_reports, grand_wall, total_available):
     print()
 
 
-# ── MAIN SCRAPER ──────────────────────────────────────────────────────────────
-def brilliance_diamonds_scraper():
+# ── MAIN SCRAPER (no scheduling, no file rotation) ────────────────────────────
+def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
+    """
+    Pure scraper. Appends to / resumes from the existing CSV + checkpoint.
+
+    Args:
+        rotate_after_fails: If set, raise VPNRotateNeeded after N consecutive
+            failed pages. Caller should catch and switch VPN before retrying.
+            None (default) preserves original behavior — failed pages are
+            recorded and the scrape moves on.
+
+    Use `run_with_scheduler()` for the daily-check + auto-backup loop,
+    or `run_with_vpn_rotation()` to wrap this in a VPN tunnel with mid-scrape
+    IP rotation on persistent blocks.
+    """
     log.info("=" * 60)
     log.info("Starting Brilliance scraper")
+    if rotate_after_fails:
+        log.info(f"VPN rotate-on-fail threshold: {rotate_after_fails} consecutive page(s)")
 
-    # ── Step 1: rotate old CSV if older than 1 day ───────────────
-    rotated = rotate_old_file(CSV_FILE)
-    if rotated:
-        log.info("Fresh run — old data archived, starting from page 1.")
-
-    # ── Step 2: fetch total pages from count API ─────────────────
+    # ── Step 1: fetch total pages from count API ─────────────────
     total_pages, total_count = fetch_total_pages()
 
-    # ── Step 3: load existing state ──────────────────────────────
+    # ── Step 2: load existing state ──────────────────────────────
     existing_certs             = load_existing_certs()
     file, writer               = get_writer()
     start_page, total_inserted = load_checkpoint()
+
+    consecutive_fails    = 0
+    last_successful_page = start_page - 1
 
     print(f"\n  {'═'*52}")
     print(f"  🚀  BRILLIANCE SCRAPER")
@@ -485,8 +545,28 @@ def brilliance_diamonds_scraper():
                         batch_inserted += 1
                         total_inserted += 1
                     file.flush()
+                    consecutive_fails    = 0
+                    last_successful_page = page
+                else:
+                    consecutive_fails += 1
+                    if rotate_after_fails and consecutive_fails >= rotate_after_fails:
+                        log.warning(
+                            f"VPN rotate needed — {consecutive_fails} consecutive "
+                            f"failed pages (last good: {last_successful_page}). "
+                            f"Rewinding checkpoint."
+                        )
+                        save_checkpoint(last_successful_page, total_inserted)
+                        file.close()
+                        raise VPNRotateNeeded(page, consecutive_fails)
 
-                save_checkpoint(page, total_inserted)
+                # In VPN-rotation mode we only checkpoint up to the last successful
+                # page, so a fresh VPN attempt re-tries the failed pages. In normal
+                # mode we keep the original behavior: advance checkpoint past every
+                # page (success or fail) so the scrape doesn't loop on a dead page.
+                if rotate_after_fails:
+                    save_checkpoint(last_successful_page, total_inserted)
+                else:
+                    save_checkpoint(page, total_inserted)
 
                 # ── live progress line ────────────────────────────────────
                 ok_count   = sum(r["ok"]      for r in batch_results)
@@ -536,12 +616,19 @@ def brilliance_diamonds_scraper():
         # ── all batches done ─────────────────────────────────────────────
         clear_checkpoint()
 
+    except VPNRotateNeeded:
+        # propagate up to run_with_vpn_rotation() so it can switch tunnels
+        raise
+
     except Exception as e:
         log.error(f"Failed on page {page}: {e}")
         log.info("checkpoint.json saved — re-run to resume from last page")
 
     finally:
-        file.close()
+        try:
+            file.close()
+        except Exception:
+            pass
         log.info("CSV saved & closed")
 
     # ── grand final summary ──────────────────────────────────────────────────
@@ -559,9 +646,129 @@ def brilliance_diamonds_scraper():
     return {"total_inserted": total_inserted, "total_pages": total_pages}
 
 
+# ── VPN-WRAPPED RUN ───────────────────────────────────────────────────────────
+def run_with_vpn_rotation():
+    """
+    Run the scraper inside an OpenVPN tunnel; on VPNRotateNeeded (triggered
+    after VPN_ROTATE_AFTER_FAILS consecutive 403s), tear down the current
+    tunnel and bring up the next config from vpnbook/<VPN_CONFIG_SUBDIR>/.
+
+    The scraper resumes from checkpoint, so the failed pages are re-tried
+    through the new exit IP. Requires Administrator / root.
+    """
+    from pathlib import Path
+    from vpn_rotator import VPNConnection, VPNError, is_admin
+
+    log.info("=" * 60)
+    log.info("Brilliance scraper with VPN rotation")
+    log.info(f"Consecutive-fail threshold: {VPN_ROTATE_AFTER_FAILS}")
+    log.info(f"Max VPN rotations         : {MAX_VPN_ROTATIONS}")
+    log.info("=" * 60)
+
+    if not is_admin():
+        log.error(
+            "OpenVPN requires Administrator/root. "
+            "Re-run from an elevated shell, or call brilliance_diamonds_scraper() directly."
+        )
+        return
+
+    vpn_dir = Path(base_dir) / "vpnbook" / VPN_CONFIG_SUBDIR
+    if not vpn_dir.exists():
+        log.error(f"VPN config dir not found: {vpn_dir}")
+        return
+
+    configs = sorted(vpn_dir.glob("*.ovpn"))
+    if not configs:
+        log.error(f"No .ovpn files in {vpn_dir}")
+        return
+
+    random.shuffle(configs)
+    log.info(f"VPN pool: {len(configs)} config(s) in {vpn_dir}")
+
+    for attempt in range(1, MAX_VPN_ROTATIONS + 1):
+        cfg = configs[(attempt - 1) % len(configs)]
+        log.info(f"--- VPN attempt {attempt}/{MAX_VPN_ROTATIONS}: {cfg.name} ---")
+
+        try:
+            with VPNConnection(cfg) as vpn:
+                log.info(f"Tunnel up. Exit IP = {vpn.ip_after}")
+                brilliance_diamonds_scraper(rotate_after_fails=VPN_ROTATE_AFTER_FAILS)
+            log.info("Scrape completed — VPN torn down.")
+            return
+
+        except VPNRotateNeeded as e:
+            log.warning(f"Rotating VPN: {e}")
+            # VPN tunnel already torn down by context manager; loop tries next config
+
+        except VPNError as e:
+            log.error(f"VPN error on {cfg.name}: {e} — trying next config")
+
+        except KeyboardInterrupt:
+            log.warning("Interrupted by user — exiting VPN loop.")
+            return
+
+    log.error(f"Exhausted {MAX_VPN_ROTATIONS} VPN rotation(s). Last attempt failed.")
+
+
+# ── SCHEDULER ─────────────────────────────────────────────────────────────────
+def _next_run_time(from_dt: datetime.datetime) -> datetime.datetime:
+    candidate = from_dt.replace(
+        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
+    )
+    if candidate <= from_dt:
+        candidate += datetime.timedelta(days=1)
+    return candidate
+
+
+def run_with_scheduler():
+    """
+    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
+      1. Check the CSV's age.
+      2. If older than STALE_THRESHOLD_DAYS (or missing), move it into
+         diamond_files_backup/, clear checkpoint, and run a full re-scrape
+         from page 1 to the last page.
+      3. Otherwise, log "fresh" and sleep until the next check.
+    """
+    log.info("=" * 60)
+    log.info("Brilliance scheduler started")
+    log.info(f"Daily check       : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
+    log.info(f"Stale threshold   : {STALE_THRESHOLD_DAYS} day(s)")
+    log.info(f"Backup destination: {BACKUP_DIR}")
+    log.info("=" * 60)
+
+    while True:
+        next_run  = _next_run_time(datetime.datetime.now())
+        wait_secs = max(0, (next_run - datetime.datetime.now()).total_seconds())
+        log.info(
+            f"Sleeping {wait_secs / 3600:.2f}h until next check "
+            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
+        time.sleep(wait_secs)
+
+        age = csv_age_days(CSV_FILE)
+        if age is None:
+            log.info("CSV missing — running fresh scrape.")
+            archived = False
+        else:
+            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
+            archived = archive_to_backup(CSV_FILE)
+
+        if age is None or archived:
+            try:
+                run_with_vpn_rotation()
+            except Exception as e:
+                log.error(f"Scraper crashed: {e}")
+        else:
+            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
+
+
 # ── RUN ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # VPN is the launcher's responsibility (see run_with_vpn.py / scheduler.py).
-    # Running this file directly will hit the API from your real IP.
-    brilliance_diamonds_scraper()
+    # Entry points:
+    #   run_with_scheduler()           → daily check + auto-backup + VPN-wrapped scrape
+    #   run_with_vpn_rotation()        → one-shot VPN-wrapped scrape with mid-run rotation
+    #   brilliance_diamonds_scraper()  → pure scrape, no VPN, no rotation (your real IP)
+    #
+    # Note: VPN-using entries require Administrator/root (OpenVPN needs TAP/TUN).
+    run_with_scheduler()

@@ -51,6 +51,27 @@ STATE_FILE  = os.path.join(DOWN_FILES, "lgd_state.txt")
 
 os.makedirs(DOWN_FILES, exist_ok=True)
 
+# ── VPN rotation config ───────────────────────────────────────────────────────
+VPN_ROTATE_AFTER_FAILS = 5        # consecutive failed pages -> rotate VPN
+MAX_VPN_ROTATIONS      = 10       # max VPN switches per run
+VPN_CONFIG_SUBDIR      = "loosegrown"   # vpnbook/loosegrown/*.ovpn
+RETRY_SLEEP_BEFORE_ROTATE = 2     # pause between same-offset retries in VPN mode
+
+# ── Scheduler config ─────────────────────────────────────────────────────────
+SCHEDULE_HOUR   = 7    # 24h clock — daily run time (7 AM)
+SCHEDULE_MINUTE = 0
+
+
+class VPNRotateNeeded(Exception):
+    """Raised by the scraper when consecutive failures indicate the IP is burned."""
+    def __init__(self, offset: int, consecutive_fails: int) -> None:
+        self.offset = offset
+        self.consecutive_fails = consecutive_fails
+        super().__init__(
+            f"VPN rotate signal: {consecutive_fails} consecutive failed fetch(es) "
+            f"at offset {offset}"
+        )
+
 # ── Static HTTP config ────────────────────────────────────────────────────────
 
 COOKIES = (
@@ -451,9 +472,20 @@ def _iter_new_rows(
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def loose_grown_diamonds_scrappe() -> dict[str, int]:
+def loose_grown_diamonds_scrappe(rotate_after_fails: int | None = None) -> dict[str, int]:
+    """
+    Pure scraper. Appends to / resumes from the existing CSV + state file.
+
+    Args:
+        rotate_after_fails: If set, raise VPNRotateNeeded after N consecutive
+            failed fetches. Caller should catch and switch VPN before retrying.
+            None (default) preserves original behavior — a failed fetch stops
+            the run.
+    """
     log.info("=" * 60)
     log.info("Loose Grown Diamond scrape — starting")
+    if rotate_after_fails:
+        log.info(f"VPN rotate-on-fail threshold: {rotate_after_fails} consecutive fetch(es)")
 
     rotated = _rotate_old_file(CSV_FILE)
     if rotated:
@@ -464,6 +496,7 @@ def loose_grown_diamonds_scrappe() -> dict[str, int]:
     seen_skus   = _load_existing_skus()
     start       = _get_start_offset()
     total_saved = 0
+    consecutive_fails = 0
 
     log.info(f"Starting from offset {start}  |  PAGE_SIZE={PAGE_SIZE:,}")
 
@@ -471,8 +504,26 @@ def loose_grown_diamonds_scrappe() -> dict[str, int]:
         response = _fetch_page(start)
 
         if not response or not response.get("status"):
+            consecutive_fails += 1
+            if rotate_after_fails:
+                if consecutive_fails >= rotate_after_fails:
+                    log.warning(
+                        f"VPN rotate needed — {consecutive_fails} consecutive "
+                        f"failed fetch(es) at offset {start}. State file retains "
+                        f"offset so next VPN attempt resumes here."
+                    )
+                    raise VPNRotateNeeded(start, consecutive_fails)
+                log.warning(
+                    f"Failed fetch at offset={start} "
+                    f"({consecutive_fails}/{rotate_after_fails}) — retrying same offset."
+                )
+                time.sleep(RETRY_SLEEP_BEFORE_ROTATE)
+                continue
             log.warning("Empty or failed response — stopping scrape.")
             break
+
+        # Success — reset block counter
+        consecutive_fails = 0
 
         items        = response.get("data") or []
         total_avail  = int(response.get("total", 0))
@@ -514,7 +565,111 @@ def loose_grown_diamonds_scrappe() -> dict[str, int]:
     return {"total_saved": total_saved}
 
 
+# ── VPN-WRAPPED RUN ───────────────────────────────────────────────────────────
+def run_with_vpn_rotation() -> None:
+    """
+    Run the scraper inside an OpenVPN tunnel; on VPNRotateNeeded (triggered
+    after VPN_ROTATE_AFTER_FAILS consecutive failed fetches), tear down the
+    current tunnel and bring up the next config from vpnbook/<VPN_CONFIG_SUBDIR>/.
+
+    The scraper resumes from the state file, so the failed offset is re-tried
+    through the new exit IP. Requires Administrator / root.
+    """
+    from pathlib import Path
+    from vpn_rotator import VPNConnection, VPNError, is_admin
+
+    log.info("=" * 60)
+    log.info("Loose Grown scraper with VPN rotation")
+    log.info(f"Consecutive-fail threshold: {VPN_ROTATE_AFTER_FAILS}")
+    log.info(f"Max VPN rotations         : {MAX_VPN_ROTATIONS}")
+    log.info("=" * 60)
+
+    if not is_admin():
+        log.error(
+            "OpenVPN requires Administrator/root. "
+            "Re-run from an elevated shell, or call loose_grown_diamonds_scrappe() directly."
+        )
+        return
+
+    vpn_dir = Path(BASE_DIR) / "vpnbook" / VPN_CONFIG_SUBDIR
+    if not vpn_dir.exists():
+        log.error(f"VPN config dir not found: {vpn_dir}")
+        return
+
+    configs = sorted(vpn_dir.glob("*.ovpn"))
+    if not configs:
+        log.error(f"No .ovpn files in {vpn_dir}")
+        return
+
+    random.shuffle(configs)
+    log.info(f"VPN pool: {len(configs)} config(s) in {vpn_dir}")
+
+    for attempt in range(1, MAX_VPN_ROTATIONS + 1):
+        cfg = configs[(attempt - 1) % len(configs)]
+        log.info(f"--- VPN attempt {attempt}/{MAX_VPN_ROTATIONS}: {cfg.name} ---")
+
+        try:
+            with VPNConnection(cfg) as vpn:
+                log.info(f"Tunnel up. Exit IP = {vpn.ip_after}")
+                loose_grown_diamonds_scrappe(rotate_after_fails=VPN_ROTATE_AFTER_FAILS)
+            log.info("Scrape completed — VPN torn down.")
+            return
+
+        except VPNRotateNeeded as exc:
+            log.warning(f"Rotating VPN: {exc}")
+            # tunnel already torn down by context manager; loop tries next config
+
+        except VPNError as exc:
+            log.error(f"VPN error on {cfg.name}: {exc} — trying next config")
+
+        except KeyboardInterrupt:
+            log.warning("Interrupted by user — exiting VPN loop.")
+            return
+
+    log.error(f"Exhausted {MAX_VPN_ROTATIONS} VPN rotation(s). Last attempt failed.")
+
+
+# ── SCHEDULER ────────────────────────────────────────────────────────────────
+def _next_run_time(from_dt: datetime.datetime) -> datetime.datetime:
+    candidate = from_dt.replace(
+        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
+    )
+    if candidate <= from_dt:
+        candidate += datetime.timedelta(days=1)
+    return candidate
+
+
+def run_with_scheduler() -> None:
+    """
+    Daily loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE (default 19:00),
+    fire run_with_vpn_rotation(). The scraper itself handles file-age archival
+    via _rotate_old_file(), so each run resumes or starts fresh as appropriate.
+    """
+    log.info("=" * 60)
+    log.info("Loose Grown scheduler started")
+    log.info(f"Daily run : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
+    log.info("=" * 60)
+
+    while True:
+        next_run  = _next_run_time(datetime.datetime.now())
+        wait_secs = max(0, (next_run - datetime.datetime.now()).total_seconds())
+        log.info(
+            f"Sleeping {wait_secs / 3600:.2f}h until next run "
+            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
+        time.sleep(wait_secs)
+
+        try:
+            run_with_vpn_rotation()
+        except Exception as exc:
+            log.error(f"Scraper crashed: {exc}")
+
+
 if __name__ == "__main__":
-    # VPN is the launcher's responsibility (see run_with_vpn.py / scheduler.py).
-    # Running this file directly will hit the API from your real IP.
-    loose_grown_diamonds_scrappe()
+    # Entry points:
+    #   run_with_scheduler()              → daily 7 PM VPN-wrapped scrape (default)
+    #   run_with_vpn_rotation()           → one-shot VPN-wrapped scrape with mid-run rotation
+    #   loose_grown_diamonds_scrappe()    → pure scrape, no VPN (your real IP)
+    #
+    # Note: VPN-using entries require Administrator/root (OpenVPN needs TAP/TUN).
+    run_with_scheduler()
