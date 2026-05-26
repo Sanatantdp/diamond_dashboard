@@ -2,40 +2,44 @@
 main.py
 =======
 
-Diamond Price Dashboard API — backed by PostgreSQL (Render managed DB).
+Diamond Price Dashboard API - backed by PostgreSQL (Render managed DB).
 
-Data source
------------
-Reads from the PostgreSQL tables created/refreshed by `compare_to_mysql.py`:
-  • compare_common      (3-vendor matches    -> served at /api/compare)
-  • compare_partial     (>=1 vendor match    -> served at /api/partial)
-  • compare_all         (every PC diamond    -> served at /api/data/compare_all.json)
-  • compare_br_vs_lg    (BR vs LG inner join -> served at /api/br-vs-lg)
-  • diamond_status      (snapshot row        -> served at /api/status)
+All row endpoints are paginated server-side. Aggregations (price buckets,
+percentage buckets, vendor totals) are computed in SQL so the client never
+needs to hold the full dataset in memory.
+
+Endpoints
+---------
+GET  /api/data/{filename}?limit=&offset=&...filters... -> paginated rows
+GET  /api/compare?...                                  -> alias for compare_common
+GET  /api/partial?...                                  -> alias for compare_partial
+GET  /api/br-vs-lg?...                                 -> alias for compare_br_vs_lg
+GET  /api/aggregates?dataset=&...filters...            -> bucket counts + averages
+GET  /api/status                                       -> snapshot row
+GET  /api/files                                        -> list of available datasets
+GET  /api/health                                       -> health probe
+
+Common filter query params (all optional):
+    limit         int   (default 20, max 500)
+    offset        int   (default 0)
+    cert          str   substring match on certificate_number
+    price_min     float lower bound on pc_price_usd
+    price_max     float upper bound on pc_price_usd
+    vendor_pct    str   "<vendor_key>:<bucket_idx>"   e.g. "lg:3"
+    vendor_price  str   "<vendor_key>:<bucket_idx>"   e.g. "br:1"
+    common_only   bool  "true" to require all vendor prices > 0
+    sort_col      str   DB column name to sort by
+    sort_dir      str   "asc" or "desc"
 
 DB connection
 -------------
-Reads DATABASE_URL from a .env file (locally) or from process env (on Render).
-Example DATABASE_URL:
-    postgresql://user:pass@host.oregon-postgres.render.com/dbname
-
-Render deployment
------------------
-1. Push this repo to GitHub.
-2. Create a Render **Web Service** -> connect your repo.
-3. Build command   :  pip install -r requirements.txt
-   Start command   :  uvicorn main:app --host 0.0.0.0 --port $PORT
-4. Add environment variables in the Render dashboard:
-       DATABASE_URL       = <internal or external Postgres URL from Render>
-       DASHBOARD_PASSWORD = diamond-6087
-5. Render automatically sets PORT — the start command above binds to it.
+Reads DATABASE_URL from .env locally, or process env on Render.
 """
 
 from __future__ import annotations
 
 import datetime
 import hashlib
-import json
 import os
 from contextlib import contextmanager
 from decimal import Decimal
@@ -45,36 +49,37 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-BASE_DIR    = Path(__file__).parent.resolve()
+# ---- Paths -----------------------------------------------------------------
+BASE_DIR = Path(__file__).parent.resolve()
 COMPARE_DIR = BASE_DIR / "compare"
 COMPARE_DIR.mkdir(exist_ok=True)
 
-# ── Load .env (no-op on Render where env vars come from the platform) ────────
+# ---- Load .env -------------------------------------------------------------
 load_dotenv(BASE_DIR / ".env")
 
-# ── PostgreSQL config ────────────────────────────────────────────────────────
+# ---- PostgreSQL config -----------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL env var is required. "
         "Put it in .env locally, or set it in Render's Environment tab."
     )
-# Render's external Postgres requires SSL — append if caller didn't set it.
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
 
-# ── Auth ─────────────────────────────────────────────────────────────────────
+# ---- Auth ------------------------------------------------------------------
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "diamond-6087")
 
-# ── FastAPI app ──────────────────────────────────────────────────────────────
-app = FastAPI(title="Diamond Price Dashboard API", version="2.0.0")
+# ---- FastAPI app -----------------------------------------------------------
+app = FastAPI(title="Diamond Price Dashboard API", version="3.0.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -99,12 +104,11 @@ async def bearer_auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 # PostgreSQL helpers
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 @contextmanager
 def _get_conn():
-    """Open a fresh PostgreSQL connection; close it on exit."""
     conn = psycopg2.connect(
         DATABASE_URL,
         cursor_factory=psycopg2.extras.RealDictCursor,
@@ -118,71 +122,364 @@ def _get_conn():
 
 
 def _jsonify_value(v: Any) -> Any:
-    """Convert DB types into JSON-serialisable Python types."""
     if isinstance(v, Decimal):
-        # Convert without scientific notation; preserve ints as ints
-        as_float = float(v)
-        return int(as_float) if as_float.is_integer() else as_float
+        f = float(v)
+        return int(f) if f.is_integer() else f
     if isinstance(v, (datetime.datetime, datetime.date)):
-        return v.strftime("%Y-%m-%d %H:%M:%S") if isinstance(v, datetime.datetime) else v.isoformat()
+        return (
+            v.strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(v, datetime.datetime)
+            else v.isoformat()
+        )
     return v
 
 
-# DB column -> original JSON key the dashboard expects
+# ============================================================================
+# Column maps (DB -> JSON keys the dashboard expects)
+# ============================================================================
 COMPARE_DB_TO_JSON = {
-    "certificate_number":       "certificate_number",
-    "vendors_matched":          "vendors_matched",
-    "shape":                    "shape",
-    "color":                    "color",
-    "clarity":                  "clarity",
-    "cut":                      "cut",
-    "carat_weight":             "caratWeight",
-    "lg_price_usd":             "loose-grown Price USD",
-    "lg_minus_30_usd":          "loose-grown -30% USD",
-    "lg_vs_pc_usd":             "loose-grown vs PC USD",
-    "lg_vs_pc_pct":             "loose-grown vs PC %",
-    "brilliance_price_usd":     "brilliance Price USD",
-    "brilliance_minus_30_usd":  "brilliance -30% USD",
-    "brilliance_vs_pc_usd":     "brilliance vs PC USD",
-    "brilliance_vs_pc_pct":     "brilliance vs PC %",
-    "pc_price_usd":             "PC Price USD",
-    "pc_minus_30_usd":          "PC -30% USD",
+    "certificate_number":      "certificate_number",
+    "vendors_matched":         "vendors_matched",
+    "shape":                   "shape",
+    "color":                   "color",
+    "clarity":                 "clarity",
+    "cut":                     "cut",
+    "carat_weight":            "caratWeight",
+    "lg_price_usd":            "loose-grown Price USD",
+    "lg_minus_30_usd":         "loose-grown -30% USD",
+    "lg_vs_pc_usd":            "loose-grown vs PC USD",
+    "lg_vs_pc_pct":            "loose-grown vs PC %",
+    "brilliance_price_usd":    "brilliance Price USD",
+    "brilliance_minus_30_usd": "brilliance -30% USD",
+    "brilliance_vs_pc_usd":    "brilliance vs PC USD",
+    "brilliance_vs_pc_pct":    "brilliance vs PC %",
+    "pc_price_usd":            "PC Price USD",
+    "pc_minus_30_usd":         "PC -30% USD",
 }
 
 BR_VS_LG_DB_TO_JSON = {
-    "diamond_id":               "diamond_id",
-    "shape":                    "shape",
-    "carat_weight":             "caratWeight",
-    "cut":                      "cut",
-    "color":                    "color",
-    "clarity":                  "clarity",
-    "lg_price_usd":             "loose-grown Price USD",
-    "brilliance_price_usd":     "brilliance Price USD",
-    "lg_minus_30_usd":          "loose-grown -30% USD",
-    "brilliance_minus_30_usd":  "brilliance -30% USD",
-    "br_minus_30_vs_lg_usd":    "BR -30% vs LG USD",
-    "br_minus_30_vs_lg_pct":    "BR -30% vs LG %",
+    "diamond_id":              "diamond_id",
+    "shape":                   "shape",
+    "carat_weight":            "caratWeight",
+    "cut":                     "cut",
+    "color":                   "color",
+    "clarity":                 "clarity",
+    "lg_price_usd":            "loose-grown Price USD",
+    "brilliance_price_usd":    "brilliance Price USD",
+    "lg_minus_30_usd":         "loose-grown -30% USD",
+    "brilliance_minus_30_usd": "brilliance -30% USD",
+    "br_minus_30_vs_lg_usd":   "BR -30% vs LG USD",
+    "br_minus_30_vs_lg_pct":   "BR -30% vs LG %",
 }
 
+# vendor key -> { price_col, minus30_col, pct_col }
+VENDOR_COLS = {
+    "lg": {
+        "price_col":   "lg_price_usd",
+        "minus30_col": "lg_minus_30_usd",
+        "pct_col":     "lg_vs_pc_pct",
+    },
+    "br": {
+        "price_col":   "brilliance_price_usd",
+        "minus30_col": "brilliance_minus_30_usd",
+        "pct_col":     "brilliance_vs_pc_pct",
+    },
+    # luvansh isn't in DB yet; included so client doesn't break on missing key
+    "lu": {
+        "price_col":   None,
+        "minus30_col": None,
+        "pct_col":     None,
+    },
+}
 
-def _fetch_compare(table: str, key_map: dict[str, str]) -> list[dict]:
-    """Query a compare_* table and remap columns back to the dashboard's JSON key names."""
+# Bucket definitions MUST match dashboard.html (BUCKETS, PRICE_BUCKETS)
+PCT_BUCKETS = [
+    {"label": "< 0%",      "min": None,  "max": 0.0},
+    {"label": "0 - 99%",   "min": 0.0,   "max": 100.0},
+    {"label": "100-199%",  "min": 100.0, "max": 200.0},
+    {"label": "200-299%",  "min": 200.0, "max": 300.0},
+    {"label": "300-399%",  "min": 300.0, "max": 400.0},
+    {"label": "400-499%",  "min": 400.0, "max": 500.0},
+    {"label": "500%+",     "min": 500.0, "max": None},
+]
+
+PRICE_BUCKETS = [
+    {"label": "$0 - $150",       "min": 0.0,    "max": 151.0},
+    {"label": "$151 - $300",     "min": 151.0,  "max": 301.0},
+    {"label": "$301 - $400",     "min": 301.0,  "max": 401.0},
+    {"label": "$401 - $550",     "min": 401.0,  "max": 551.0},
+    {"label": "$551 - $800",     "min": 551.0,  "max": 801.0},
+    {"label": "$801 - $1,200",   "min": 801.0,  "max": 1201.0},
+    {"label": "$1,200+",         "min": 1201.0, "max": None},
+]
+
+# Tables exposed via /api/data/{filename}
+FILENAME_TO_TABLE = {
+    "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
+    "compare_partial.json":  ("compare_partial",  COMPARE_DB_TO_JSON),
+    "compare_all.json":      ("compare_all",      COMPARE_DB_TO_JSON),
+    "compare_br_vs_lg.json": ("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON),
+}
+
+ALLOWED_TABLES = {t for t, _ in FILENAME_TO_TABLE.values()}
+MAX_LIMIT = 500
+DEFAULT_LIMIT = 20
+
+
+# ============================================================================
+# Filter -> WHERE clause builder
+# ============================================================================
+def _parse_bucket_param(raw: str | None) -> tuple[str | None, int | None]:
+    """Parse 'lg:3' -> ('lg', 3). Returns (None, None) on invalid."""
+    if not raw or ":" not in raw:
+        return None, None
+    vendor_key, idx_s = raw.split(":", 1)
+    vendor_key = vendor_key.strip()
+    if vendor_key not in VENDOR_COLS:
+        return None, None
+    try:
+        idx = int(idx_s)
+    except ValueError:
+        return None, None
+    return vendor_key, idx
+
+
+def _build_where(table: str, params: dict) -> tuple[str, list]:
+    """
+    Build a SQL WHERE clause + parameter list from the request's filter params.
+    Only filter columns that exist in the given table are applied.
+    """
+    clauses: list[str] = []
+    args: list[Any] = []
+
+    cert = (params.get("cert") or "").strip()
+    if cert:
+        # certificate_number / diamond_id depending on table
+        col = "diamond_id" if table == "compare_br_vs_lg" else "certificate_number"
+        clauses.append(f'"{col}"::text ILIKE %s')
+        args.append(f"%{cert}%")
+
+    # PC price range only valid for compare_* tables (not br_vs_lg)
+    if table != "compare_br_vs_lg":
+        pmin = params.get("price_min")
+        pmax = params.get("price_max")
+        if pmin not in (None, ""):
+            try:
+                clauses.append('"pc_price_usd" >= %s'); args.append(float(pmin))
+            except ValueError:
+                pass
+        if pmax not in (None, ""):
+            try:
+                clauses.append('"pc_price_usd" <= %s'); args.append(float(pmax))
+            except ValueError:
+                pass
+
+    # vendor_pct: vendor_key:bucket_idx -> filter on <vendor>_vs_pc_pct in bucket range
+    vp_key, vp_idx = _parse_bucket_param(params.get("vendor_pct"))
+    if vp_key and vp_idx is not None and 0 <= vp_idx < len(PCT_BUCKETS):
+        col = VENDOR_COLS[vp_key]["pct_col"]
+        if col:
+            bucket = PCT_BUCKETS[vp_idx]
+            if bucket["min"] is not None:
+                clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+            if bucket["max"] is not None:
+                clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+            clauses.append(f'"{col}" IS NOT NULL')
+
+    # vendor_price: vendor_key:bucket_idx -> filter on <vendor>_minus_30_usd in bucket range
+    vpr_key, vpr_idx = _parse_bucket_param(params.get("vendor_price"))
+    if vpr_key and vpr_idx is not None and 0 <= vpr_idx < len(PRICE_BUCKETS):
+        col = VENDOR_COLS[vpr_key]["minus30_col"]
+        if col:
+            bucket = PRICE_BUCKETS[vpr_idx]
+            if bucket["min"] is not None:
+                clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+            if bucket["max"] is not None:
+                clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+            clauses.append(f'"{col}" IS NOT NULL AND "{col}" > 0')
+
+    if (params.get("common_only") or "").lower() == "true" and table != "compare_br_vs_lg":
+        for c in ("lg_price_usd", "brilliance_price_usd", "pc_price_usd"):
+            clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, args
+
+
+def _sanitize_sort(sort_col: str | None, key_map: dict[str, str]) -> str | None:
+    if not sort_col:
+        return None
+    if sort_col in key_map:
+        return sort_col
+    return None
+
+
+def _clamp_int(raw: Any, default: int, lo: int, hi: int) -> int:
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, v))
+
+
+# ============================================================================
+# Paginated row fetcher
+# ============================================================================
+def _fetch_rows_paginated(
+    table: str,
+    key_map: dict[str, str],
+    params: dict,
+) -> dict:
+    if table not in ALLOWED_TABLES:
+        raise HTTPException(status_code=404, detail=f"Unknown table: {table}")
+
+    limit = _clamp_int(params.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT)
+    offset = _clamp_int(params.get("offset"), 0, 0, 10_000_000)
+
+    where_sql, where_args = _build_where(table, params)
+
+    sort_col = _sanitize_sort(params.get("sort_col"), key_map)
+    sort_dir = "ASC" if (params.get("sort_dir") or "asc").lower() == "asc" else "DESC"
+    order_sql = f'ORDER BY "{sort_col}" {sort_dir} NULLS LAST' if sort_col else ""
+
     db_cols = list(key_map.keys())
     cols_sql = ", ".join(f'"{c}"' for c in db_cols)
-    sql = f'SELECT {cols_sql} FROM "{table}"'
+
+    rows_sql = f'SELECT {cols_sql} FROM "{table}" {where_sql} {order_sql} LIMIT %s OFFSET %s'
+    count_sql = f'SELECT COUNT(*) AS c FROM "{table}" {where_sql}'
 
     with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        rows = cur.fetchall()
+        cur.execute(count_sql, where_args)
+        total = int(cur.fetchone()["c"])
+        cur.execute(rows_sql, [*where_args, limit, offset])
+        raw = cur.fetchall()
 
-    out: list[dict] = []
-    for r in rows:
-        out.append({key_map[c]: _jsonify_value(r[c]) for c in db_cols})
-    return out
+    out_rows = [
+        {key_map[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw
+    ]
+    return {
+        "rows": out_rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
+# ============================================================================
+# Aggregates: per-vendor price & pct bucket counts + averages, in one SQL pass
+# ============================================================================
+def _aggregate_sql_for_vendor(vendor_key: str) -> tuple[list[str], list[str]] | None:
+    """Returns (pct_expressions, price_expressions) for the SELECT clause."""
+    cols = VENDOR_COLS.get(vendor_key)
+    if not cols or not cols["pct_col"] or not cols["minus30_col"]:
+        return None
+    pct_col = cols["pct_col"]
+    pr_col = cols["minus30_col"]
+    price_col = cols["price_col"]
+
+    pct_exprs: list[str] = []
+    for i, b in enumerate(PCT_BUCKETS):
+        conds = [f'"{pct_col}" IS NOT NULL']
+        if b["min"] is not None:
+            conds.append(f'"{pct_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{pct_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        pct_exprs.append(
+            f'COUNT(*) FILTER (WHERE {cond_sql}) AS pct_{vendor_key}_{i}_cnt'
+        )
+        pct_exprs.append(
+            f'AVG("pc_price_usd") FILTER (WHERE {cond_sql} AND "pc_price_usd" > 0) '
+            f'AS pct_{vendor_key}_{i}_avgpc'
+        )
+
+    price_exprs: list[str] = []
+    for i, b in enumerate(PRICE_BUCKETS):
+        conds = [f'"{pr_col}" IS NOT NULL', f'"{pr_col}" > 0']
+        if b["min"] is not None:
+            conds.append(f'"{pr_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{pr_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        price_exprs.append(
+            f'COUNT(*) FILTER (WHERE {cond_sql}) AS price_{vendor_key}_{i}_cnt'
+        )
+        price_exprs.append(
+            f'AVG("pc_price_usd") FILTER (WHERE {cond_sql} AND "pc_price_usd" > 0) '
+            f'AS price_{vendor_key}_{i}_avgpc'
+        )
+
+    # vendor total (rows where this vendor has a price)
+    if price_col:
+        pct_exprs.append(
+            f'COUNT(*) FILTER (WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0) '
+            f'AS vendor_{vendor_key}_total'
+        )
+
+    return pct_exprs, price_exprs
+
+
+def _compute_aggregates(table: str, params: dict) -> dict:
+    """One aggregate query returning bucket counts + averages for all vendors."""
+    if table not in ALLOWED_TABLES or table == "compare_br_vs_lg":
+        return {"vendors": {}, "total": 0}
+
+    where_sql, where_args = _build_where(table, params)
+
+    select_exprs: list[str] = ['COUNT(*) AS total_rows']
+    active_vendors: list[str] = []
+    for vk in ("lg", "br"):  # luvansh has no DB columns yet
+        out = _aggregate_sql_for_vendor(vk)
+        if out is None:
+            continue
+        pct_exprs, price_exprs = out
+        select_exprs.extend(pct_exprs)
+        select_exprs.extend(price_exprs)
+        active_vendors.append(vk)
+
+    sql = f'SELECT {", ".join(select_exprs)} FROM "{table}" {where_sql}'
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, where_args)
+        row = cur.fetchone()
+
+    def _f(key: str) -> float | None:
+        v = row.get(key)
+        if v is None:
+            return None
+        return _jsonify_value(v)
+
+    vendors: dict[str, dict] = {}
+    for vk in active_vendors:
+        pct_bs = []
+        for i in range(len(PCT_BUCKETS)):
+            pct_bs.append({
+                "idx":   i,
+                "count": int(row.get(f"pct_{vk}_{i}_cnt") or 0),
+                "avg_pc": _f(f"pct_{vk}_{i}_avgpc"),
+            })
+        price_bs = []
+        for i in range(len(PRICE_BUCKETS)):
+            price_bs.append({
+                "idx":   i,
+                "count": int(row.get(f"price_{vk}_{i}_cnt") or 0),
+                "avg_pc": _f(f"price_{vk}_{i}_avgpc"),
+            })
+        vendors[vk] = {
+            "vendor_total": int(row.get(f"vendor_{vk}_total") or 0),
+            "pct_buckets":   pct_bs,
+            "price_buckets": price_bs,
+        }
+
+    return {
+        "vendors": vendors,
+        "total": int(row.get("total_rows") or 0),
+    }
+
+
+# ============================================================================
+# Status / files
+# ============================================================================
 def _fetch_status() -> dict | None:
-    """Latest row of diamond_status, rebuilt in the nested JSON shape the UI expects."""
     sql = 'SELECT * FROM "diamond_status" ORDER BY "id" DESC LIMIT 1'
     with _get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -198,12 +495,12 @@ def _fetch_status() -> dict | None:
         },
         "pc_vs_vendors": {
             "loose-grown": {
-                "matched":         r["lg_matched"],
-                "match_rate_pct":  _jsonify_value(r["lg_match_rate_pct"]),
+                "matched":        r["lg_matched"],
+                "match_rate_pct": _jsonify_value(r["lg_match_rate_pct"]),
             },
             "brilliance": {
-                "matched":         r["brilliance_matched"],
-                "match_rate_pct":  _jsonify_value(r["brilliance_match_rate_pct"]),
+                "matched":        r["brilliance_matched"],
+                "match_rate_pct": _jsonify_value(r["brilliance_match_rate_pct"]),
             },
         },
         "dataset_counts": {
@@ -225,9 +522,9 @@ def _table_row_count(table: str) -> int:
         return 0
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 # Pages
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
     html_path = BASE_DIR / "login.html"
@@ -238,50 +535,19 @@ async def serve_login():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
-    """
-    Serve dashboard.html with the `compare_partial` dataset injected inline,
-    pulled live from MySQL. Avoids dashboard race conditions on first paint.
-    """
+    """Serve dashboard.html as-is. No data is inlined - the client paginates from /api/*."""
     html_path = BASE_DIR / "dashboard.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="dashboard.html not found")
-    html = html_path.read_text(encoding="utf-8")
-
-    partial_json   = "[]"
-    partial_status = "not_found"
-    partial_rows   = 0
-
-    try:
-        data = _fetch_compare("compare_partial", COMPARE_DB_TO_JSON)
-        if data:
-            partial_json   = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-            partial_rows   = len(data)
-            partial_status = "loaded"
-        else:
-            partial_status = "empty"
-    except Exception as e:
-        partial_status = f"error: {e}"
-
-    # Prevent the JSON from terminating the <script> tag
-    partial_json = partial_json.replace("</", "<\\/")
-
-    injection = (
-        "\n<!-- PARTIAL DATA INJECTION START -->\n"
-        f"<!-- status: {partial_status} | rows: {partial_rows} | source: postgres.compare_partial -->\n"
-        f'<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>\n'
-        "<!-- PARTIAL DATA INJECTION END -->\n"
-    )
-    html = html.replace("</body>", f"{injection}</body>", 1)
-
     return HTMLResponse(
-        content=html,
+        content=html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 # Auth
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 class LoginRequest(BaseModel):
     password: str
 
@@ -298,100 +564,116 @@ async def login_config():
     return {"pw_hash": hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()}
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Data endpoints — all served from MySQL
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# Paginated data endpoints
+# ============================================================================
+def _params_dict(request: Request) -> dict:
+    return {k: v for k, v in request.query_params.items()}
+
+
 @app.get("/api/compare")
-async def get_default_compare():
-    """3-vendor matches (compare_common table)."""
+async def get_default_compare(request: Request):
+    """compare_common (3-vendor matches), paginated."""
     try:
-        return JSONResponse(content=_fetch_compare("compare_common", COMPARE_DB_TO_JSON))
+        return JSONResponse(content=_fetch_rows_paginated(
+            "compare_common", COMPARE_DB_TO_JSON, _params_dict(request)
+        ))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/partial")
-async def get_partial():
-    """compare_partial — diamonds with >=1 vendor match (used by Vendor Price Buckets)."""
+async def get_partial(request: Request):
+    """compare_partial (>=1 vendor match), paginated."""
     try:
-        rows = _fetch_compare("compare_partial", COMPARE_DB_TO_JSON)
-        print(f"[OK] /api/partial -> {len(rows):,} rows from MySQL")
-        return JSONResponse(content=rows)
+        return JSONResponse(content=_fetch_rows_paginated(
+            "compare_partial", COMPARE_DB_TO_JSON, _params_dict(request)
+        ))
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[ERR] /api/partial: {e}")
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/br-vs-lg")
-async def get_br_vs_lg():
-    """compare_br_vs_lg — diamonds present in both Brilliance AND Loose-Grown."""
+async def get_br_vs_lg(request: Request):
+    """compare_br_vs_lg, paginated."""
     try:
-        return JSONResponse(content=_fetch_compare("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON))
+        return JSONResponse(content=_fetch_rows_paginated(
+            "compare_br_vs_lg", BR_VS_LG_DB_TO_JSON, _params_dict(request)
+        ))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
-@app.get("/api/status")
-async def get_diamond_status():
-    """Latest snapshot from diamond_status table."""
-    data = _fetch_status()
-    if data is None:
-        raise HTTPException(status_code=404, detail="diamond_status table is empty — run the pipeline first")
-    return JSONResponse(content=data)
-
-
-# Legacy filename-based endpoint kept so the dashboard "files" dropdown still works.
-# Maps the old JSON filename -> the corresponding DB table.
-FILENAME_TO_TABLE = {
-    "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
-    "compare_partial.json":  ("compare_partial",  COMPARE_DB_TO_JSON),
-    "compare_all.json":      ("compare_all",      COMPARE_DB_TO_JSON),
-    "compare_br_vs_lg.json": ("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON),
-}
-
-
 @app.get("/api/data/{filename}")
-async def get_json_data(filename: str):
+async def get_json_data(filename: str, request: Request):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if filename not in FILENAME_TO_TABLE:
         raise HTTPException(status_code=404, detail=f"Unknown dataset: {filename}")
     table, key_map = FILENAME_TO_TABLE[filename]
     try:
-        return JSONResponse(content=_fetch_compare(table, key_map))
+        return JSONResponse(content=_fetch_rows_paginated(
+            table, key_map, _params_dict(request)
+        ))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
+@app.get("/api/aggregates")
+async def get_aggregates(request: Request, dataset: str = Query("compare_partial.json")):
+    """Per-vendor bucket counts + averages for the given dataset filename, with filters applied."""
+    if dataset not in FILENAME_TO_TABLE:
+        raise HTTPException(status_code=404, detail=f"Unknown dataset: {dataset}")
+    table, _ = FILENAME_TO_TABLE[dataset]
+    try:
+        return JSONResponse(content=_compute_aggregates(table, _params_dict(request)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Aggregate query failed: {e}")
+
+
+@app.get("/api/status")
+async def get_diamond_status():
+    data = _fetch_status()
+    if data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="diamond_status table is empty - run the pipeline first",
+        )
+    return JSONResponse(content=data)
+
+
 @app.get("/api/files")
 async def list_datasets():
-    """Lists DB-backed datasets so dashboard.html can populate its dataset picker."""
     files = []
     for filename, (table, _) in FILENAME_TO_TABLE.items():
         rows = _table_row_count(table)
         files.append({
-            "filename":      filename,
-            "table":         table,
-            "rows":          rows,
-            "is_default":    filename == "compare.json",
+            "filename":   filename,
+            "table":      table,
+            "rows":       rows,
+            "is_default": filename == "compare.json",
         })
     return {"files": files, "count": len(files)}
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Pipeline trigger — kept for local use (subprocess runs compare + reloads DB)
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# Pipeline trigger (local only)
+# ============================================================================
 @app.post("/api/run-compare")
 async def run_compare():
-    """
-    Local convenience: runs diamond_compare.py (generates compare/*.json) and
-    then compare_to_mysql.py (reloads the DB tables). Not useful on Render
-    because Render's filesystem is ephemeral and the scrapers don't run there.
-    """
-    import subprocess, sys
+    import subprocess
+    import sys
 
     compare_script = BASE_DIR / "diamond_compare.py"
-    mysql_script   = BASE_DIR / "compare_to_mysql.py"
+    mysql_script = BASE_DIR / "compare_to_mysql.py"
 
     if not compare_script.exists():
         raise HTTPException(status_code=404, detail="diamond_compare.py not found")
@@ -413,9 +695,10 @@ async def run_compare():
 
         common_rows = _table_row_count("compare_common")
         return JSONResponse(content={
-            "status":     "ok" if (cmp_ok and mysql_ok) else "error",
-            "comparator": "ok" if cmp_ok else "failed",
-            "mysql_load": "ok" if mysql_ok else "failed",
+            "status":      "ok" if (cmp_ok and mysql_ok) else "error",
+            "comparator":  "ok" if cmp_ok else "failed",
+            "mysql_load":  "ok" if mysql_ok else "failed",
+            "rows":        common_rows,
             "common_rows": common_rows,
             "stdout":      (cmp_result.stdout or "")[-3000:],
             "stderr":      (cmp_result.stderr or "")[-2000:],
@@ -426,13 +709,13 @@ async def run_compare():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 # Health
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 @app.get("/api/health")
 async def health():
-    db_ok       = False
-    db_error    = None
+    db_ok = False
+    db_error = None
     table_counts: dict[str, int] = {}
 
     try:
@@ -440,17 +723,17 @@ async def health():
             cur.execute("SELECT 1 AS ok")
             cur.fetchone()
             db_ok = True
-            for table in ("compare_common", "compare_partial", "compare_all", "compare_br_vs_lg", "diamond_status"):
+            for table in ("compare_common", "compare_partial", "compare_all",
+                          "compare_br_vs_lg", "diamond_status"):
                 try:
                     cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
                     row = cur.fetchone()
                     table_counts[table] = int(row["c"]) if row else 0
                 except Exception:
-                    table_counts[table] = -1   # table missing
+                    table_counts[table] = -1
     except Exception as e:
         db_error = str(e)
 
-    # Show host only (never the full URL with credentials).
     db_host_display = "unknown"
     try:
         from urllib.parse import urlparse
@@ -465,16 +748,14 @@ async def health():
         "db_ok":           db_ok,
         "db_error":        db_error,
         "tables":          table_counts,
-        # Legacy flag the dashboard boot path expects: true when compare_common
-        # has data, so the UI knows to call /api/compare for the initial load.
         "default_dataset": table_counts.get("compare_common", 0) > 0,
         "timestamp":       datetime.datetime.now().isoformat(),
     }
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Local dev entrypoint — Render uses its own start command (see top docstring)
-# ═════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# Local dev entrypoint
+# ============================================================================
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "4000"))
