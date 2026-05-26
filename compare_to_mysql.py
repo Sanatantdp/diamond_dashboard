@@ -2,14 +2,15 @@
 compare_to_mysql.py
 ===================
 
-Load every JSON file in ./compare/ into the local MySQL `scrapper` database.
+Load every JSON file in ./compare/ into the Render PostgreSQL database
+(target connection read from the DATABASE_URL env var / .env file).
 
 Behaviour
 ---------
-- Creates database `scrapper` if missing.
+- Connects to the database specified by DATABASE_URL (Render Postgres).
 - Creates 5 tables (drops & rebuilds them on every run so schema stays in sync
   with the JSON).
-- Bulk-inserts rows with executemany() in chunks of 1000 for speed.
+- Bulk-inserts rows with execute_values() in chunks of 1000 for speed.
 - Skips compare.csv (it is identical to compare.json).
 
 Tables created
@@ -19,6 +20,9 @@ Tables created
 - compare_partial     from compare_partial.json  (~92K rows, partial matches)
 - compare_br_vs_lg    from compare_br_vs_lg.json (~2.5K rows, brilliance vs LG)
 - diamond_status      from diamond_status.json   (1 snapshot row per import)
+
+Note: filename kept as compare_to_mysql.py for backwards compatibility with
+scheduler.py and any external automation that calls it by path.
 """
 
 from __future__ import annotations
@@ -26,16 +30,23 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
-import pymysql
-from pymysql.cursors import Cursor
+import psycopg2
+from dotenv import load_dotenv
+from psycopg2.extensions import cursor as PgCursor
+from psycopg2.extras import execute_values
 
-# ── Config (env vars override the localhost defaults) ───────────────────────
-DB_HOST     = os.environ.get("DB_HOST", "127.0.0.1")
-DB_PORT     = int(os.environ.get("DB_PORT", "3306"))
-DB_USER     = os.environ.get("DB_USER", "root")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
-DB_NAME     = os.environ.get("DB_NAME", "scrapper")
+# ── Config (DATABASE_URL from .env or Render env) ────────────────────────────
+load_dotenv(Path(__file__).parent / ".env")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if not DATABASE_URL:
+    raise SystemExit(
+        "DATABASE_URL env var is required. "
+        "Put it in .env locally, or set it in Render's Environment tab."
+    )
+if "sslmode=" not in DATABASE_URL:
+    DATABASE_URL += ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
 
 COMPARE_DIR = Path(__file__).parent / "compare"
 
@@ -131,52 +142,35 @@ STATUS_COLUMNS = [
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def connect(database: str | None = None) -> pymysql.connections.Connection:
-    return pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=database,
-        charset="utf8mb4",
-        autocommit=False,
-        local_infile=False,
-    )
+def connect():
+    """Open a connection to the Render PostgreSQL database."""
+    return psycopg2.connect(DATABASE_URL, connect_timeout=30)
 
 
-def ensure_database() -> None:
-    with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` "
-            f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        )
-        conn.commit()
-    print(f"  database `{DB_NAME}` ready")
+def _to_pg_type(mysql_type: str) -> str:
+    """Translate the small number of MySQL-style types we use into Postgres ones."""
+    t = mysql_type.strip().upper()
+    if t == "DATETIME":
+        return "TIMESTAMP"
+    return mysql_type
 
 
-def build_create_sql(table: str, columns: list[tuple[str, str]], indexes: list[str]) -> str:
-    cols_sql = ",\n  ".join(f"`{name}` {ctype}" for name, ctype in columns)
-    idx_sql = ""
-    if indexes:
-        idx_sql = ",\n  " + ",\n  ".join(f"INDEX `idx_{i}` (`{i}`)" for i in indexes)
+def build_create_sql(table: str, columns: list[tuple[str, str]]) -> str:
+    cols_sql = ",\n  ".join(f'"{name}" {_to_pg_type(ctype)}' for name, ctype in columns)
     return (
-        f"CREATE TABLE `{table}` (\n"
-        f"  `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,\n"
-        f"  {cols_sql}"
-        f"{idx_sql}\n"
-        f") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        f'CREATE TABLE "{table}" (\n'
+        f'  "id" BIGSERIAL PRIMARY KEY,\n'
+        f'  {cols_sql}\n'
+        f")"
     )
 
 
-def recreate_table(cur: Cursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
-    cur.execute(f"DROP TABLE IF EXISTS `{table}`")
-    cur.execute(build_create_sql(table, columns, indexes))
-    print(f"  table `{table}` (re)created")
-
-
-def chunked(seq, n):
-    for i in range(0, len(seq), n):
-        yield seq[i:i + n]
+def recreate_table(cur: PgCursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
+    cur.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
+    cur.execute(build_create_sql(table, columns))
+    for col in indexes:
+        cur.execute(f'CREATE INDEX "idx_{table}_{col}" ON "{table}" ("{col}")')
+    print(f'  table "{table}" (re)created')
 
 
 def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[str], list[tuple]]:
@@ -194,46 +188,41 @@ def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[st
     return db_cols, rows
 
 
-def insert_rows(cur: Cursor, table: str, db_cols: list[str], rows: list[tuple]) -> int:
+def insert_rows(cur: PgCursor, table: str, db_cols: list[str], rows: list[tuple]) -> int:
     if not rows:
         return 0
-    cols_sql = ", ".join(f"`{c}`" for c in db_cols)
-    placeholders = ", ".join(["%s"] * len(db_cols))
-    sql = f"INSERT INTO `{table}` ({cols_sql}) VALUES ({placeholders})"
-    inserted = 0
-    for batch in chunked(rows, BATCH_SIZE):
-        cur.executemany(sql, batch)
-        inserted += len(batch)
-        print(f"    {inserted:>7,} / {len(rows):,} rows -> `{table}`", end="\r")
-    print()
-    return inserted
+    cols_sql = ", ".join(f'"{c}"' for c in db_cols)
+    sql = f'INSERT INTO "{table}" ({cols_sql}) VALUES %s'
+    execute_values(cur, sql, rows, page_size=BATCH_SIZE)
+    print(f'    {len(rows):>7,} rows -> "{table}"')
+    return len(rows)
 
 
 # ── Per-file loaders ─────────────────────────────────────────────────────────
-def load_compare_table(cur: Cursor, table: str, json_file: str) -> None:
+def load_compare_table(cur: PgCursor, table: str, json_file: str) -> None:
     path = COMPARE_DIR / json_file
     if not path.exists():
-        print(f"  SKIP `{table}` — source file missing: {json_file}")
+        print(f'  SKIP "{table}" — source file missing: {json_file}')
         return
     recreate_table(cur, table, COMPARE_COLUMNS, indexes=["certificate_number", "shape"])
     db_cols, rows = load_compare_rows(path, COMPARE_KEY_MAP)
     insert_rows(cur, table, db_cols, rows)
 
 
-def load_br_vs_lg(cur: Cursor) -> None:
+def load_br_vs_lg(cur: PgCursor) -> None:
     path = COMPARE_DIR / "compare_br_vs_lg.json"
     if not path.exists():
-        print("  SKIP `compare_br_vs_lg` — source file missing")
+        print('  SKIP "compare_br_vs_lg" — source file missing')
         return
     recreate_table(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, indexes=["diamond_id"])
     db_cols, rows = load_compare_rows(path, BR_VS_LG_KEY_MAP)
     insert_rows(cur, "compare_br_vs_lg", db_cols, rows)
 
 
-def load_diamond_status(cur: Cursor) -> None:
+def load_diamond_status(cur: PgCursor) -> None:
     path = COMPARE_DIR / "diamond_status.json"
     if not path.exists():
-        print("  SKIP `diamond_status` — source file missing")
+        print('  SKIP "diamond_status" — source file missing')
         return
     recreate_table(cur, "diamond_status", STATUS_COLUMNS, indexes=["generated_at"])
 
@@ -267,22 +256,26 @@ def load_diamond_status(cur: Cursor) -> None:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
+    parsed = urlparse(DATABASE_URL)
+    target = f"postgresql://{parsed.username}@{parsed.hostname}{parsed.path}"
     print(f"Compare folder: {COMPARE_DIR}")
-    print(f"Target: mysql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+    print(f"Target: {target}")
     print("-" * 72)
 
     if not COMPARE_DIR.exists():
         raise SystemExit(f"compare/ folder not found: {COMPARE_DIR}")
 
-    ensure_database()
-
-    with connect(DB_NAME) as conn, conn.cursor() as cur:
-        load_compare_table(cur, "compare_common",  "compare.json")
-        load_compare_table(cur, "compare_all",     "compare_all.json")
-        load_compare_table(cur, "compare_partial", "compare_partial.json")
-        load_br_vs_lg(cur)
-        load_diamond_status(cur)
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            load_compare_table(cur, "compare_common",  "compare.json")
+            load_compare_table(cur, "compare_all",     "compare_all.json")
+            load_compare_table(cur, "compare_partial", "compare_partial.json")
+            load_br_vs_lg(cur)
+            load_diamond_status(cur)
         conn.commit()
+    finally:
+        conn.close()
 
     print("-" * 72)
     print("DONE.")

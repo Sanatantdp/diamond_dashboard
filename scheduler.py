@@ -12,8 +12,9 @@ Simple 2-step pipeline:
 
   2. run_pipeline()
      If all 3 files are fresh, run the comparator (diamond_compare.py) to
-     produce compare/*.json, then load the results into the local MySQL
-     `scrapper` DB via compare_to_mysql.py.
+     produce compare/*.json, then load the results into the Render
+     PostgreSQL database via compare_to_mysql.py.
+     (compare_to_mysql.py reads DATABASE_URL from .env / process env.)
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ MAX_AGE_DAYS = 3
 
 # Step scripts
 COMPARATOR_SCRIPT = SCRIPT_DIR / "diamond_compare.py"
-MYSQL_SCRIPT      = SCRIPT_DIR / "compare_to_mysql.py"
+DB_LOAD_SCRIPT    = SCRIPT_DIR / "compare_to_mysql.py"  # filename kept; now writes to Postgres
 
 STEP_TIMEOUT_SECONDS = 60 * 60 * 4   # 4 h per subprocess
 
@@ -140,8 +141,8 @@ def run_pipeline() -> None:
         log.error("Comparator failed — skipping MySQL load")
         return
 
-    if not _run_script("MySQL Loader", MYSQL_SCRIPT):
-        log.error("MySQL loader failed")
+    if not _run_script("DB Loader", DB_LOAD_SCRIPT):
+        log.error("DB loader failed")
         return
 
     log.info("=" * 72)

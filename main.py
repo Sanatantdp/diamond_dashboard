@@ -2,24 +2,22 @@
 main.py
 =======
 
-Diamond Price Dashboard API — backed by MySQL (table `scrapper.*`).
+Diamond Price Dashboard API — backed by PostgreSQL (Render managed DB).
 
 Data source
 -----------
-Reads from the MySQL tables created/refreshed by `compare_to_mysql.py`:
+Reads from the PostgreSQL tables created/refreshed by `compare_to_mysql.py`:
   • compare_common      (3-vendor matches    -> served at /api/compare)
   • compare_partial     (>=1 vendor match    -> served at /api/partial)
   • compare_all         (every PC diamond    -> served at /api/data/compare_all.json)
   • compare_br_vs_lg    (BR vs LG inner join -> served at /api/br-vs-lg)
   • diamond_status      (snapshot row        -> served at /api/status)
 
-DB connection (env vars, with localhost defaults)
--------------------------------------------------
-  DB_HOST     (default 127.0.0.1)
-  DB_PORT     (default 3306)
-  DB_USER     (default root)
-  DB_PASSWORD (default empty)
-  DB_NAME     (default scrapper)
+DB connection
+-------------
+Reads DATABASE_URL from a .env file (locally) or from process env (on Render).
+Example DATABASE_URL:
+    postgresql://user:pass@host.oregon-postgres.render.com/dbname
 
 Render deployment
 -----------------
@@ -27,17 +25,10 @@ Render deployment
 2. Create a Render **Web Service** -> connect your repo.
 3. Build command   :  pip install -r requirements.txt
    Start command   :  uvicorn main:app --host 0.0.0.0 --port $PORT
-4. Add environment variables in the Render dashboard pointing at your
-   remote MySQL (Aiven / Railway / PlanetScale / your QNAP, etc.):
-       DB_HOST     = <ip-or-hostname>
-       DB_PORT     = 3306
-       DB_USER     = <user>
-       DB_PASSWORD = <password>
-       DB_NAME     = scrapper
+4. Add environment variables in the Render dashboard:
+       DATABASE_URL       = <internal or external Postgres URL from Render>
        DASHBOARD_PASSWORD = diamond-6087
-5. Make sure that DB allows inbound connections from Render's egress IPs
-   (or from 0.0.0.0/0 if it's a sandbox / not production data).
-6. Render automatically sets PORT — the start command above binds to it.
+5. Render automatically sets PORT — the start command above binds to it.
 """
 
 from __future__ import annotations
@@ -46,11 +37,14 @@ import datetime
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-import pymysql
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -62,12 +56,19 @@ BASE_DIR    = Path(__file__).parent.resolve()
 COMPARE_DIR = BASE_DIR / "compare"
 COMPARE_DIR.mkdir(exist_ok=True)
 
-# ── MySQL config (env vars with sane local defaults) ─────────────────────────
-DB_HOST     = os.environ.get("DB_HOST", "192.168.1.16")
-DB_PORT     = int(os.environ.get("DB_PORT", "3306"))
-DB_USER     = os.environ.get("DB_USER", "root")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
-DB_NAME     = os.environ.get("DB_NAME", "scrapper")
+# ── Load .env (no-op on Render where env vars come from the platform) ────────
+load_dotenv(BASE_DIR / ".env")
+
+# ── PostgreSQL config ────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL env var is required. "
+        "Put it in .env locally, or set it in Render's Environment tab."
+    )
+# Render's external Postgres requires SSL — append if caller didn't set it.
+if "sslmode=" not in DATABASE_URL:
+    DATABASE_URL += ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "diamond-6087")
@@ -99,26 +100,25 @@ async def bearer_auth_middleware(request: Request, call_next):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# MySQL helpers
+# PostgreSQL helpers
 # ═════════════════════════════════════════════════════════════════════════════
-def _get_conn() -> pymysql.connections.Connection:
-    """Open a fresh MySQL connection. One per request keeps things simple."""
-    return pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
+@contextmanager
+def _get_conn():
+    """Open a fresh PostgreSQL connection; close it on exit."""
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor,
         connect_timeout=10,
-        read_timeout=120,
     )
+    conn.autocommit = True
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def _jsonify_value(v: Any) -> Any:
-    """Convert MySQL types into JSON-serialisable Python types."""
+    """Convert DB types into JSON-serialisable Python types."""
     if isinstance(v, Decimal):
         # Convert without scientific notation; preserve ints as ints
         as_float = float(v)
@@ -168,8 +168,8 @@ BR_VS_LG_DB_TO_JSON = {
 def _fetch_compare(table: str, key_map: dict[str, str]) -> list[dict]:
     """Query a compare_* table and remap columns back to the dashboard's JSON key names."""
     db_cols = list(key_map.keys())
-    cols_sql = ", ".join(f"`{c}`" for c in db_cols)
-    sql = f"SELECT {cols_sql} FROM `{table}`"
+    cols_sql = ", ".join(f'"{c}"' for c in db_cols)
+    sql = f'SELECT {cols_sql} FROM "{table}"'
 
     with _get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
@@ -183,7 +183,7 @@ def _fetch_compare(table: str, key_map: dict[str, str]) -> list[dict]:
 
 def _fetch_status() -> dict | None:
     """Latest row of diamond_status, rebuilt in the nested JSON shape the UI expects."""
-    sql = "SELECT * FROM `diamond_status` ORDER BY `id` DESC LIMIT 1"
+    sql = 'SELECT * FROM "diamond_status" ORDER BY "id" DESC LIMIT 1'
     with _get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql)
         r = cur.fetchone()
@@ -218,7 +218,7 @@ def _fetch_status() -> dict | None:
 def _table_row_count(table: str) -> int:
     try:
         with _get_conn() as conn, conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) AS c FROM `{table}`")
+            cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
             row = cur.fetchone()
             return int(row["c"]) if row else 0
     except Exception:
@@ -267,7 +267,7 @@ async def serve_dashboard():
 
     injection = (
         "\n<!-- PARTIAL DATA INJECTION START -->\n"
-        f"<!-- status: {partial_status} | rows: {partial_rows} | source: mysql:{DB_NAME}.compare_partial -->\n"
+        f"<!-- status: {partial_status} | rows: {partial_rows} | source: postgres.compare_partial -->\n"
         f'<script id="__PARTIAL_DATA__" type="application/json">{partial_json}</script>\n'
         "<!-- PARTIAL DATA INJECTION END -->\n"
     )
@@ -442,7 +442,7 @@ async def health():
             db_ok = True
             for table in ("compare_common", "compare_partial", "compare_all", "compare_br_vs_lg", "diamond_status"):
                 try:
-                    cur.execute(f"SELECT COUNT(*) AS c FROM `{table}`")
+                    cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
                     row = cur.fetchone()
                     table_counts[table] = int(row["c"]) if row else 0
                 except Exception:
@@ -450,11 +450,18 @@ async def health():
     except Exception as e:
         db_error = str(e)
 
+    # Show host only (never the full URL with credentials).
+    db_host_display = "unknown"
+    try:
+        from urllib.parse import urlparse
+        db_host_display = urlparse(DATABASE_URL).hostname or "unknown"
+    except Exception:
+        pass
+
     return {
         "status":          "ok" if db_ok else "degraded",
-        "db_host":         DB_HOST,
-        "db_port":         DB_PORT,
-        "db_name":         DB_NAME,
+        "db_engine":       "postgresql",
+        "db_host":         db_host_display,
         "db_ok":           db_ok,
         "db_error":        db_error,
         "tables":          table_counts,
