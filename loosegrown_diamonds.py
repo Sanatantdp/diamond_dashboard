@@ -58,8 +58,9 @@ VPN_CONFIG_SUBDIR      = "loosegrown"   # vpnbook/loosegrown/*.ovpn
 RETRY_SLEEP_BEFORE_ROTATE = 2     # pause between same-offset retries in VPN mode
 
 # ── Scheduler config ─────────────────────────────────────────────────────────
-SCHEDULE_HOUR   = 7    # 24h clock — daily run time (7 AM)
-SCHEDULE_MINUTE = 0
+SCHEDULE_HOUR        = 7    # 24h clock — daily check time (7 AM)
+SCHEDULE_MINUTE      = 0
+STALE_THRESHOLD_DAYS = 2    # CSV older than this -> archive + full re-scrape
 
 
 class VPNRotateNeeded(Exception):
@@ -258,7 +259,15 @@ def _extract_certificate_no(cert_url: str) -> str:
 
 # ── File rotation ─────────────────────────────────────────────────────────────
 
-def _rotate_old_file(filepath: str, max_age_seconds: float = 86_400) -> bool:
+def _csv_age_days(filepath: str) -> float | None:
+    """Return CSV age in days, or None if missing."""
+    if not os.path.exists(filepath):
+        return None
+    mtime = os.path.getmtime(filepath)
+    return (datetime.datetime.now() - datetime.datetime.fromtimestamp(mtime)).total_seconds() / 86_400
+
+
+def _rotate_old_file(filepath: str, max_age_seconds: float = STALE_THRESHOLD_DAYS * 86_400) -> bool:
     """
     Archive `filepath` when it is older than `max_age_seconds`.
     Resets the state file so the next run starts from offset 1.
@@ -641,28 +650,43 @@ def _next_run_time(from_dt: datetime.datetime) -> datetime.datetime:
 
 def run_with_scheduler() -> None:
     """
-    Daily loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE (default 19:00),
-    fire run_with_vpn_rotation(). The scraper itself handles file-age archival
-    via _rotate_old_file(), so each run resumes or starts fresh as appropriate.
+    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
+      1. Check the CSV's age.
+      2. If older than STALE_THRESHOLD_DAYS (or missing), run the
+         VPN-rotated scrape (the scraper itself archives the stale CSV
+         and starts fresh from offset 1).
+      3. Otherwise, log "fresh" and sleep until the next check.
     """
     log.info("=" * 60)
     log.info("Loose Grown scheduler started")
-    log.info(f"Daily run : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
+    log.info(f"Daily check     : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
+    log.info(f"Stale threshold : {STALE_THRESHOLD_DAYS} day(s)")
     log.info("=" * 60)
 
     while True:
         next_run  = _next_run_time(datetime.datetime.now())
         wait_secs = max(0, (next_run - datetime.datetime.now()).total_seconds())
         log.info(
-            f"Sleeping {wait_secs / 3600:.2f}h until next run "
+            f"Sleeping {wait_secs / 3600:.2f}h until next check "
             f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
         )
         time.sleep(wait_secs)
 
-        try:
-            run_with_vpn_rotation()
-        except Exception as exc:
-            log.error(f"Scraper crashed: {exc}")
+        age = _csv_age_days(CSV_FILE)
+        if age is None:
+            log.info("CSV missing — running fresh VPN-rotated scrape.")
+            should_run = True
+        else:
+            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
+            should_run = age >= STALE_THRESHOLD_DAYS
+
+        if should_run:
+            try:
+                run_with_vpn_rotation()
+            except Exception as exc:
+                log.error(f"Scraper crashed: {exc}")
+        else:
+            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
 
 
 if __name__ == "__main__":

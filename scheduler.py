@@ -2,19 +2,19 @@
 scheduler.py
 ============
 
-Simple 2-step pipeline:
+Daily 2 AM pipeline:
 
-  1. check_diamond_files()
-     Verify the 3 vendor CSVs exist AND were modified within the last 3 days.
-     - pc_diamonds.py    -> diamond_files/precious_carbon.csv
-     - brilliance        -> diamond_files/brilliance_diamonds.csv
-     - loose grown       -> diamond_files/loosegrowndiamond.csv
+  1. Check precious_carbon.csv — if its modified date equals today, it is
+     current and we skip the scrape. Otherwise, run pc_diamonds.py --once
+     to download a fresh CSV.
+  2. Run diamond_compare.py to (re)build compare/*.json from the CSVs.
+  3. Run compare_to_mysql.py to drop & rebuild all tables in the Render
+     PostgreSQL DB and bulk-insert the new rows.
 
-  2. run_pipeline()
-     If all 3 files are fresh, run the comparator (diamond_compare.py) to
-     produce compare/*.json, then load the results into the Render
-     PostgreSQL database via compare_to_mysql.py.
-     (compare_to_mysql.py reads DATABASE_URL from .env / process env.)
+Run modes
+---------
+  python scheduler.py           -> start APScheduler, fire daily at 02:00
+  python scheduler.py --once    -> run the pipeline once now (no scheduling)
 """
 
 from __future__ import annotations
@@ -23,24 +23,21 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 # ── Config ───────────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).parent.resolve()
 
-# Files we require — must exist AND be no older than MAX_AGE_DAYS
-REQUIRED_DIAMOND_FILES = [
-    SCRIPT_DIR / "diamond_files" / "precious_carbon.csv",
-    SCRIPT_DIR / "diamond_files" / "brilliance_diamonds.csv",
-    SCRIPT_DIR / "diamond_files" / "loosegrowndiamond.csv",
-]
-MAX_AGE_DAYS = 3
-
-# Step scripts
+PC_CSV            = SCRIPT_DIR / "diamond_files" / "precious_carbon.csv"
+PC_SCRAPER        = SCRIPT_DIR / "pc_diamonds.py"
 COMPARATOR_SCRIPT = SCRIPT_DIR / "diamond_compare.py"
-DB_LOAD_SCRIPT    = SCRIPT_DIR / "compare_to_mysql.py"  # filename kept; now writes to Postgres
+DB_LOAD_SCRIPT    = SCRIPT_DIR / "compare_to_mysql.py"  # truncates + reloads Postgres
 
+SCHEDULE_HOUR        = 12
+SCHEDULE_MINUTE      = 0
 STEP_TIMEOUT_SECONDS = 60 * 60 * 4   # 4 h per subprocess
 
 
@@ -57,62 +54,32 @@ logging.basicConfig(
 log = logging.getLogger("scheduler")
 
 
-# ── Step 1: file existence + freshness check ─────────────────────────────────
-def check_diamond_files() -> bool:
-    """
-    Return True only if every file in REQUIRED_DIAMOND_FILES:
-      • exists, AND
-      • was modified within the last MAX_AGE_DAYS days.
-    Otherwise log what's wrong and return False.
-    """
-    log.info("=" * 72)
-    log.info(f"Checking {len(REQUIRED_DIAMOND_FILES)} required diamond file(s)")
-    log.info(f"Freshness window: <= {MAX_AGE_DAYS} day(s) old")
-    log.info("=" * 72)
-
-    now = datetime.now()
-    all_ok = True
-
-    for path in REQUIRED_DIAMOND_FILES:
-        if not path.exists():
-            log.warning(f"  MISSING  {path}")
-            all_ok = False
-            continue
-
-        mtime    = datetime.fromtimestamp(path.stat().st_mtime)
-        age_days = (now - mtime).total_seconds() / 86400
-        size_kb  = path.stat().st_size / 1024
-
-        if age_days <= MAX_AGE_DAYS:
-            log.info(
-                f"  OK       {path.name}  "
-                f"({size_kb:,.1f} KB, age {age_days:.2f}d)"
-            )
-        else:
-            log.warning(
-                f"  STALE    {path.name}  "
-                f"(age {age_days:.2f}d > {MAX_AGE_DAYS}d) — re-run its scraper"
-            )
-            all_ok = False
-
-    log.info("-" * 72)
-    log.info(f"Files check: {'PASS' if all_ok else 'FAIL'}")
-    return all_ok
+# ── PC CSV freshness ─────────────────────────────────────────────────────────
+def pc_csv_is_current() -> bool:
+    """True if precious_carbon.csv exists AND its mtime is today's date."""
+    if not PC_CSV.exists():
+        log.warning(f"PC CSV missing: {PC_CSV}")
+        return False
+    mtime_date = datetime.fromtimestamp(PC_CSV.stat().st_mtime).date()
+    today = date.today()
+    if mtime_date == today:
+        log.info(f"PC CSV is current (mtime: {mtime_date}) — OK, skipping scrape")
+        return True
+    log.info(f"PC CSV is stale (mtime: {mtime_date}, today: {today}) — re-scrape required")
+    return False
 
 
-# ── Step 2: run comparator then load to MySQL ────────────────────────────────
-def _run_script(label: str, script_path: Path) -> bool:
+# ── Subprocess runner ────────────────────────────────────────────────────────
+def _run_script(label: str, script_path: Path, args: list[str] | None = None) -> bool:
     if not script_path.exists():
         log.error(f"[{label}] Script not found: {script_path}")
         return False
 
-    log.info(f"[{label}] Starting {script_path.name} …")
+    cmd = [sys.executable, str(script_path), *(args or [])]
+    log.info(f"[{label}] Starting: {' '.join(cmd)}")
     start = time.time()
     try:
-        result = subprocess.run(
-            [sys.executable, str(script_path)],
-            timeout=STEP_TIMEOUT_SECONDS,
-        )
+        result = subprocess.run(cmd, timeout=STEP_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         log.error(f"[{label}] TIMEOUT after {STEP_TIMEOUT_SECONDS}s")
         return False
@@ -128,32 +95,52 @@ def _run_script(label: str, script_path: Path) -> bool:
     return False
 
 
-def run_pipeline() -> None:
-    """
-    Run the comparator, then load its output into MySQL.
-    Called only when check_diamond_files() returned True.
-    """
+# ── Daily pipeline ───────────────────────────────────────────────────────────
+def daily_job() -> None:
     log.info("=" * 72)
-    log.info("PIPELINE STARTED")
+    log.info(f"DAILY JOB STARTED @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.info("=" * 72)
+
+    if not pc_csv_is_current():
+        if not _run_script("PC Scraper", PC_SCRAPER, args=["--once"]):
+            log.error("pc_diamonds scrape failed — aborting pipeline")
+            return
+        if not pc_csv_is_current():
+            log.error("PC CSV still not current after scrape — aborting pipeline")
+            return
 
     if not _run_script("Comparator", COMPARATOR_SCRIPT):
-        log.error("Comparator failed — skipping MySQL load")
+        log.error("Comparator failed — skipping DB reload")
         return
 
-    if not _run_script("DB Loader", DB_LOAD_SCRIPT):
+    if not _run_script("DB Loader (truncate + reload)", DB_LOAD_SCRIPT):
         log.error("DB loader failed")
         return
 
     log.info("=" * 72)
-    log.info("PIPELINE COMPLETE")
+    log.info("DAILY JOB COMPLETE")
     log.info("=" * 72)
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    if check_diamond_files():
-        run_pipeline()
+    if "--once" in sys.argv:
+        daily_job()
     else:
-        log.warning("One or more required CSVs are missing or older than "
-                    f"{MAX_AGE_DAYS} days — skipping comparator and MySQL load.")
+        scheduler = BlockingScheduler()
+        scheduler.add_job(
+            daily_job,
+            trigger="cron",
+            hour=SCHEDULE_HOUR,
+            minute=SCHEDULE_MINUTE,
+            id="daily_pipeline",
+            misfire_grace_time=60 * 60,  # 1 h grace if host was asleep
+        )
+        log.info(
+            f"Scheduler started — daily job at "
+            f"{SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d} (local time)"
+        )
+        try:
+            scheduler.start()
+        except (KeyboardInterrupt, SystemExit):
+            log.info("Scheduler stopped")

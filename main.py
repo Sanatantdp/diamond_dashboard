@@ -1,45 +1,9 @@
-"""
-main.py
-=======
-
-Diamond Price Dashboard API - backed by PostgreSQL (Render managed DB).
-
-All row endpoints are paginated server-side. Aggregations (price buckets,
-percentage buckets, vendor totals) are computed in SQL so the client never
-needs to hold the full dataset in memory.
-
-Endpoints
----------
-GET  /api/data/{filename}?limit=&offset=&...filters... -> paginated rows
-GET  /api/compare?...                                  -> alias for compare_common
-GET  /api/partial?...                                  -> alias for compare_partial
-GET  /api/br-vs-lg?...                                 -> alias for compare_br_vs_lg
-GET  /api/aggregates?dataset=&...filters...            -> bucket counts + averages
-GET  /api/status                                       -> snapshot row
-GET  /api/files                                        -> list of available datasets
-GET  /api/health                                       -> health probe
-
-Common filter query params (all optional):
-    limit         int   (default 20, max 500)
-    offset        int   (default 0)
-    cert          str   substring match on certificate_number
-    price_min     float lower bound on pc_price_usd
-    price_max     float upper bound on pc_price_usd
-    vendor_pct    str   "<vendor_key>:<bucket_idx>"   e.g. "lg:3"
-    vendor_price  str   "<vendor_key>:<bucket_idx>"   e.g. "br:1"
-    common_only   bool  "true" to require all vendor prices > 0
-    sort_col      str   DB column name to sort by
-    sort_dir      str   "asc" or "desc"
-
-DB connection
--------------
-Reads DATABASE_URL from .env locally, or process env on Render.
-"""
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import os
 from contextlib import contextmanager
 from decimal import Decimal
@@ -58,8 +22,11 @@ from starlette.responses import Response
 
 # ---- Paths -----------------------------------------------------------------
 BASE_DIR = Path(__file__).parent.resolve()
+STATIC_DIR = BASE_DIR / "static"
 COMPARE_DIR = BASE_DIR / "compare"
 COMPARE_DIR.mkdir(exist_ok=True)
+DIAMOND_FILES_DIR = BASE_DIR / "diamond_files"
+FILE_STATUS_JSON = DIAMOND_FILES_DIR / "file_status.json"
 
 # ---- Load .env -------------------------------------------------------------
 load_dotenv(BASE_DIR / ".env")
@@ -87,7 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PUBLIC_PATHS = {"/", "/dashboard", "/api/login", "/api/login/config", "/api/health"}
+PUBLIC_PATHS = {"/", "/dashboard", "/api/login", "/api/login/config", "/api/health", "/api/file-dates"}
 
 
 @app.middleware("http")
@@ -509,6 +476,11 @@ def _fetch_status() -> dict | None:
             "all_pc":   r["all_pc_count"],
             "br_vs_lg": r["br_vs_lg_count"],
         },
+        "file_dates": {
+            "pc":          _jsonify_value(r.get("pc_file_date")),
+            "loose-grown": _jsonify_value(r.get("lg_file_date")),
+            "brilliance":  _jsonify_value(r.get("brilliance_file_date")),
+        },
     }
 
 
@@ -527,7 +499,7 @@ def _table_row_count(table: str) -> int:
 # ============================================================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
-    html_path = BASE_DIR / "login.html"
+    html_path = STATIC_DIR / "login.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="login.html not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
@@ -536,7 +508,7 @@ async def serve_login():
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
     """Serve dashboard.html as-is. No data is inlined - the client paginates from /api/*."""
-    html_path = BASE_DIR / "dashboard.html"
+    html_path = STATIC_DIR / "dashboard.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="dashboard.html not found")
     return HTMLResponse(
@@ -647,7 +619,45 @@ async def get_diamond_status():
             status_code=404,
             detail="diamond_status table is empty - run the pipeline first",
         )
+    db_fd = data.get("file_dates") or {}
+    if not any(db_fd.get(k) for k in ("pc", "loose-grown", "brilliance")):
+        data["file_dates"] = _read_file_dates()
     return JSONResponse(content=data)
+
+
+# Vendor key -> the "vendor" label written into file_status.json by diamond_compare.py
+_FILE_DATE_VENDOR_MAP = {
+    "PC":          "pc",
+    "loose-grown": "loose-grown",
+    "brilliance":  "brilliance",
+}
+
+
+def _read_file_dates() -> dict:
+    """Return {pc: 'YYYY-MM-DD HH:MM:SS' | None, 'loose-grown': ..., 'brilliance': ...,
+    checked_at: ... | None} from diamond_files/file_status.json. Returns all-None on
+    missing/invalid file so the dashboard can still render."""
+    out: dict = {"pc": None, "loose-grown": None, "brilliance": None, "checked_at": None}
+    if not FILE_STATUS_JSON.exists():
+        return out
+    try:
+        payload = json.loads(FILE_STATUS_JSON.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return out
+    out["checked_at"] = payload.get("checked_at")
+    for entry in payload.get("files", []) or []:
+        vendor = entry.get("vendor")
+        key = _FILE_DATE_VENDOR_MAP.get(vendor)
+        if key:
+            out[key] = entry.get("last_modified")
+    return out
+
+
+@app.get("/api/file-dates")
+async def get_file_dates():
+    """Per-vendor source CSV last-modified timestamps (PC, loose-grown, brilliance).
+    Read from diamond_files/file_status.json which is refreshed every pipeline run."""
+    return JSONResponse(content=_read_file_dates())
 
 
 @app.get("/api/files")

@@ -27,7 +27,7 @@ BATCH_REPORT_FILE = f"{base_dir}/diamond_files/batch_reports.json"
 BACKUP_DIR        = f"{base_dir}/diamond_files_backup"
 
 # ── Scheduler config ─────────────────────────────────────────────────────────
-SCHEDULE_HOUR        = 11     # 24h clock — daily check time (11 AM)
+SCHEDULE_HOUR        = 16    # 24h clock — daily check time (11 AM)
 SCHEDULE_MINUTE      = 0
 STALE_THRESHOLD_DAYS = 2     # CSV older than this -> archive + full re-scrape
 

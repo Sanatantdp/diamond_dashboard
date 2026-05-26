@@ -138,6 +138,9 @@ STATUS_COLUMNS = [
     ("partial_count",          "INT"),
     ("all_pc_count",           "INT"),
     ("br_vs_lg_count",         "INT"),
+    ("pc_file_date",           "DATETIME"),
+    ("lg_file_date",           "DATETIME"),
+    ("brilliance_file_date",   "DATETIME"),
 ]
 
 
@@ -232,6 +235,7 @@ def load_diamond_status(cur: PgCursor) -> None:
     vendor_totals = s.get("vendor_totals", {}) or {}
     pc_vs        = s.get("pc_vs_vendors", {}) or {}
     counts       = s.get("dataset_counts", {}) or {}
+    file_dates   = s.get("file_dates", {}) or {}
 
     lg_stats = pc_vs.get("loose-grown", {}) or {}
     br_stats = pc_vs.get("brilliance", {}) or {}
@@ -249,6 +253,9 @@ def load_diamond_status(cur: PgCursor) -> None:
         counts.get("partial"),
         counts.get("all_pc"),
         counts.get("br_vs_lg"),
+        file_dates.get("pc"),
+        file_dates.get("loose-grown"),
+        file_dates.get("brilliance"),
     )
     db_cols = [c[0] for c in STATUS_COLUMNS]
     insert_rows(cur, "diamond_status", db_cols, [row])

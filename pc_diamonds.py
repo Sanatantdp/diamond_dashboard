@@ -675,7 +675,16 @@ def run_with_scheduler():
 
 
 if __name__ == "__main__":
-    # Two entry points:
-    #   run_with_scheduler() -> daily check + auto-backup + full re-scrape
-    #   scrape()             -> one-shot scrape, no rotation, resumes from progress
-    run_with_scheduler()
+    # Entry points:
+    #   (no args)         -> run_with_scheduler(): daily check + auto-backup + re-scrape
+    #   --once            -> archive existing CSV (any age) and run a fresh full scrape
+    #   --resume          -> scrape() only: resume from progress, no archive/rotation
+    import sys as _sys
+
+    if "--once" in _sys.argv:
+        archive_to_backup(OUTPUT_CSV, threshold_days=0)
+        scrape()
+    elif "--resume" in _sys.argv:
+        scrape()
+    else:
+        run_with_scheduler()

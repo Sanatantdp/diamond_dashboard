@@ -208,6 +208,23 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
 # STEP 1 — BUILD compare files
 # ══════════════════════════════════════════════════════════════
 
+def _collect_vendor_file_dates() -> dict:
+    """Last-modified timestamps for each vendor source CSV. Returns
+    {pc, loose-grown, brilliance} -> 'YYYY-MM-DD HH:MM:SS' (or None if missing)."""
+    vendors, PC_csv, _pc_disc = load_vendors_from_env()
+    paths = {"pc": PC_csv}
+    for v in vendors:
+        paths[v["name"]] = v["csv"]
+    out: dict = {}
+    for key, path in paths.items():
+        if path and os.path.exists(path):
+            mtime = os.path.getmtime(path)
+            out[key] = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            out[key] = None
+    return out
+
+
 def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
                          common_records: list, partial_records: list, all_records: list,
                          br_vs_lg_count: int = 0):
@@ -245,6 +262,7 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             "all_pc":     len(all_records),
             "br_vs_lg":   br_vs_lg_count,
         },
+        "file_dates":   _collect_vendor_file_dates(),
     }
 
     with open(DIAMOND_STATUS_JSON, "w", encoding="utf-8") as f:
