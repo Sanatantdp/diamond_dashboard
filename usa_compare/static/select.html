@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diamond Dashboard — Select Region</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: #12121a;
+        --card: #1a1a26;
+        --border: #2a2a3e;
+        --accent: #c9a84c;
+        --accent2: #7c6fcd;
+        --green: #3ecf8e;
+        --red: #f87171;
+        --text: #e8e8f0;
+        --muted: #6b6b8a;
+        --font-mono: "DM Mono", monospace;
+        --font-display: "Playfair Display", serif;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-mono);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .bg-grid {
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(201, 168, 76, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(201, 168, 76, 0.04) 1px, transparent 1px);
+        background-size: 48px 48px;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .bg-glow {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(
+          circle,
+          rgba(201, 168, 76, 0.07) 0%,
+          transparent 70%
+        );
+        pointer-events: none;
+        z-index: 0;
+        animation: breathe 4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+        50% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+      }
+      .wrap {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 960px;
+        padding: 0 24px;
+        text-align: center;
+        animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(28px) scale(0.97); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .eyebrow {
+        color: var(--accent);
+        letter-spacing: 0.35em;
+        font-size: 12px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      h1 {
+        font-family: var(--font-display);
+        font-weight: 900;
+        font-size: clamp(28px, 5vw, 44px);
+        margin-bottom: 8px;
+        background: linear-gradient(120deg, var(--text), var(--accent));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .subtitle {
+        color: var(--muted);
+        font-size: 14px;
+        margin-bottom: 40px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+      }
+      .card {
+        padding: 32px 20px;
+      }
+      @media (max-width: 860px) {
+        .cards { grid-template-columns: 1fr 1fr; }
+      }
+      @media (max-width: 480px) {
+        .cards { grid-template-columns: 1fr; }
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 40px 32px;
+        cursor: pointer;
+        text-decoration: none;
+        color: var(--text);
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.18s ease, border-color 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        opacity: 0;
+        transition: opacity 0.18s ease;
+      }
+      .card:hover {
+        transform: translateY(-6px);
+        border-color: var(--accent);
+        box-shadow: 0 0 60px rgba(201, 168, 76, 0.12),
+          0 24px 48px rgba(0, 0, 0, 0.5);
+      }
+      .card:hover::before { opacity: 1; }
+      .flag {
+        font-size: 52px;
+        margin-bottom: 18px;
+        line-height: 1;
+      }
+      .card h2 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 26px;
+        margin-bottom: 6px;
+      }
+      .card p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .footer {
+        margin-top: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .logout {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.18s ease;
+      }
+      .logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <div class="wrap">
+      <div class="eyebrow">Diamond Price Intelligence</div>
+      <h1>Select a Dashboard</h1>
+      <p class="subtitle">Choose the market you want to analyse.</p>
+
+      <div class="cards">
+        <a class="card" href="/dashboard/usa">
+          <div class="flag">🇺🇸</div>
+          <h2>USA</h2>
+          <p>PriceScope baseline vs Loose-Grown &amp; Brilliance. Prices in USD ($).</p>
+        </a>
+        <a class="card" href="/dashboard/uk">
+          <div class="flag">🇬🇧</div>
+          <h2>UK</h2>
+          <p>ROUK baseline vs diamond-heavon &amp; abelini. Prices in GBP (£).</p>
+        </a>
+        <a class="card" href="/dashboard/roa">
+          <div class="flag">🇦🇺</div>
+          <h2>AUS</h2>
+          <p>ROA baseline vs Cullen &amp; GS Diamonds. Prices in USD ($).</p>
+        </a>
+        <a class="card" href="/dashboard/rog">
+          <div class="flag">🇩🇪</div>
+          <h2>Germany</h2>
+          <p>ROG baseline vs novita, 77 Diamonds &amp; Renesim. Prices in EUR (€).</p>
+        </a>
+      </div>
+
+      <div class="footer">
+        <span>Signed in</span>
+        <button class="logout" id="logoutBtn">Log out</button>
+      </div>
+    </div>
+
+    <script>
+      // Require a valid token (same scheme as both dashboards).
+      const AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+      if (!AUTH_TOKEN) window.location.href = "/";
+
+      document.getElementById("logoutBtn").addEventListener("click", () => {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
+      });
+    </script>
+  </body>
+</html>

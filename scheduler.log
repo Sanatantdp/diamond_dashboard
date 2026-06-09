@@ -786,3 +786,222 @@
 2026-05-25 16:18:46 [INFO] ========================================================================
 2026-05-25 16:18:46 [INFO] PIPELINE COMPLETE
 2026-05-25 16:18:46 [INFO] ========================================================================
+2026-05-26 11:54:31 [INFO] ========================================================================
+2026-05-26 11:54:31 [INFO] Checking 3 required diamond file(s)
+2026-05-26 11:54:31 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 11:54:31 [INFO] ========================================================================
+2026-05-26 11:54:31 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.75d)
+2026-05-26 11:54:31 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.78d)
+2026-05-26 11:54:31 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.03d)
+2026-05-26 11:54:31 [INFO] ------------------------------------------------------------------------
+2026-05-26 11:54:31 [INFO] Files check: PASS
+2026-05-26 11:54:31 [INFO] ========================================================================
+2026-05-26 11:54:31 [INFO] PIPELINE STARTED
+2026-05-26 11:54:31 [INFO] ========================================================================
+2026-05-26 11:54:31 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 11:55:42 [INFO] [Comparator] Completed in 71.1s
+2026-05-26 11:55:42 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 11:56:04 [ERROR] [DB Loader] Failed (exit code 1, 21.3s)
+2026-05-26 11:56:04 [ERROR] DB loader failed
+2026-05-26 12:02:50 [INFO] ========================================================================
+2026-05-26 12:02:50 [INFO] Checking 3 required diamond file(s)
+2026-05-26 12:02:50 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 12:02:50 [INFO] ========================================================================
+2026-05-26 12:02:50 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.76d)
+2026-05-26 12:02:50 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.79d)
+2026-05-26 12:02:50 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.04d)
+2026-05-26 12:02:50 [INFO] ------------------------------------------------------------------------
+2026-05-26 12:02:50 [INFO] Files check: PASS
+2026-05-26 12:02:50 [INFO] ========================================================================
+2026-05-26 12:02:50 [INFO] PIPELINE STARTED
+2026-05-26 12:02:50 [INFO] ========================================================================
+2026-05-26 12:02:50 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 12:03:43 [INFO] [Comparator] Completed in 52.9s
+2026-05-26 12:03:43 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 12:04:06 [INFO] [DB Loader] Completed in 23.6s
+2026-05-26 12:04:06 [INFO] ========================================================================
+2026-05-26 12:04:06 [INFO] PIPELINE COMPLETE
+2026-05-26 12:04:06 [INFO] ========================================================================
+2026-05-26 12:05:01 [INFO] ========================================================================
+2026-05-26 12:05:01 [INFO] Checking 3 required diamond file(s)
+2026-05-26 12:05:01 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 12:05:01 [INFO] ========================================================================
+2026-05-26 12:05:01 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.76d)
+2026-05-26 12:05:01 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.79d)
+2026-05-26 12:05:01 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.04d)
+2026-05-26 12:05:01 [INFO] ------------------------------------------------------------------------
+2026-05-26 12:05:01 [INFO] Files check: PASS
+2026-05-26 12:05:01 [INFO] ========================================================================
+2026-05-26 12:05:01 [INFO] PIPELINE STARTED
+2026-05-26 12:05:01 [INFO] ========================================================================
+2026-05-26 12:05:01 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 12:05:48 [INFO] [Comparator] Completed in 46.7s
+2026-05-26 12:05:48 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 12:05:49 [ERROR] [DB Loader] Failed (exit code 1, 0.7s)
+2026-05-26 12:05:49 [ERROR] DB loader failed
+2026-05-26 12:06:47 [INFO] ========================================================================
+2026-05-26 12:06:47 [INFO] Checking 3 required diamond file(s)
+2026-05-26 12:06:47 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 12:06:47 [INFO] ========================================================================
+2026-05-26 12:06:47 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.76d)
+2026-05-26 12:06:47 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.79d)
+2026-05-26 12:06:47 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.04d)
+2026-05-26 12:06:47 [INFO] ------------------------------------------------------------------------
+2026-05-26 12:06:47 [INFO] Files check: PASS
+2026-05-26 12:06:47 [INFO] ========================================================================
+2026-05-26 12:06:47 [INFO] PIPELINE STARTED
+2026-05-26 12:06:47 [INFO] ========================================================================
+2026-05-26 12:06:47 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 12:07:30 [INFO] [Comparator] Completed in 42.9s
+2026-05-26 12:07:30 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 12:07:31 [ERROR] [DB Loader] Failed (exit code 1, 1.1s)
+2026-05-26 12:07:31 [ERROR] DB loader failed
+2026-05-26 12:15:04 [INFO] ========================================================================
+2026-05-26 12:15:04 [INFO] Checking 3 required diamond file(s)
+2026-05-26 12:15:04 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 12:15:04 [INFO] ========================================================================
+2026-05-26 12:15:04 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.77d)
+2026-05-26 12:15:04 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.79d)
+2026-05-26 12:15:04 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.05d)
+2026-05-26 12:15:04 [INFO] ------------------------------------------------------------------------
+2026-05-26 12:15:04 [INFO] Files check: PASS
+2026-05-26 12:15:04 [INFO] ========================================================================
+2026-05-26 12:15:04 [INFO] PIPELINE STARTED
+2026-05-26 12:15:04 [INFO] ========================================================================
+2026-05-26 12:15:04 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 12:15:47 [INFO] [Comparator] Completed in 43.2s
+2026-05-26 12:15:47 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 12:18:51 [INFO] [DB Loader] Completed in 183.9s
+2026-05-26 12:18:51 [INFO] ========================================================================
+2026-05-26 12:18:51 [INFO] PIPELINE COMPLETE
+2026-05-26 12:18:51 [INFO] ========================================================================
+2026-05-26 12:59:52 [INFO] ========================================================================
+2026-05-26 12:59:52 [INFO] Checking 3 required diamond file(s)
+2026-05-26 12:59:52 [INFO] Freshness window: <= 3 day(s) old
+2026-05-26 12:59:52 [INFO] ========================================================================
+2026-05-26 12:59:52 [INFO]   OK       precious_carbon.csv  (32,928.2 KB, age 0.80d)
+2026-05-26 12:59:52 [INFO]   OK       brilliance_diamonds.csv  (62,942.1 KB, age 0.83d)
+2026-05-26 12:59:52 [INFO]   OK       loosegrowndiamond.csv  (435,875.9 KB, age 1.08d)
+2026-05-26 12:59:52 [INFO] ------------------------------------------------------------------------
+2026-05-26 12:59:52 [INFO] Files check: PASS
+2026-05-26 12:59:52 [INFO] ========================================================================
+2026-05-26 12:59:52 [INFO] PIPELINE STARTED
+2026-05-26 12:59:52 [INFO] ========================================================================
+2026-05-26 12:59:52 [INFO] [Comparator] Starting diamond_compare.py …
+2026-05-26 13:01:01 [INFO] [Comparator] Completed in 68.5s
+2026-05-26 13:01:01 [INFO] [DB Loader] Starting compare_to_mysql.py …
+2026-05-26 13:04:02 [INFO] [DB Loader] Completed in 180.8s
+2026-05-26 13:04:02 [INFO] ========================================================================
+2026-05-26 13:04:02 [INFO] PIPELINE COMPLETE
+2026-05-26 13:04:02 [INFO] ========================================================================
+2026-05-26 15:44:13 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-26 15:44:13 [INFO] Scheduler started — daily job at 15:50 (local time)
+2026-05-26 15:44:13 [INFO] Added job "daily_job" to job store "default"
+2026-05-26 15:44:13 [INFO] Scheduler started
+2026-05-26 15:50:00 [INFO] Running job "daily_job (trigger: cron[hour='15', minute='50'], next run at: 2026-05-26 15:50:00 IST)" (scheduled at 2026-05-26 15:50:00+05:30)
+2026-05-26 15:50:00 [INFO] ========================================================================
+2026-05-26 15:50:00 [INFO] DAILY JOB STARTED @ 2026-05-26 15:50:00
+2026-05-26 15:50:00 [INFO] ========================================================================
+2026-05-26 15:50:00 [WARNING] PC CSV missing: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-26 15:50:00 [INFO] [PC Scraper] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\pc_diamonds.py --once
+2026-05-26 17:21:30 [INFO] [PC Scraper] Completed in 5490.9s
+2026-05-26 17:21:30 [INFO] PC CSV is current (mtime: 2026-05-26) — OK, skipping scrape
+2026-05-26 17:21:30 [INFO] [Comparator] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\diamond_compare.py
+2026-05-26 17:22:32 [INFO] [Comparator] Completed in 61.8s
+2026-05-26 17:22:32 [INFO] [DB Loader (truncate + reload)] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\compare_to_mysql.py
+2026-05-26 17:25:58 [INFO] [DB Loader (truncate + reload)] Completed in 206.3s
+2026-05-26 17:25:58 [INFO] ========================================================================
+2026-05-26 17:25:58 [INFO] DAILY JOB COMPLETE
+2026-05-26 17:25:58 [INFO] ========================================================================
+2026-05-26 17:25:58 [INFO] Job "daily_job (trigger: cron[hour='15', minute='50'], next run at: 2026-05-27 15:50:00 IST)" executed successfully
+2026-05-26 17:35:09 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-26 17:35:09 [INFO] Scheduler started — daily job at 17:36 (local time)
+2026-05-26 17:35:09 [INFO] Added job "daily_job" to job store "default"
+2026-05-26 17:35:09 [INFO] Scheduler started
+2026-05-26 17:36:00 [INFO] Running job "daily_job (trigger: cron[hour='17', minute='36'], next run at: 2026-05-26 17:36:00 IST)" (scheduled at 2026-05-26 17:36:00+05:30)
+2026-05-26 17:36:00 [INFO] ========================================================================
+2026-05-26 17:36:00 [INFO] DAILY JOB STARTED @ 2026-05-26 17:36:00
+2026-05-26 17:36:00 [INFO] ========================================================================
+2026-05-26 17:36:00 [INFO] PC CSV is current (mtime: 2026-05-26) — OK, skipping scrape
+2026-05-26 17:36:00 [INFO] [Comparator] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\diamond_compare.py
+2026-05-26 17:36:48 [INFO] [Comparator] Completed in 48.6s
+2026-05-26 17:36:48 [INFO] [DB Loader (truncate + reload)] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\compare_to_mysql.py
+2026-05-26 17:40:11 [INFO] [DB Loader (truncate + reload)] Completed in 202.9s
+2026-05-26 17:40:11 [INFO] ========================================================================
+2026-05-26 17:40:11 [INFO] DAILY JOB COMPLETE
+2026-05-26 17:40:11 [INFO] ========================================================================
+2026-05-26 17:40:11 [INFO] Job "daily_job (trigger: cron[hour='17', minute='36'], next run at: 2026-05-27 17:36:00 IST)" executed successfully
+2026-05-26 17:59:37 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-26 17:59:37 [INFO] Scheduler started — daily job at 18:00 (local time)
+2026-05-26 17:59:37 [INFO] Added job "daily_job" to job store "default"
+2026-05-26 17:59:37 [INFO] Scheduler started
+2026-05-26 18:00:00 [INFO] Running job "daily_job (trigger: cron[hour='18', minute='0'], next run at: 2026-05-26 18:00:00 IST)" (scheduled at 2026-05-26 18:00:00+05:30)
+2026-05-26 18:00:00 [INFO] ========================================================================
+2026-05-26 18:00:00 [INFO] DAILY JOB STARTED @ 2026-05-26 18:00:00
+2026-05-26 18:00:00 [INFO] ========================================================================
+2026-05-26 18:00:00 [INFO] PC CSV is current (mtime: 2026-05-26) — OK, skipping scrape
+2026-05-26 18:00:00 [INFO] [Comparator] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\diamond_compare.py
+2026-05-26 18:01:04 [INFO] [Comparator] Completed in 64.8s
+2026-05-26 18:01:04 [INFO] [DB Loader (truncate + reload)] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\compare_to_mysql.py
+2026-05-26 18:01:25 [ERROR] [DB Loader (truncate + reload)] Failed (exit code 1, 20.8s)
+2026-05-26 18:01:25 [ERROR] DB loader failed
+2026-05-26 18:01:25 [INFO] Job "daily_job (trigger: cron[hour='18', minute='0'], next run at: 2026-05-27 18:00:00 IST)" executed successfully
+2026-05-26 18:02:58 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-26 18:02:58 [INFO] Scheduler started — daily job at 18:03 (local time)
+2026-05-26 18:02:58 [INFO] Added job "daily_job" to job store "default"
+2026-05-26 18:02:58 [INFO] Scheduler started
+2026-05-26 18:03:00 [INFO] Running job "daily_job (trigger: cron[hour='18', minute='3'], next run at: 2026-05-26 18:03:00 IST)" (scheduled at 2026-05-26 18:03:00+05:30)
+2026-05-26 18:03:00 [INFO] ========================================================================
+2026-05-26 18:03:00 [INFO] DAILY JOB STARTED @ 2026-05-26 18:03:00
+2026-05-26 18:03:00 [INFO] ========================================================================
+2026-05-26 18:03:00 [INFO] PC CSV is current (mtime: 2026-05-26) — OK, skipping scrape
+2026-05-26 18:03:00 [INFO] [Comparator] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\diamond_compare.py
+2026-05-26 18:03:52 [INFO] [Comparator] Completed in 52.0s
+2026-05-26 18:03:52 [INFO] [DB Loader (truncate + reload)] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\compare_to_mysql.py
+2026-05-26 18:07:15 [INFO] [DB Loader (truncate + reload)] Completed in 203.0s
+2026-05-26 18:07:15 [INFO] ========================================================================
+2026-05-26 18:07:15 [INFO] DAILY JOB COMPLETE
+2026-05-26 18:07:15 [INFO] ========================================================================
+2026-05-26 18:07:15 [INFO] Job "daily_job (trigger: cron[hour='18', minute='3'], next run at: 2026-05-27 18:03:00 IST)" executed successfully
+2026-05-27 11:59:54 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 11:59:54 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 11:59:54 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 11:59:54 [INFO] Scheduler started — loosegrown 07:00, daily 12:30, brilliance 19:00 (local time)
+2026-05-27 11:59:54 [INFO] Added job "loosegrown_job" to job store "default"
+2026-05-27 11:59:54 [INFO] Added job "daily_job" to job store "default"
+2026-05-27 11:59:54 [INFO] Added job "brilliance_job" to job store "default"
+2026-05-27 11:59:54 [INFO] Scheduler started
+2026-05-27 12:21:12 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 12:21:12 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 12:21:12 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 12:21:12 [INFO] Scheduler started — loosegrown 07:00, daily 12:30, brilliance 19:00 (local time)
+2026-05-27 12:21:12 [INFO] Added job "loosegrown_job" to job store "default"
+2026-05-27 12:21:12 [INFO] Added job "daily_job" to job store "default"
+2026-05-27 12:21:12 [INFO] Added job "brilliance_job" to job store "default"
+2026-05-27 12:21:12 [INFO] Scheduler started
+2026-05-27 12:30:00 [INFO] Running job "daily_job (trigger: cron[hour='12', minute='30'], next run at: 2026-05-27 12:30:00 IST)" (scheduled at 2026-05-27 12:30:00+05:30)
+2026-05-27 12:30:00 [INFO] ========================================================================
+2026-05-27 12:30:00 [INFO] DAILY JOB STARTED @ 2026-05-27 12:30:00
+2026-05-27 12:30:00 [INFO] ========================================================================
+2026-05-27 12:30:00 [WARNING] CSV missing: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-27 12:30:00 [INFO] Deleted stale PC CSV: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-27 12:30:00 [INFO] [PC Scraper] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\pc_diamonds.py --once
+2026-05-27 16:09:35 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 16:09:35 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 16:09:35 [INFO] Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-05-27 16:09:35 [INFO] Scheduler started — loosegrown 07:00, daily 16:10, brilliance 19:00 (local time)
+2026-05-27 16:09:35 [INFO] Added job "loosegrown_job" to job store "default"
+2026-05-27 16:09:35 [INFO] Added job "daily_job" to job store "default"
+2026-05-27 16:09:35 [INFO] Added job "brilliance_job" to job store "default"
+2026-05-27 16:09:35 [INFO] Scheduler started
+2026-05-27 16:10:00 [INFO] Running job "daily_job (trigger: cron[hour='16', minute='10'], next run at: 2026-05-27 16:10:00 IST)" (scheduled at 2026-05-27 16:10:00+05:30)
+2026-05-27 16:10:00 [INFO] ========================================================================
+2026-05-27 16:10:00 [INFO] DAILY JOB STARTED @ 2026-05-27 16:10:00
+2026-05-27 16:10:00 [INFO] ========================================================================
+2026-05-27 16:10:00 [WARNING] CSV missing: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-27 16:10:00 [INFO] Deleted stale PC CSV: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-27 16:10:00 [INFO] [PC Scraper] Starting: D:\usa_scrapping\env\Scripts\python.exe D:\usa_scrapping\pc_diamonds.py --once
+2026-05-27 16:10:01 [INFO] [PC Scraper] Completed in 1.5s
+2026-05-27 16:10:01 [WARNING] CSV missing: D:\usa_scrapping\diamond_files\precious_carbon.csv
+2026-05-27 16:10:01 [ERROR] PC CSV still stale after scrape — aborting pipeline
+2026-05-27 16:10:01 [INFO] Job "daily_job (trigger: cron[hour='16', minute='10'], next run at: 2026-05-28 16:10:00 IST)" executed successfully

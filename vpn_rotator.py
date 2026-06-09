@@ -784,6 +784,39 @@ def random_vpn(
 
 
 # ---------------------------------------------------------------------------
+# Cleanup helper — kill any leftover openvpn processes. Safe to call repeatedly
+# and when no openvpn process is running. Used by the scrapers' Ctrl+C handlers
+# so an interrupted tunnel doesn't keep the system routed through the VPN.
+# ---------------------------------------------------------------------------
+def kill_openvpn_processes() -> None:
+    import platform
+    system = platform.system()
+    try:
+        if system == "Windows":
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", "openvpn.exe"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                log.info("[VPN cleanup] openvpn.exe terminated")
+            elif "not found" in (result.stderr + result.stdout).lower():
+                log.info("[VPN cleanup] no openvpn.exe running")
+            else:
+                log.warning(f"[VPN cleanup] taskkill rc={result.returncode}")
+        else:
+            result = subprocess.run(
+                ["pkill", "-f", "openvpn"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode in (0, 1):
+                log.info("[VPN cleanup] pkill openvpn done")
+            else:
+                log.warning(f"[VPN cleanup] pkill rc={result.returncode}")
+    except Exception as exc:
+        log.warning(f"[VPN cleanup] error: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # CLI smoke test:  python vpn_rotator.py
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

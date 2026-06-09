@@ -1,0 +1,25 @@
+curl ^"https://www.diamond-heaven.co.uk/diamonds/index/listt^" ^
+  -H ^"accept: application/json, text/javascript, */*; q=0.01^" ^
+  -H ^"accept-language: en-GB,en-US;q=0.9,en;q=0.8^" ^
+  -H ^"cache-control: no-cache^" ^
+  -H ^"content-type: application/x-www-form-urlencoded; charset=UTF-8^" ^
+  -b ^"mage-cache-storage=^{^}; mage-cache-storage-section-invalidation=^{^}; mage-cache-sessid=true; _gcl_au=1.1.640222696.1775456361; recently_viewed_product=^{^}; product_data_storage=^{^}; recently_viewed_product_previous=^{^}; recently_compared_product=^{^}; recently_compared_product_previous=^{^}; mage-messages=; inova_p_sid=3eifjfq_260405231923; PHPSESSID=9584c430c6622bcc61e0d80bd48a4ad0; form_key=vAZMjATzJczejlbt; _gid=GA1.3.90311475.1775731794; _gat_gtag_UA_885802_3=1; _ga_ZVLH87X2L7=GS2.1.s1775731802^$o2^$g1^$t1775733876^$j58^$l0^$h2020236009^$dMu__nWOx_nf8YI6Iz_scSn6OgDvJlleCrg; _uetsid=5081fc10340211f1824783f3f4295e20^|1f4yu06^|2^|g52^|0^|2290; _uetvid=50825970340211f19fb725b81358ac91; _ga=GA1.3.101399263.1775456360; private_content_version=acded08f15281272e00ae3eb74049697; cf_clearance=eUcNjtzTyBlvLSsutVcePRc_78FMXXPBfY8CQb5UK4I-1775733881-1.2.1.1-L3odvc9AdW6gNlvcqRV3hXicGo_.6KLRn0DaACg2_yEE4iu3IadZKCpgh.fPlNPGnmHt4_sPEKopNy.PknF6IznQLOXeGqJryByv91N4wC_hS2wmzlVRjPKfdez9AzL9RHsYktFvCV5IUcmWLQs55wZJyW8czVII.Xx_A5kf2j9hQm5NOxWIPQzqBaSy_uDWikpK4EcCLyCMRKotbqGtAliGNrdkVJKtKIOic3.dmjIlZ6ODBopAdWAzbvD5h_JMzZNhcLs8_6XROrw7ZRgiEeR1SpignVvJ1O6y1itklMHmQnwhJVyaQ0YBCaWlcnCttgqeFkJ8Hqdjjdw4eWMNTg; section_data_ids=^{^%^22messages^%^22:1775733881^}^" ^
+  -H ^"origin: https://www.diamond-heaven.co.uk^" ^
+  -H ^"pragma: no-cache^" ^
+  -H ^"priority: u=1, i^" ^
+  -H ^"referer: https://www.diamond-heaven.co.uk/build-your-ring/by-stone/lab-grown-diamond^" ^
+  -H ^"sec-ch-ua: ^\^"Chromium^\^";v=^\^"146^\^", ^\^"Not-A.Brand^\^";v=^\^"24^\^", ^\^"Google Chrome^\^";v=^\^"146^\^"^" ^
+  -H ^"sec-ch-ua-arch: ^\^"x86^\^"^" ^
+  -H ^"sec-ch-ua-bitness: ^\^"64^\^"^" ^
+  -H ^"sec-ch-ua-full-version: ^\^"146.0.7680.180^\^"^" ^
+  -H ^"sec-ch-ua-full-version-list: ^\^"Chromium^\^";v=^\^"146.0.7680.180^\^", ^\^"Not-A.Brand^\^";v=^\^"24.0.0.0^\^", ^\^"Google Chrome^\^";v=^\^"146.0.7680.180^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-model: ^\^"^\^"^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" ^
+  -H ^"sec-ch-ua-platform-version: ^\^"15.0.0^\^"^" ^
+  -H ^"sec-fetch-dest: empty^" ^
+  -H ^"sec-fetch-mode: cors^" ^
+  -H ^"sec-fetch-site: same-origin^" ^
+  -H ^"user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36^" ^
+  -H ^"x-requested-with: XMLHttpRequest^" ^
+  --data-raw ^"ajax=1^&is_product_page=1^&diamond_type=labgrown^&clarity=IF^%^2CFL^&colour=D^&cut=Good^%^2CVery+Good^%^2CExcellent^%^2CIdeal^&itemsPerPage=9^&viewtype=list^&shape^%^5B^%^5D=Round^&s^%^5B^%^5D=Round^&carat=1-10^&price=100-100000^&polish=Good^%^2CVery+Good^%^2CExcellent^&symmetry=Good^%^2CVery+Good^%^2CExcellent^&flou=Very+Strong^%^2CStrong^%^2CMedium^%^2CFaint^%^2CNone^&withimagevideo=false^&available_instore=false^&search=^&gemtype=^&ring_builder=1^&pagetype=ringbuilder^"

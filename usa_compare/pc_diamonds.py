@@ -15,7 +15,7 @@ log = get_logger("precious_carbon")
 
 # ── Config ─────────────────────────────────────────────────────────
 URL       = "https://py.preciouscarbon.com/graphql/"
-PAGE_SIZE = 20
+PAGE_SIZE = 2000
 WORKERS   = 20
 SAVE_EVERY = 100
 
@@ -23,8 +23,9 @@ BATCH_SIZE      = 500          # API calls per batch before sleeping
 BATCH_SLEEP_MIN = 120          # 2 min
 BATCH_SLEEP_MAX = 300          # 5 min
 
-base_dir   = os.getcwd()
-down_files = os.path.join(base_dir, "diamond_files")
+from pathlib import Path
+base_dir   = str(Path(__file__).resolve().parent.parent)
+down_files = os.path.join(base_dir, "diamond_files", "usa")
 backup_dir = os.path.join(base_dir, "diamond_files_backup")
 os.makedirs(down_files, exist_ok=True)
 os.makedirs(backup_dir, exist_ok=True)
@@ -34,9 +35,7 @@ PROGRESS_FILE     = os.path.join(down_files, "pc_progress.json")
 BATCH_REPORT_FILE = os.path.join(down_files, "pc_batch_reports.json")
 BACKUP_DIR        = backup_dir
 
-# ── Scheduler config ─────────────────────────────────────────────────────────
-SCHEDULE_HOUR        = 2     # 24h clock — daily check time
-SCHEDULE_MINUTE      = 0
+# ── Backup config ────────────────────────────────────────────────────────────
 STALE_THRESHOLD_DAYS = 1     # CSV older than this -> archive + full re-scrape
 
 HEADERS = {
@@ -161,7 +160,8 @@ def build_query(page: int) -> dict:
             diamondType:"lab",
             sortBy:"asc",
             orderBy:"price",
-            currencyFlag:"USD"
+            currencyFlag:"USD",
+            pageSize:"2000"
           ) {{
             dataCount
             diamondsReturned
@@ -474,18 +474,26 @@ def scrape():
 
     # ── Total-count gate ───────────────────────────────────────────
     # Compare the live total against what pc_progress.json last saw.
-    #   - same count   → already scraped, skip entirely
-    #   - count changed→ inventory has shifted, wipe and re-scrape from scratch
-    #   - no stored count → first run, just save and proceed
+    #   - same count + all pages done   → already scraped, skip entirely
+    #   - same count + pages remaining  → resume partial scrape
+    #   - count changed                 → inventory shifted, wipe and re-scrape
+    #   - no stored count               → first run, just save and proceed
     live_count   = fetch_total_count(session)
     stored_count = progress.get("total_count")
 
     if stored_count is not None and stored_count == live_count and progress.get("done_pages"):
+        expected_pages = math.ceil(live_count / PAGE_SIZE)
+        done_count     = len(progress.get("done_pages", []))
+        if done_count >= expected_pages:
+            log.info(
+                f"✅ Diamond count unchanged ({live_count:,}) and all "
+                f"{expected_pages:,} pages already scraped — nothing new. Exiting."
+            )
+            return
         log.info(
-            f"✅ Diamond count unchanged ({live_count:,}) since last run — "
-            f"nothing new to scrape. Exiting."
+            f"⏯  Diamond count unchanged ({live_count:,}) — resuming partial "
+            f"scrape ({done_count:,}/{expected_pages:,} pages done)."
         )
-        return
 
     if stored_count is not None and stored_count != live_count:
         log.info(
@@ -622,69 +630,18 @@ def scrape():
     log.info("=" * 70)
 
 
-# ── Scheduler ──────────────────────────────────────────────────────
-def _next_run_time(from_dt: datetime) -> datetime:
-    candidate = from_dt.replace(
-        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
-    )
-    if candidate <= from_dt:
-        candidate += timedelta(days=1)
-    return candidate
-
-
-def run_with_scheduler():
-    """
-    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
-      1. Check the CSV's age.
-      2. If older than STALE_THRESHOLD_DAYS (or missing), move it into
-         diamond_files_backup/, clear progress, and run a full re-scrape
-         from page 1 to the last page.
-      3. Otherwise, log "fresh" and sleep until the next check.
-    """
-    log.info("=" * 70)
-    log.info("PreciousCarbon scheduler started")
-    log.info(f"Daily check       : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
-    log.info(f"Stale threshold   : {STALE_THRESHOLD_DAYS} day(s)")
-    log.info(f"Backup destination: {BACKUP_DIR}")
-    log.info("=" * 70)
-
-    while True:
-        next_run  = _next_run_time(datetime.now())
-        wait_secs = max(0, (next_run - datetime.now()).total_seconds())
-        log.info(
-            f"Sleeping {wait_secs / 3600:.2f}h until next check "
-            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
-        )
-        time.sleep(wait_secs)
-
-        age = csv_age_days(OUTPUT_CSV)
-        if age is None:
-            log.info("CSV missing — running fresh scrape.")
-            archived = False
-        else:
-            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
-            archived = archive_to_backup(OUTPUT_CSV)
-
-        if age is None or archived:
-            try:
-                scrape()
-            except Exception as e:
-                log.error(f"Scraper crashed: {e}")
-        else:
-            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
-
-
 if __name__ == "__main__":
-    # Entry points:
-    #   (no args)         -> run_with_scheduler(): daily check + auto-backup + re-scrape
-    #   --once            -> archive existing CSV (any age) and run a fresh full scrape
-    #   --resume          -> scrape() only: resume from progress, no archive/rotation
+    # Entry points (scheduling is handled externally by scheduler.py):
+    #   (no args) / --resume  -> scrape() only: resume from progress, no archive
+    #   --once                -> archive existing CSV (any age) and run a fresh full scrape
     import sys as _sys
 
-    if "--once" in _sys.argv:
-        archive_to_backup(OUTPUT_CSV, threshold_days=0)
-        scrape()
-    elif "--resume" in _sys.argv:
-        scrape()
-    else:
-        run_with_scheduler()
+    try:
+        if "--once" in _sys.argv:
+            archive_to_backup(OUTPUT_CSV, threshold_days=0)
+            scrape()
+        else:
+            scrape()
+    except KeyboardInterrupt:
+        log.warning("Ctrl+C pressed — stopping PreciousCarbon scraper. Progress saved; re-run to resume.")
+        _sys.exit(130)

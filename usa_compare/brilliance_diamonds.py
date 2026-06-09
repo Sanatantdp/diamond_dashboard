@@ -8,6 +8,10 @@ import json
 import math
 import datetime
 import statistics
+import sys
+import ctypes
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from logger import get_logger
 
 log = get_logger("brilliance")
@@ -17,23 +21,21 @@ URL           = "https://worker.brilliance.com/api/v1/lab-grown-diamond-search"
 COUNT_URL     = "https://worker.brilliance.com/api/v1/lab-grown-diamond-search-count"
 PER_PAGE      = 48             # diamonds per API page
 
-base_dir = os.getcwd()
-os.makedirs("diamond_files", exist_ok=True)
-os.makedirs("diamond_files_backup", exist_ok=True)
+from pathlib import Path
+base_dir = str(Path(__file__).resolve().parent.parent)
+os.makedirs(os.path.join(base_dir, "diamond_files", "usa"), exist_ok=True)
+os.makedirs(os.path.join(base_dir, "diamond_files_backup"), exist_ok=True)
 
-CSV_FILE          = f"{base_dir}/diamond_files/brilliance_diamonds.csv"
-CHECKPOINT_FILE   = f"{base_dir}/diamond_files/checkpoint.json"
-BATCH_REPORT_FILE = f"{base_dir}/diamond_files/batch_reports.json"
-BACKUP_DIR        = f"{base_dir}/diamond_files_backup"
+CSV_FILE          = os.path.join(base_dir, "diamond_files", "usa", "brilliance_diamonds.csv")
+CHECKPOINT_FILE   = os.path.join(base_dir, "diamond_files", "usa", "checkpoint.json")
+BATCH_REPORT_FILE = os.path.join(base_dir, "diamond_files", "usa", "batch_reports.json")
+BACKUP_DIR        = os.path.join(base_dir, "diamond_files_backup")
 
-# ── Scheduler config ─────────────────────────────────────────────────────────
-SCHEDULE_HOUR        = 16    # 24h clock — daily check time (11 AM)
-SCHEDULE_MINUTE      = 0
+# ── Backup config ────────────────────────────────────────────────────────────
 STALE_THRESHOLD_DAYS = 2     # CSV older than this -> archive + full re-scrape
 
 # ── VPN rotation config ──────────────────────────────────────────────────────
 VPN_ROTATE_AFTER_FAILS = 5       # consecutive failed pages -> rotate VPN
-MAX_VPN_ROTATIONS      = 10      # max VPN switches per scheduler run
 VPN_CONFIG_SUBDIR      = "brilliance"  # vpnbook/brilliance/*.ovpn
 
 
@@ -53,8 +55,10 @@ SLEEP_EMPTY     = 2.0          # when page returns 0 diamonds
 BATCH_SLEEP_MIN = 100         # sleep between every 1000-call batch
 BATCH_SLEEP_MAX = 200
 RETRY_SLEEP     = 20
+PAGE_HARD_TIMEOUT = 90   # seconds — thread-level kill-switch; fires even when curl hangs
 MAX_RETRIES     = 5
 BATCH_SIZE      = 1000         # calls per batch before report + sleep
+CONCURRENT_PAGES = 3          # pages fetched in parallel → effective time = API_time / N
 
 FIELDS = [
     "nid", "shape", "price", "color", "carat", "clarity", "cut", "report",
@@ -63,8 +67,13 @@ FIELDS = [
     "reportNumber", "info", "alias", "fast"
 ]
 
-# ── SESSION ───────────────────────────────────────────────────────────────────
-session = requests.Session(impersonate="chrome124")
+# ── SESSION (thread-local — each concurrent worker gets its own connection) ───
+_thread_local = threading.local()
+
+def _get_session():
+    if not hasattr(_thread_local, 'session'):
+        _thread_local.session = requests.Session(impersonate="chrome124")
+    return _thread_local.session
 
 HEADERS = {
     "accept": "application/json, text/plain, */*",
@@ -191,7 +200,7 @@ def fetch_total_pages():
 
     for attempt in range(MAX_RETRIES):
         try:
-            r    = session.post(COUNT_URL, headers=HEADERS, json=count_payload, timeout=30)
+            r    = _get_session().post(COUNT_URL, headers=HEADERS, json=count_payload, timeout=30)
             data = r.json()                            # {"count": "576099"}
 
             raw_count   = data["count"]                # "576099"  ← string
@@ -223,19 +232,35 @@ def fetch_total_pages():
 
 
 # ── CHECKPOINT ────────────────────────────────────────────────────────────────
-def save_checkpoint(page, total_inserted):
+def save_checkpoint(page, total_inserted, total_count=None):
     # ✅ FIX: write to a temp file first, then atomically replace — prevents
     #         an empty/corrupt checkpoint.json if the process is killed mid-write
+    payload = {
+        "last_completed_page": page,
+        "total_inserted":      total_inserted,
+    }
+    if total_count is not None:
+        payload["total_count"] = total_count
+    elif os.path.exists(CHECKPOINT_FILE):
+        # Preserve any previously-stored total_count when caller didn't pass one
+        try:
+            with open(CHECKPOINT_FILE) as f:
+                prev = json.loads(f.read() or "{}")
+            if "total_count" in prev:
+                payload["total_count"] = prev["total_count"]
+        except Exception:
+            pass
+
     tmp = CHECKPOINT_FILE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"last_completed_page": page, "total_inserted": total_inserted}, f, indent=2)
+        json.dump(payload, f, indent=2)
     os.replace(tmp, CHECKPOINT_FILE)   # atomic on Windows & Linux
     log.debug(f"Checkpoint saved → page={page}, total={total_inserted}")
 
 
 def load_checkpoint():
     if not os.path.exists(CHECKPOINT_FILE):
-        return 1, 0
+        return 1, 0, None
 
     # ✅ FIX: handle empty or corrupted checkpoint file gracefully
     try:
@@ -243,16 +268,17 @@ def load_checkpoint():
             content = f.read().strip()
         if not content:
             log.warning("Checkpoint file is empty — starting from page 1")
-            return 1, 0
-        data  = json.loads(content)
-        page  = data.get("last_completed_page", 1) + 1
-        total = data.get("total_inserted", 0)
+            return 1, 0, None
+        data         = json.loads(content)
+        page         = data.get("last_completed_page", 1) + 1
+        total        = data.get("total_inserted", 0)
+        stored_count = data.get("total_count")
         log.info(f"Resuming from page {page} (previously inserted: {total})")
-        return page, total
+        return page, total, stored_count
     except json.JSONDecodeError as e:
         log.warning(f"Checkpoint file corrupted ({e}) — deleting and starting from page 1")
         os.remove(CHECKPOINT_FILE)
-        return 1, 0
+        return 1, 0, None
 
 
 def clear_checkpoint():
@@ -295,25 +321,30 @@ def get_writer():
 
 
 # ── FETCH ONE PAGE ────────────────────────────────────────────────────────────
-def fetch_page(page):
-    payload = {**BASE_PAYLOAD, "data": {**BASE_PAYLOAD["data"], "pager": page}}
+def _reset_session():
+    """Recreate this thread's curl_cffi session — clears stale keep-alive connections."""
+    try:
+        if hasattr(_thread_local, 'session'):
+            _thread_local.session.close()
+    except Exception:
+        pass
+    _thread_local.session = requests.Session(impersonate="chrome124")
+    log.info("Session recreated.")
 
+
+def _fetch_page_inner(page, payload, out):
+    """Blocking fetch with retry logic — always runs inside a daemon thread."""
     for attempt in range(MAX_RETRIES):
+        t0 = time.perf_counter()
         try:
-            t0 = time.perf_counter()
-            r  = session.post(URL, headers=HEADERS, json=payload, timeout=30)
+            r = _get_session().post(URL, headers=HEADERS, json=payload, timeout=(10, 30))
             elapsed = time.perf_counter() - t0
 
             if r.status_code == 200:
-                data     = r.json()
-                diamonds = data.get("diamond", [])
-                return {
-                    "ok":      True,
-                    "elapsed": elapsed,
-                    "status":  200,
-                    "count":   len(diamonds),
-                    "data":    diamonds
-                }
+                diamonds = r.json().get("diamond", [])
+                out.update({"ok": True, "elapsed": elapsed, "status": 200,
+                            "count": len(diamonds), "data": diamonds})
+                return
 
             elif r.status_code == 403:
                 log.warning(f"[page {page}] 403 Cloudflare – sleeping {RETRY_SLEEP}s "
@@ -325,10 +356,39 @@ def fetch_page(page):
                 time.sleep(5)
 
         except Exception as e:
-            log.error(f"[page {page}] Exception: {e} – sleeping 10s")
+            elapsed = time.perf_counter() - t0
+            log.error(f"[page {page}] Exception after {elapsed:.1f}s: {e} – sleeping 10s")
+            _reset_session()
             time.sleep(10)
 
-    return {"ok": False, "elapsed": 0, "status": -1, "count": 0, "data": []}
+    out.update({"ok": False, "elapsed": 0, "status": -1, "count": 0, "data": []})
+
+
+def fetch_page(page):
+    """
+    Fetch one page with a hard wall-clock timeout (PAGE_HARD_TIMEOUT seconds).
+
+    The inner request runs in a daemon thread so Python's thread scheduler
+    enforces the deadline even when curl/libcurl itself is frozen due to a
+    silent VPN tunnel drop or Windows network stack confusion.
+    If the thread is still alive after PAGE_HARD_TIMEOUT seconds the session
+    is reset so the next call gets a fresh TCP connection.
+    """
+    payload = {**BASE_PAYLOAD, "data": {**BASE_PAYLOAD["data"], "pager": page}}
+    out = {}
+    t = threading.Thread(target=_fetch_page_inner, args=(page, payload, out), daemon=True)
+    t.start()
+    t.join(timeout=PAGE_HARD_TIMEOUT)
+
+    if t.is_alive():
+        log.warning(
+            f"[page {page}] HARD TIMEOUT ({PAGE_HARD_TIMEOUT}s) — "
+            f"network stall detected (VPN drop?). Resetting session."
+        )
+        _reset_session()
+        return {"ok": False, "elapsed": PAGE_HARD_TIMEOUT, "status": -999, "count": 0, "data": []}
+
+    return out or {"ok": False, "elapsed": 0, "status": -1, "count": 0, "data": []}
 
 
 def write_diamond(writer, d, cert):
@@ -486,18 +546,34 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
     or `run_with_vpn_rotation()` to wrap this in a VPN tunnel with mid-scrape
     IP rotation on persistent blocks.
     """
+    # ── Prevent Windows sleep/hibernate while scraping ───────────
+    # ES_CONTINUOUS (0x80000000) | ES_SYSTEM_REQUIRED (0x00000001)
+    # Tells Windows this thread needs the system awake. Cleared on exit.
+    if sys.platform == "win32":
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
+        log.info("Windows sleep prevention: ON")
+
     log.info("=" * 60)
     log.info("Starting Brilliance scraper")
     if rotate_after_fails:
         log.info(f"VPN rotate-on-fail threshold: {rotate_after_fails} consecutive page(s)")
 
     # ── Step 1: fetch total pages from count API ─────────────────
-    total_pages, total_count = fetch_total_pages()
+    try:
+        total_pages, total_count = fetch_total_pages()
+    except Exception as exc:
+        # A blocked exit IP serves a non-JSON challenge page, so the count API
+        # fails before the page loop's rotate logic can run. In VPN mode, treat
+        # this as a rotate signal so the caller switches exit IP instead of crashing.
+        if rotate_after_fails:
+            log.warning(f"Count API failed ({exc}) — signalling VPN rotation.")
+            raise VPNRotateNeeded(0, rotate_after_fails) from exc
+        raise
 
     # ── Step 2: load existing state ──────────────────────────────
     existing_certs             = load_existing_certs()
     file, writer               = get_writer()
-    start_page, total_inserted = load_checkpoint()
+    start_page, total_inserted, _stored_count = load_checkpoint()
 
     consecutive_fails    = 0
     last_successful_page = start_page - 1
@@ -531,63 +607,71 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
                   f"{batch_end_page - page + 1} calls)\n")
 
             while page <= batch_end_page:
-                result = fetch_page(page)
-                batch_results.append(result)
+                # Fetch CONCURRENT_PAGES pages simultaneously; executor.map
+                # preserves input order so checkpoint logic stays correct.
+                pages_chunk = list(range(page, min(page + CONCURRENT_PAGES, batch_end_page + 1)))
+                with ThreadPoolExecutor(max_workers=len(pages_chunk)) as _exec:
+                    chunk_results = list(_exec.map(fetch_page, pages_chunk))
 
-                # write new diamonds to CSV
-                if result["ok"]:
-                    for d in result["data"]:
-                        cert = normalize_cert(d.get("reportNumber"))
-                        if not cert or cert in existing_certs:
-                            continue
-                        write_diamond(writer, d, cert)
-                        existing_certs.add(cert)
-                        batch_inserted += 1
-                        total_inserted += 1
-                    file.flush()
-                    consecutive_fails    = 0
-                    last_successful_page = page
-                else:
-                    consecutive_fails += 1
-                    if rotate_after_fails and consecutive_fails >= rotate_after_fails:
-                        log.warning(
-                            f"VPN rotate needed — {consecutive_fails} consecutive "
-                            f"failed pages (last good: {last_successful_page}). "
-                            f"Rewinding checkpoint."
-                        )
+                for result, p in zip(chunk_results, pages_chunk):
+                    batch_results.append(result)
+
+                    # write new diamonds to CSV
+                    if result["ok"]:
+                        for d in result["data"]:
+                            cert = normalize_cert(d.get("reportNumber"))
+                            if not cert or cert in existing_certs:
+                                continue
+                            write_diamond(writer, d, cert)
+                            existing_certs.add(cert)
+                            batch_inserted += 1
+                            total_inserted += 1
+                        file.flush()
+                        consecutive_fails    = 0
+                        last_successful_page = p
+                    else:
+                        consecutive_fails += 1
+                        if rotate_after_fails and consecutive_fails >= rotate_after_fails:
+                            log.warning(
+                                f"VPN rotate needed — {consecutive_fails} consecutive "
+                                f"failed pages (last good: {last_successful_page}). "
+                                f"Rewinding checkpoint."
+                            )
+                            save_checkpoint(last_successful_page, total_inserted)
+                            file.close()
+                            raise VPNRotateNeeded(p, consecutive_fails)
+
+                    # In VPN-rotation mode we only checkpoint up to the last successful
+                    # page, so a fresh VPN attempt re-tries the failed pages. In normal
+                    # mode we keep the original behavior: advance checkpoint past every
+                    # page (success or fail) so the scrape doesn't loop on a dead page.
+                    if rotate_after_fails:
                         save_checkpoint(last_successful_page, total_inserted)
-                        file.close()
-                        raise VPNRotateNeeded(page, consecutive_fails)
+                    else:
+                        save_checkpoint(p, total_inserted)
 
-                # In VPN-rotation mode we only checkpoint up to the last successful
-                # page, so a fresh VPN attempt re-tries the failed pages. In normal
-                # mode we keep the original behavior: advance checkpoint past every
-                # page (success or fail) so the scrape doesn't loop on a dead page.
-                if rotate_after_fails:
-                    save_checkpoint(last_successful_page, total_inserted)
-                else:
-                    save_checkpoint(page, total_inserted)
+                    # ── live progress line ────────────────────────────────────
+                    ok_count   = sum(r["ok"]      for r in batch_results)
+                    fail_count = sum(not r["ok"]  for r in batch_results)
+                    avg_time   = (statistics.mean(r["elapsed"] for r in batch_results if r["ok"])
+                                  if ok_count else 0)
+                    status_icon = "YES" if result["ok"] else "NO"
 
-                # ── live progress line ────────────────────────────────────
-                ok_count   = sum(r["ok"]      for r in batch_results)
-                fail_count = sum(not r["ok"]  for r in batch_results)
-                avg_time   = (statistics.mean(r["elapsed"] for r in batch_results if r["ok"])
-                              if ok_count else 0)
-                status_icon = "YES" if result["ok"] else "NO"
+                    print(f"  {status_icon} [{p:>6}/{total_pages}]  "
+                          f"{result['elapsed']:.3f}s  |  "
+                          f"{result['count']:>3} 💎  |  "
+                          f"saved: {batch_inserted:<6}  |  "
+                          f"avg: {avg_time:.3f}s  |  "
+                          f"ok: {ok_count}  fail: {fail_count}")
 
-                print(f"  {status_icon} [{page:>6}/{total_pages}]  "
-                      f"{result['elapsed']:.3f}s  |  "
-                      f"{result['count']:>3} 💎  |  "
-                      f"saved: {batch_inserted:<6}  |  "
-                      f"avg: {avg_time:.3f}s  |  "
-                      f"ok: {ok_count}  fail: {fail_count}")
+                page += len(pages_chunk)
 
-                page += 1
-
-                # per-call sleep
-                if not result["ok"]:
-                    pass  # already slept during retry
-                elif result["count"] == 0:
+                # one sleep per chunk instead of one per page
+                all_failed = all(not r["ok"] for r in chunk_results)
+                any_empty  = any(r["count"] == 0 for r in chunk_results if r["ok"])
+                if all_failed:
+                    pass  # retries already included sleep
+                elif any_empty:
                     time.sleep(SLEEP_EMPTY)
                 else:
                     time.sleep(round(random.uniform(SLEEP_MIN, SLEEP_MAX), 3))
@@ -630,6 +714,10 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
         except Exception:
             pass
         log.info("CSV saved & closed")
+        # Restore normal sleep behaviour
+        if sys.platform == "win32":
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            log.info("Windows sleep prevention: OFF")
 
     # ── grand final summary ──────────────────────────────────────────────────
     grand_wall = time.perf_counter() - grand_start
@@ -649,20 +737,36 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
 # ── VPN-WRAPPED RUN ───────────────────────────────────────────────────────────
 def run_with_vpn_rotation():
     """
-    Run the scraper inside an OpenVPN tunnel; on VPNRotateNeeded (triggered
-    after VPN_ROTATE_AFTER_FAILS consecutive 403s), tear down the current
-    tunnel and bring up the next config from vpnbook/<VPN_CONFIG_SUBDIR>/.
+    Run the scraper inside an OpenVPN tunnel, trying EVERY config in
+    vpnbook/<VPN_CONFIG_SUBDIR>/ until one completes the scrape.
 
-    The scraper resumes from checkpoint, so the failed pages are re-tried
-    through the new exit IP. Requires Administrator / root.
+    Per-config outcome:
+      - success           → scrape done, return.
+      - VPNRotateNeeded    → tunnel works but the exit IP got blocked (403s);
+                             keep the config and rotate to the next one.
+      - VPNError (dead)    → the config failed to connect; DELETE the .ovpn file
+                             and move on.
+
+    Safety: a missing OpenVPN binary or an auth failure is an *environmental*
+    problem (not a dead config), so those abort the run WITHOUT deleting
+    anything — otherwise a stale password would wipe the whole pool.
+
+    The scraper resumes from checkpoint, so failed pages are re-tried through
+    each new exit IP. Requires Administrator / root.
     """
     from pathlib import Path
-    from vpn_rotator import VPNConnection, VPNError, is_admin
+    from vpn_rotator import (
+        VPNConnection,
+        VPNError,
+        find_openvpn_executable,
+        is_admin,
+        parse_credentials_file,
+        write_auth_file,
+    )
 
     log.info("=" * 60)
     log.info("Brilliance scraper with VPN rotation")
     log.info(f"Consecutive-fail threshold: {VPN_ROTATE_AFTER_FAILS}")
-    log.info(f"Max VPN rotations         : {MAX_VPN_ROTATIONS}")
     log.info("=" * 60)
 
     if not is_admin():
@@ -672,10 +776,41 @@ def run_with_vpn_rotation():
         )
         return
 
-    vpn_dir = Path(base_dir) / "vpnbook" / VPN_CONFIG_SUBDIR
+    # Validate the OpenVPN binary once up-front. If it is missing, every connect
+    # would fail and we'd delete the entire pool over an environment problem.
+    try:
+        find_openvpn_executable()
+    except VPNError as exc:
+        log.error(f"OpenVPN unavailable — aborting without touching configs: {exc}")
+        return
+
+    # Anchor to the repo root (one level above usa_compare/) so the VPN path is
+    # D:\...\vpnbook\usa\<subdir>, not cwd/vpnbook which breaks when run from usa_compare.
+    repo_root = Path(__file__).resolve().parent.parent
+    vpn_dir = repo_root / "vpnbook" / "usa" / VPN_CONFIG_SUBDIR
     if not vpn_dir.exists():
         log.error(f"VPN config dir not found: {vpn_dir}")
         return
+
+    # Resolve the shared ProtonVPN credentials relative to this script so the
+    # lookup never depends on the process's cwd. The configs in this pool are
+    # all ProtonVPN, which vpn_rotator's per-config auto-resolution can miss
+    # when cwd != repo root, so pass the auth file in explicitly.
+    proton_auth: Path | None = None
+    proton_creds = repo_root / "vpnbook" / "proton_credentials.txt"
+    if proton_creds.exists():
+        user, pwd = parse_credentials_file(proton_creds)
+        proton_auth = write_auth_file(user, pwd, proton_creds.parent / "proton_auth.txt")
+        log.info(f"Using ProtonVPN credentials from {proton_creds}")
+    else:
+        log.warning(
+            f"ProtonVPN credentials not found at {proton_creds} — "
+            f"falling back to vpn_rotator's per-config lookup."
+        )
+
+    # OpenVPN's runtime log. vpn_rotator defaults this to cwd/vpnbook/, which is
+    # absent when run from anywhere but the repo root — anchor it to the real dir.
+    openvpn_log = repo_root / "vpnbook" / "openvpn.log"
 
     configs = sorted(vpn_dir.glob("*.ovpn"))
     if not configs:
@@ -683,92 +818,67 @@ def run_with_vpn_rotation():
         return
 
     random.shuffle(configs)
-    log.info(f"VPN pool: {len(configs)} config(s) in {vpn_dir}")
+    total   = len(configs)
+    deleted = 0
+    log.info(f"VPN pool: {total} config(s) in {vpn_dir} — trying every config")
 
-    for attempt in range(1, MAX_VPN_ROTATIONS + 1):
-        cfg = configs[(attempt - 1) % len(configs)]
-        log.info(f"--- VPN attempt {attempt}/{MAX_VPN_ROTATIONS}: {cfg.name} ---")
+    for attempt, cfg in enumerate(configs, start=1):
+        log.info(f"--- VPN attempt {attempt}/{total}: {cfg.name} ---")
 
         try:
-            with VPNConnection(cfg) as vpn:
+            with VPNConnection(cfg, auth_file=proton_auth, log_file=openvpn_log) as vpn:
                 log.info(f"Tunnel up. Exit IP = {vpn.ip_after}")
                 brilliance_diamonds_scraper(rotate_after_fails=VPN_ROTATE_AFTER_FAILS)
             log.info("Scrape completed — VPN torn down.")
             return
 
         except VPNRotateNeeded as e:
-            log.warning(f"Rotating VPN: {e}")
-            # VPN tunnel already torn down by context manager; loop tries next config
+            log.warning(f"Rotating VPN (config works, IP burned): {e}")
+            # VPN tunnel already torn down by context manager; keep config, try next
 
         except VPNError as e:
-            log.error(f"VPN error on {cfg.name}: {e} — trying next config")
+            # Auth failure = stale credentials, not a dead config. Deleting would
+            # wipe configs that are actually fine, so abort the whole run instead.
+            if "authentication failed" in str(e).lower():
+                log.error(
+                    f"VPN auth failed on {cfg.name} — credentials likely stale. "
+                    f"Aborting (no configs deleted). Check proton_credentials.txt."
+                )
+                return
+            log.error(f"VPN error on {cfg.name}: {e} — deleting dead config")
+            try:
+                cfg.unlink()
+                deleted += 1
+                log.info(f"Deleted non-working VPN config: {cfg.name}")
+            except OSError as del_exc:
+                log.warning(f"Could not delete {cfg.name}: {del_exc}")
 
         except KeyboardInterrupt:
             log.warning("Interrupted by user — exiting VPN loop.")
             return
 
-    log.error(f"Exhausted {MAX_VPN_ROTATIONS} VPN rotation(s). Last attempt failed.")
-
-
-# ── SCHEDULER ─────────────────────────────────────────────────────────────────
-def _next_run_time(from_dt: datetime.datetime) -> datetime.datetime:
-    candidate = from_dt.replace(
-        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
+    log.error(
+        f"Tried all {total} VPN config(s) — none completed the scrape "
+        f"({deleted} dead config(s) deleted)."
     )
-    if candidate <= from_dt:
-        candidate += datetime.timedelta(days=1)
-    return candidate
-
-
-def run_with_scheduler():
-    """
-    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
-      1. Check the CSV's age.
-      2. If older than STALE_THRESHOLD_DAYS (or missing), move it into
-         diamond_files_backup/, clear checkpoint, and run a full re-scrape
-         from page 1 to the last page.
-      3. Otherwise, log "fresh" and sleep until the next check.
-    """
-    log.info("=" * 60)
-    log.info("Brilliance scheduler started")
-    log.info(f"Daily check       : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
-    log.info(f"Stale threshold   : {STALE_THRESHOLD_DAYS} day(s)")
-    log.info(f"Backup destination: {BACKUP_DIR}")
-    log.info("=" * 60)
-
-    while True:
-        next_run  = _next_run_time(datetime.datetime.now())
-        wait_secs = max(0, (next_run - datetime.datetime.now()).total_seconds())
-        log.info(
-            f"Sleeping {wait_secs / 3600:.2f}h until next check "
-            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
-        )
-        time.sleep(wait_secs)
-
-        age = csv_age_days(CSV_FILE)
-        if age is None:
-            log.info("CSV missing — running fresh scrape.")
-            archived = False
-        else:
-            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
-            archived = archive_to_backup(CSV_FILE)
-
-        if age is None or archived:
-            try:
-                run_with_vpn_rotation()
-            except Exception as e:
-                log.error(f"Scraper crashed: {e}")
-        else:
-            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
 
 
 # ── RUN ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Entry points:
-    #   run_with_scheduler()           → daily check + auto-backup + VPN-wrapped scrape
+    # Entry points (scheduling is handled externally by scheduler.py):
     #   run_with_vpn_rotation()        → one-shot VPN-wrapped scrape with mid-run rotation
     #   brilliance_diamonds_scraper()  → pure scrape, no VPN, no rotation (your real IP)
     #
     # Note: VPN-using entries require Administrator/root (OpenVPN needs TAP/TUN).
-    run_with_scheduler()
+    import sys as _sys
+    try:
+        run_with_vpn_rotation()
+    except KeyboardInterrupt:
+        log.warning("Ctrl+C pressed — stopping scraper and tearing down any VPN tunnel.")
+        try:
+            from vpn_rotator import kill_openvpn_processes
+            kill_openvpn_processes()
+        except Exception as _exc:
+            log.warning(f"VPN cleanup failed: {_exc}")
+        _sys.exit(130)

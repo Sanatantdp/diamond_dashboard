@@ -8,12 +8,13 @@ Load every JSON file in ./compare/ into the Render PostgreSQL database
 Behaviour
 ---------
 - Connects to the database specified by DATABASE_URL (Render Postgres).
-- Creates 5 tables (drops & rebuilds them on every run so schema stays in sync
-  with the JSON).
+- On first run: creates all 5 tables (CREATE TABLE IF NOT EXISTS).
+- On every run: TRUNCATES all tables (clears data, keeps schema + indexes),
+  then bulk-inserts fresh rows from the JSON files.
 - Bulk-inserts rows with execute_values() in chunks of 1000 for speed.
 - Skips compare.csv (it is identical to compare.json).
 
-Tables created
+Tables managed
 --------------
 - compare_common      from compare.json          (~318 rows, 3-vendor matches)
 - compare_all         from compare_all.json      (~107K rows, every PC diamond)
@@ -38,7 +39,7 @@ from psycopg2.extensions import cursor as PgCursor
 from psycopg2.extras import execute_values
 
 # ── Config (DATABASE_URL from .env or Render env) ────────────────────────────
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
     raise SystemExit(
@@ -48,7 +49,7 @@ if not DATABASE_URL:
 if "sslmode=" not in DATABASE_URL:
     DATABASE_URL += ("&" if "?" in DATABASE_URL else "?") + "sslmode=require"
 
-COMPARE_DIR = Path(__file__).parent / "compare"
+COMPARE_DIR = Path(__file__).parent.parent / "compare" / "usa"
 
 BATCH_SIZE = 1000
 
@@ -168,12 +169,34 @@ def build_create_sql(table: str, columns: list[tuple[str, str]]) -> str:
     )
 
 
-def recreate_table(cur: PgCursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
-    cur.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
-    cur.execute(build_create_sql(table, columns))
+def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
+    """Create table + indexes only if they do not exist yet (no-op on subsequent runs)."""
+    cols_sql = ",\n  ".join(f'"{name}" {_to_pg_type(ctype)}' for name, ctype in columns)
+    cur.execute(
+        f'CREATE TABLE IF NOT EXISTS "{table}" (\n'
+        f'  "id" BIGSERIAL PRIMARY KEY,\n'
+        f'  {cols_sql}\n'
+        f")"
+    )
     for col in indexes:
-        cur.execute(f'CREATE INDEX "idx_{table}_{col}" ON "{table}" ("{col}")')
-    print(f'  table "{table}" (re)created')
+        cur.execute(
+            f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" ON "{table}" ("{col}")'
+        )
+
+
+def truncate_all_tables(cur: PgCursor) -> None:
+    """Truncate all 5 diamond tables and reset their serial IDs."""
+    tables = [
+        "compare_common",
+        "compare_all",
+        "compare_partial",
+        "compare_br_vs_lg",
+        "diamond_status",
+    ]
+    print("Truncating tables…")
+    for table in tables:
+        cur.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
+        print(f'  truncated "{table}"')
 
 
 def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[str], list[tuple]]:
@@ -201,33 +224,44 @@ def insert_rows(cur: PgCursor, table: str, db_cols: list[str], rows: list[tuple]
     return len(rows)
 
 
-# ── Per-file loaders ─────────────────────────────────────────────────────────
-def load_compare_table(cur: PgCursor, table: str, json_file: str) -> None:
-    path = COMPARE_DIR / json_file
-    if not path.exists():
-        print(f'  SKIP "{table}" — source file missing: {json_file}')
-        return
-    recreate_table(cur, table, COMPARE_COLUMNS, indexes=["certificate_number", "shape"])
-    db_cols, rows = load_compare_rows(path, COMPARE_KEY_MAP)
-    insert_rows(cur, table, db_cols, rows)
+# ── Upload all JSON files ─────────────────────────────────────────────────────
+def upload_all_json_files(cur: PgCursor) -> None:
+    """Ensure all tables exist, truncate them, then upload every JSON file."""
+    # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
+    ensure_table_exists(cur, "compare_common",  COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_all",     COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_partial", COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, ["diamond_id"])
+    ensure_table_exists(cur, "diamond_status",  STATUS_COLUMNS,   ["generated_at"])
 
+    # Step 2 — truncate all tables
+    truncate_all_tables(cur)
 
-def load_br_vs_lg(cur: PgCursor) -> None:
+    # Step 3 — upload JSON files
+    print("Uploading JSON files…")
+    for table, json_file in [
+        ("compare_common",  "compare.json"),
+        ("compare_all",     "compare_all.json"),
+        ("compare_partial", "compare_partial.json"),
+    ]:
+        path = COMPARE_DIR / json_file
+        if not path.exists():
+            print(f'  SKIP "{table}" — source file missing: {json_file}')
+            continue
+        db_cols, rows = load_compare_rows(path, COMPARE_KEY_MAP)
+        insert_rows(cur, table, db_cols, rows)
+
     path = COMPARE_DIR / "compare_br_vs_lg.json"
-    if not path.exists():
+    if path.exists():
+        db_cols, rows = load_compare_rows(path, BR_VS_LG_KEY_MAP)
+        insert_rows(cur, "compare_br_vs_lg", db_cols, rows)
+    else:
         print('  SKIP "compare_br_vs_lg" — source file missing')
-        return
-    recreate_table(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, indexes=["diamond_id"])
-    db_cols, rows = load_compare_rows(path, BR_VS_LG_KEY_MAP)
-    insert_rows(cur, "compare_br_vs_lg", db_cols, rows)
 
-
-def load_diamond_status(cur: PgCursor) -> None:
     path = COMPARE_DIR / "diamond_status.json"
     if not path.exists():
         print('  SKIP "diamond_status" — source file missing')
         return
-    recreate_table(cur, "diamond_status", STATUS_COLUMNS, indexes=["generated_at"])
 
     with open(path, encoding="utf-8") as f:
         s = json.load(f)
@@ -236,11 +270,10 @@ def load_diamond_status(cur: PgCursor) -> None:
     pc_vs        = s.get("pc_vs_vendors", {}) or {}
     counts       = s.get("dataset_counts", {}) or {}
     file_dates   = s.get("file_dates", {}) or {}
+    lg_stats     = pc_vs.get("loose-grown", {}) or {}
+    br_stats     = pc_vs.get("brilliance", {}) or {}
 
-    lg_stats = pc_vs.get("loose-grown", {}) or {}
-    br_stats = pc_vs.get("brilliance", {}) or {}
-
-    row = (
+    status_row = (
         s.get("generated_at"),
         s.get("pc_total"),
         vendor_totals.get("loose-grown"),
@@ -257,8 +290,7 @@ def load_diamond_status(cur: PgCursor) -> None:
         file_dates.get("loose-grown"),
         file_dates.get("brilliance"),
     )
-    db_cols = [c[0] for c in STATUS_COLUMNS]
-    insert_rows(cur, "diamond_status", db_cols, [row])
+    insert_rows(cur, "diamond_status", [c[0] for c in STATUS_COLUMNS], [status_row])
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -275,11 +307,7 @@ def main() -> None:
     conn = connect()
     try:
         with conn.cursor() as cur:
-            load_compare_table(cur, "compare_common",  "compare.json")
-            load_compare_table(cur, "compare_all",     "compare_all.json")
-            load_compare_table(cur, "compare_partial", "compare_partial.json")
-            load_br_vs_lg(cur)
-            load_diamond_status(cur)
+            upload_all_json_files(cur)
         conn.commit()
     finally:
         conn.close()

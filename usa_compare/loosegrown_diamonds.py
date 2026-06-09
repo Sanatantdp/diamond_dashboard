@@ -8,6 +8,7 @@ import random
 import re
 import time
 from dataclasses import astuple, dataclass, fields
+from pathlib import Path
 from typing import Any, Iterator
 
 import requests
@@ -44,8 +45,8 @@ INTER_PAGE_SLEEP  = 1.5     # polite pause between successful pages
 REQUEST_TIMEOUT   = (12, 120)   # (connect, read) seconds
 
 # File paths
-BASE_DIR    = os.getcwd()
-DOWN_FILES  = os.path.join(BASE_DIR, "diamond_files")
+BASE_DIR    = str(Path(__file__).resolve().parent.parent)
+DOWN_FILES  = os.path.join(BASE_DIR, "diamond_files", "usa")
 CSV_FILE    = os.path.join(DOWN_FILES, "loosegrowndiamond.csv")
 STATE_FILE  = os.path.join(DOWN_FILES, "lgd_state.txt")
 
@@ -53,13 +54,10 @@ os.makedirs(DOWN_FILES, exist_ok=True)
 
 # ── VPN rotation config ───────────────────────────────────────────────────────
 VPN_ROTATE_AFTER_FAILS = 5        # consecutive failed pages -> rotate VPN
-MAX_VPN_ROTATIONS      = 10       # max VPN switches per run
 VPN_CONFIG_SUBDIR      = "loosegrown"   # vpnbook/loosegrown/*.ovpn
 RETRY_SLEEP_BEFORE_ROTATE = 2     # pause between same-offset retries in VPN mode
 
-# ── Scheduler config ─────────────────────────────────────────────────────────
-SCHEDULE_HOUR        = 7    # 24h clock — daily check time (7 AM)
-SCHEDULE_MINUTE      = 0
+# ── Backup config ────────────────────────────────────────────────────────────
 STALE_THRESHOLD_DAYS = 2    # CSV older than this -> archive + full re-scrape
 
 
@@ -258,14 +256,6 @@ def _extract_certificate_no(cert_url: str) -> str:
 
 
 # ── File rotation ─────────────────────────────────────────────────────────────
-
-def _csv_age_days(filepath: str) -> float | None:
-    """Return CSV age in days, or None if missing."""
-    if not os.path.exists(filepath):
-        return None
-    mtime = os.path.getmtime(filepath)
-    return (datetime.datetime.now() - datetime.datetime.fromtimestamp(mtime)).total_seconds() / 86_400
-
 
 def _rotate_old_file(filepath: str, max_age_seconds: float = STALE_THRESHOLD_DAYS * 86_400) -> bool:
     """
@@ -554,7 +544,7 @@ def loose_grown_diamonds_scrappe(rotate_after_fails: int | None = None) -> dict[
         next_start   = start + 1
         _save_offset(next_start)
 
-        pct = (next_start / total_avail * 100) if total_avail else 0
+        pct = (total_saved / total_avail * 100) if total_avail else 0
         log.info(
             f"Offset {start:>6} → {next_start:<6} | "
             f"New: {new_rows:>4} | "
@@ -562,7 +552,7 @@ def loose_grown_diamonds_scrappe(rotate_after_fails: int | None = None) -> dict[
             f"Progress: {pct:.1f}% of {total_avail:,}"
         )
 
-        if next_start > total_avail:
+        if start * PAGE_SIZE >= total_avail:
             log.info("All inventory pages consumed — done.")
             break
 
@@ -577,20 +567,36 @@ def loose_grown_diamonds_scrappe(rotate_after_fails: int | None = None) -> dict[
 # ── VPN-WRAPPED RUN ───────────────────────────────────────────────────────────
 def run_with_vpn_rotation() -> None:
     """
-    Run the scraper inside an OpenVPN tunnel; on VPNRotateNeeded (triggered
-    after VPN_ROTATE_AFTER_FAILS consecutive failed fetches), tear down the
-    current tunnel and bring up the next config from vpnbook/<VPN_CONFIG_SUBDIR>/.
+    Run the scraper inside an OpenVPN tunnel, trying EVERY config in
+    vpnbook/<VPN_CONFIG_SUBDIR>/ until one completes the scrape.
 
-    The scraper resumes from the state file, so the failed offset is re-tried
-    through the new exit IP. Requires Administrator / root.
+    Per-config outcome:
+      - success           → scrape done, return.
+      - VPNRotateNeeded    → tunnel works but the exit IP got blocked mid-scrape;
+                             keep the config and rotate to the next one.
+      - VPNError (dead)    → the config failed to connect; DELETE the .ovpn file
+                             and move on.
+
+    Safety: a missing OpenVPN binary or an auth failure is an *environmental*
+    problem (not a dead config), so those abort the run WITHOUT deleting
+    anything — otherwise a stale password would wipe the whole pool.
+
+    The scraper resumes from the state file, so a failed offset is re-tried
+    through each new exit IP. Requires Administrator / root.
     """
     from pathlib import Path
-    from vpn_rotator import VPNConnection, VPNError, is_admin
+    from vpn_rotator import (
+        VPNConnection,
+        VPNError,
+        find_openvpn_executable,
+        is_admin,
+        parse_credentials_file,
+        write_auth_file,
+    )
 
     log.info("=" * 60)
     log.info("Loose Grown scraper with VPN rotation")
     log.info(f"Consecutive-fail threshold: {VPN_ROTATE_AFTER_FAILS}")
-    log.info(f"Max VPN rotations         : {MAX_VPN_ROTATIONS}")
     log.info("=" * 60)
 
     if not is_admin():
@@ -600,10 +606,39 @@ def run_with_vpn_rotation() -> None:
         )
         return
 
-    vpn_dir = Path(BASE_DIR) / "vpnbook" / VPN_CONFIG_SUBDIR
+    # Validate the OpenVPN binary once up-front. If it is missing, every connect
+    # would fail and we'd delete the entire pool over an environment problem.
+    try:
+        find_openvpn_executable()
+    except VPNError as exc:
+        log.error(f"OpenVPN unavailable — aborting without touching configs: {exc}")
+        return
+
+    repo_root = Path(__file__).resolve().parent.parent
+    vpn_dir = repo_root / "vpnbook" / "usa" / VPN_CONFIG_SUBDIR
     if not vpn_dir.exists():
         log.error(f"VPN config dir not found: {vpn_dir}")
         return
+
+    # Resolve the shared ProtonVPN credentials relative to this script so the
+    # lookup never depends on the process's cwd. The configs in this pool are
+    # all ProtonVPN, which vpn_rotator's per-config auto-resolution can miss
+    # when cwd != repo root, so pass the auth file in explicitly.
+    proton_auth: Path | None = None
+    proton_creds = repo_root / "vpnbook" / "proton_credentials.txt"
+    if proton_creds.exists():
+        user, pwd = parse_credentials_file(proton_creds)
+        proton_auth = write_auth_file(user, pwd, proton_creds.parent / "proton_auth.txt")
+        log.info(f"Using ProtonVPN credentials from {proton_creds}")
+    else:
+        log.warning(
+            f"ProtonVPN credentials not found at {proton_creds} — "
+            f"falling back to vpn_rotator's per-config lookup."
+        )
+
+    # OpenVPN's runtime log. vpn_rotator defaults this to cwd/vpnbook/, which is
+    # absent when run from anywhere but the repo root — anchor it to the real dir.
+    openvpn_log = repo_root / "vpnbook" / "openvpn.log"
 
     configs = sorted(vpn_dir.glob("*.ovpn"))
     if not configs:
@@ -611,89 +646,66 @@ def run_with_vpn_rotation() -> None:
         return
 
     random.shuffle(configs)
-    log.info(f"VPN pool: {len(configs)} config(s) in {vpn_dir}")
+    total   = len(configs)
+    deleted = 0
+    log.info(f"VPN pool: {total} config(s) in {vpn_dir} — trying every config")
 
-    for attempt in range(1, MAX_VPN_ROTATIONS + 1):
-        cfg = configs[(attempt - 1) % len(configs)]
-        log.info(f"--- VPN attempt {attempt}/{MAX_VPN_ROTATIONS}: {cfg.name} ---")
+    for attempt, cfg in enumerate(configs, start=1):
+        log.info(f"--- VPN attempt {attempt}/{total}: {cfg.name} ---")
 
         try:
-            with VPNConnection(cfg) as vpn:
+            with VPNConnection(cfg, auth_file=proton_auth, log_file=openvpn_log) as vpn:
                 log.info(f"Tunnel up. Exit IP = {vpn.ip_after}")
                 loose_grown_diamonds_scrappe(rotate_after_fails=VPN_ROTATE_AFTER_FAILS)
             log.info("Scrape completed — VPN torn down.")
             return
 
         except VPNRotateNeeded as exc:
-            log.warning(f"Rotating VPN: {exc}")
-            # tunnel already torn down by context manager; loop tries next config
+            log.warning(f"Rotating VPN (config works, IP burned): {exc}")
+            # tunnel already torn down by context manager; keep config, try next
 
         except VPNError as exc:
-            log.error(f"VPN error on {cfg.name}: {exc} — trying next config")
+            # Auth failure = stale credentials, not a dead config. Abort without touching files.
+            if "authentication failed" in str(exc).lower():
+                log.error(
+                    f"VPN auth failed on {cfg.name} — credentials likely stale. "
+                    f"Aborting (no configs deleted). Check proton_credentials.txt."
+                )
+                return
+            log.warning(f"VPN error on {cfg.name}: {exc} — skipping to next config (file kept)")
+            # VPN file deletion disabled — only 403 block triggers a rotate,
+            # failed connections just skip to the next config without removing the file.
+            # try:
+            #     cfg.unlink()
+            #     deleted += 1
+            #     log.info(f"Deleted non-working VPN config: {cfg.name}")
+            # except OSError as del_exc:
+            #     log.warning(f"Could not delete {cfg.name}: {del_exc}")
 
         except KeyboardInterrupt:
             log.warning("Interrupted by user — exiting VPN loop.")
             return
 
-    log.error(f"Exhausted {MAX_VPN_ROTATIONS} VPN rotation(s). Last attempt failed.")
-
-
-# ── SCHEDULER ────────────────────────────────────────────────────────────────
-def _next_run_time(from_dt: datetime.datetime) -> datetime.datetime:
-    candidate = from_dt.replace(
-        hour=SCHEDULE_HOUR, minute=SCHEDULE_MINUTE, second=0, microsecond=0
+    log.error(
+        f"Tried all {total} VPN config(s) — none completed the scrape "
+        f"(no files deleted — VPN file removal is disabled)."
     )
-    if candidate <= from_dt:
-        candidate += datetime.timedelta(days=1)
-    return candidate
-
-
-def run_with_scheduler() -> None:
-    """
-    Continuous loop. Every day at SCHEDULE_HOUR:SCHEDULE_MINUTE:
-      1. Check the CSV's age.
-      2. If older than STALE_THRESHOLD_DAYS (or missing), run the
-         VPN-rotated scrape (the scraper itself archives the stale CSV
-         and starts fresh from offset 1).
-      3. Otherwise, log "fresh" and sleep until the next check.
-    """
-    log.info("=" * 60)
-    log.info("Loose Grown scheduler started")
-    log.info(f"Daily check     : {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
-    log.info(f"Stale threshold : {STALE_THRESHOLD_DAYS} day(s)")
-    log.info("=" * 60)
-
-    while True:
-        next_run  = _next_run_time(datetime.datetime.now())
-        wait_secs = max(0, (next_run - datetime.datetime.now()).total_seconds())
-        log.info(
-            f"Sleeping {wait_secs / 3600:.2f}h until next check "
-            f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
-        )
-        time.sleep(wait_secs)
-
-        age = _csv_age_days(CSV_FILE)
-        if age is None:
-            log.info("CSV missing — running fresh VPN-rotated scrape.")
-            should_run = True
-        else:
-            log.info(f"CSV age: {age:.2f} day(s) (threshold: {STALE_THRESHOLD_DAYS}d)")
-            should_run = age >= STALE_THRESHOLD_DAYS
-
-        if should_run:
-            try:
-                run_with_vpn_rotation()
-            except Exception as exc:
-                log.error(f"Scraper crashed: {exc}")
-        else:
-            log.info("Fresh CSV — skipping scrape, waiting for next scheduled check.")
 
 
 if __name__ == "__main__":
-    # Entry points:
-    #   run_with_scheduler()              → daily 7 PM VPN-wrapped scrape (default)
+    # Entry points (scheduling is handled externally by scheduler.py):
     #   run_with_vpn_rotation()           → one-shot VPN-wrapped scrape with mid-run rotation
     #   loose_grown_diamonds_scrappe()    → pure scrape, no VPN (your real IP)
     #
     # Note: VPN-using entries require Administrator/root (OpenVPN needs TAP/TUN).
-    run_with_scheduler()
+    import sys as _sys
+    try:
+        run_with_vpn_rotation()
+    except KeyboardInterrupt:
+        log.warning("Ctrl+C pressed — stopping scraper and tearing down any VPN tunnel.")
+        try:
+            from vpn_rotator import kill_openvpn_processes
+            kill_openvpn_processes()
+        except Exception as _exc:
+            log.warning(f"VPN cleanup failed: {_exc}")
+        _sys.exit(130)

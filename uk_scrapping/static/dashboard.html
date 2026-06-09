@@ -1,0 +1,3024 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diamond Price Dashboard UK</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: #12121a;
+        --card: #1a1a26;
+        --border: #2a2a3e;
+        --accent: #c9a84c;
+        --accent2: #7c6fcd;
+        --green: #3ecf8e;
+        --red: #f87171;
+        --text: #e8e8f0;
+        --muted: #6b6b8a;
+        --font-mono: "DM Mono", monospace;
+        --font-display: "Playfair Display", serif;
+        --overlap-color: #f472b6;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-mono);
+        min-height: 100vh;
+      }
+
+      /* ── loading overlay ── */
+      #loadingOverlay {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        gap: 20px;
+        transition: opacity 0.4s;
+      }
+      #loadingOverlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .spinner {
+        width: 48px;
+        height: 48px;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .loading-text {
+        font-family: var(--font-display);
+        font-size: 1.2rem;
+        color: var(--accent);
+      }
+      .loading-sub {
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      /* ── toast ── */
+      #toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        z-index: 9998;
+        max-width: 380px;
+        transform: translateY(80px);
+        opacity: 0;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      #toast.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      #toast.success {
+        background: color-mix(in srgb, var(--green) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--green) 40%, transparent);
+        color: var(--green);
+      }
+      #toast.error {
+        background: color-mix(in srgb, var(--red) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+        color: var(--red);
+      }
+      #toast.info {
+        background: color-mix(in srgb, var(--accent) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+        color: var(--accent);
+      }
+
+      /* ── modal ── */
+      .diamond-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        animation: modalFadeIn 0.25s ease both;
+      }
+      .diamond-modal.open {
+        display: flex;
+      }
+      @keyframes modalFadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .modal-box {
+        background: var(--card);
+        border-radius: 16px;
+        width: 100%;
+        max-width: 1100px;
+        max-height: 88vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7);
+        animation: modalSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+        overflow: hidden;
+      }
+      @keyframes modalSlideIn {
+        from {
+          transform: translateY(30px) scale(0.97);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0) scale(1);
+          opacity: 1;
+        }
+      }
+      .modal-header {
+        padding: 22px 28px 18px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .modal-header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .modal-title {
+        font-family: var(--font-display);
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .modal-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .modal-close {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 1.1rem;
+        transition: all 0.18s;
+        flex-shrink: 0;
+      }
+      .modal-close:hover {
+        border-color: var(--red);
+        color: var(--red);
+        background: color-mix(in srgb, var(--red) 10%, var(--surface));
+      }
+      .modal-controls {
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        background: var(--surface);
+      }
+      .modal-search-inp {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 6px 12px;
+        border-radius: 6px;
+        outline: none;
+        width: 200px;
+        transition: border-color 0.2s;
+      }
+      .modal-search-inp::placeholder {
+        color: var(--muted);
+      }
+      .modal-body {
+        flex: 1;
+        overflow: auto;
+      }
+      .modal-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.73rem;
+      }
+      .modal-table thead th {
+        background: var(--surface);
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s;
+      }
+      .modal-table thead th:hover {
+        color: var(--accent);
+      }
+      .modal-table thead th.sort-asc::after {
+        content: " ↑";
+        color: var(--accent);
+      }
+      .modal-table thead th.sort-desc::after {
+        content: " ↓";
+        color: var(--accent);
+      }
+      .modal-table tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: background 0.1s;
+      }
+      .modal-table tbody tr:last-child {
+        border-bottom: none;
+      }
+      .modal-table tbody tr:hover {
+        background: var(--surface);
+      }
+      .modal-table tbody td {
+        padding: 8px 14px;
+        white-space: nowrap;
+      }
+      .modal-footer {
+        padding: 12px 28px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        flex-shrink: 0;
+        background: var(--surface);
+      }
+      .modal-footer-info {
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .modal-pagination {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .mpg-btn {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        font-family: var(--font-mono);
+        transition: all 0.15s;
+      }
+      .mpg-btn.active {
+        background: var(--accent);
+        color: #0a0a0f;
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+      .mpg-btn:hover:not(.active) {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      /* ── topbar ── */
+      .topbar {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 14px 40px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .topbar-section {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .topbar label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .sep {
+        color: var(--border);
+      }
+      .inp {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        padding: 7px 12px;
+        border-radius: 6px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .inp:focus {
+        border-color: var(--accent);
+      }
+      .inp::placeholder {
+        color: var(--muted);
+      }
+      #fileSelect {
+        min-width: 220px;
+        cursor: pointer;
+      }
+      #fileSelect option {
+        background: var(--card);
+      }
+      .upload-zone {
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 0.75rem;
+        color: var(--muted);
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .upload-zone:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #csvFileInput {
+        display: none;
+      }
+      .btn {
+        border: none;
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .btn-gold {
+        background: var(--accent);
+        color: var(--bg);
+      }
+      .btn-gold:hover {
+        opacity: 0.85;
+      }
+      .btn-ghost {
+        background: var(--card);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .btn-sm {
+        padding: 5px 12px;
+        font-size: 0.7rem;
+      }
+      .btn-logout {
+        background: color-mix(in srgb, var(--red) 12%, var(--card));
+        color: var(--red);
+        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+        margin-left: auto;
+      }
+      .btn-logout:hover {
+        background: color-mix(in srgb, var(--red) 22%, var(--card));
+        border-color: var(--red);
+      }
+      .loaded-indicator {
+        font-size: 0.7rem;
+        color: var(--green);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .loaded-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(0.8);
+        }
+      }
+
+      /* ── header ── */
+      .header {
+        padding: 28px 40px 22px;
+        background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .header h1 {
+        font-family: var(--font-display);
+        font-size: 2rem;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .header p {
+        color: var(--muted);
+        font-size: 0.74rem;
+        margin-top: 4px;
+      }
+      .stats-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .stat-pill {
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 8px 16px;
+        border-radius: 8px;
+        text-align: center;
+        min-width: 110px;
+      }
+      .stat-pill .val {
+        color: var(--accent);
+        font-size: 1.15rem;
+        font-weight: 500;
+        display: block;
+      }
+      .stat-pill .lbl {
+        color: var(--muted);
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      /* ── CONTROLS — updated with sort ── */
+      .controls {
+        padding: 16px 40px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 16px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .control-group label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .control-group select.inp {
+        cursor: pointer;
+        min-width: 130px;
+      }
+      .sort-dir-btn {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 6px;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .sort-dir-btn:hover,
+      .sort-dir-btn.active {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 10%, var(--card));
+      }
+      .controls-divider {
+        width: 1px;
+        height: 40px;
+        background: var(--border);
+        align-self: flex-end;
+        margin: 0 4px;
+      }
+
+      /* ── main ── */
+      .main {
+        padding: 28px 40px;
+      }
+      .section-title {
+        font-family: var(--font-display);
+        font-size: 1.05rem;
+        color: var(--accent);
+        margin-bottom: 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .section-title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .vendor-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .vendor-tab {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 16px;
+        border-radius: 8px;
+        font-family: var(--font-mono);
+        font-size: 0.73rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        transition: all 0.18s;
+        white-space: nowrap;
+      }
+      .vendor-tab-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--vcolor, var(--muted));
+        transition: all 0.18s;
+      }
+      .vendor-tab:hover {
+        border-color: var(--vcolor, var(--accent));
+        color: var(--vcolor, var(--accent));
+      }
+      .vendor-tab.active {
+        background: color-mix(
+          in srgb,
+          var(--vcolor, var(--accent)) 16%,
+          var(--card)
+        );
+        border-color: var(--vcolor, var(--accent));
+        color: var(--vcolor, var(--accent));
+        box-shadow: 0 0 0 1px
+          color-mix(in srgb, var(--vcolor, var(--accent)) 30%, transparent);
+      }
+      .vendor-tab .v-count {
+        font-size: 0.6rem;
+        color: var(--muted);
+        background: var(--surface);
+        padding: 1px 6px;
+        border-radius: 3px;
+      }
+      .vendor-tab.active .v-count {
+        color: var(--vcolor, var(--accent));
+      }
+      .buckets-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .bucket-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 18px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .bucket-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--bucket-color, var(--accent));
+      }
+      .bucket-card:hover {
+        border-color: var(--bucket-color, var(--accent));
+        transform: translateY(-2px);
+      }
+      .bucket-card.active {
+        border-color: var(--bucket-color, var(--accent));
+        background: color-mix(
+          in srgb,
+          var(--bucket-color, var(--accent)) 10%,
+          var(--card)
+        );
+      }
+      .bucket-range {
+        font-size: 0.66rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 5px;
+      }
+      .bucket-count {
+        font-size: 1.8rem;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1;
+      }
+      .bucket-pct {
+        font-size: 0.68rem;
+        margin-top: 4px;
+      }
+      .bucket-bar {
+        height: 3px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 10px;
+      }
+      .bucket-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--bucket-color, var(--accent));
+        transition: width 0.5s ease;
+      }
+      .bucket-filter-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: color-mix(in srgb, var(--accent) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+        color: var(--accent);
+        font-size: 0.68rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .bucket-filter-tag:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+      }
+      .bucket-filter-tag .x {
+        font-size: 0.8rem;
+        opacity: 0.7;
+      }
+      .price-buckets-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .price-bucket-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 18px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .price-bucket-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--pb-color, #a78bfa);
+      }
+      .price-bucket-card:hover {
+        border-color: var(--pb-color, #a78bfa);
+        transform: translateY(-2px);
+      }
+      .price-bucket-card.active {
+        border-color: var(--pb-color, #a78bfa);
+        background: color-mix(
+          in srgb,
+          var(--pb-color, #a78bfa) 10%,
+          var(--card)
+        );
+      }
+      .price-bucket-card.empty {
+        opacity: 0.42;
+        cursor: default;
+      }
+      .price-bucket-card.empty:hover {
+        transform: none;
+        border-color: var(--border);
+      }
+      .pb-range {
+        font-size: 0.64rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 5px;
+      }
+      .pb-count {
+        font-size: 1.8rem;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1;
+      }
+      .pb-pct-of-total {
+        font-size: 0.68rem;
+        margin-top: 4px;
+      }
+      .pb-avg-row {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid var(--border);
+      }
+      .pb-avg-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.62rem;
+      }
+      .pb-avg-label {
+        color: var(--muted);
+      }
+      .pb-avg-val {
+        font-weight: 500;
+      }
+      .pb-bar {
+        height: 3px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 8px;
+      }
+      .pb-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--pb-color, #a78bfa);
+        transition: width 0.5s ease;
+      }
+      .vendor-common-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+      .vendor-common-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px 22px;
+        cursor: pointer;
+        transition: all 0.22s;
+        position: relative;
+        overflow: hidden;
+      }
+      .vendor-common-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--vc-color, var(--accent));
+      }
+      .vendor-common-card:hover {
+        border-color: var(--vc-color, var(--accent));
+        transform: translateY(-3px);
+        box-shadow: 0 10px 36px
+          color-mix(in srgb, var(--vc-color, var(--accent)) 18%, transparent);
+      }
+      .vc-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .vc-name {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 600;
+        color: var(--vc-color, var(--accent));
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .vc-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--vc-color, var(--accent));
+      }
+      .vc-badge {
+        font-size: 0.6rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: color-mix(
+          in srgb,
+          var(--vc-color, var(--accent)) 14%,
+          var(--surface)
+        );
+        color: var(--vc-color, var(--accent));
+        border: 1px solid
+          color-mix(in srgb, var(--vc-color, var(--accent)) 30%, transparent);
+      }
+      .vc-count {
+        font-size: 2.2rem;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1.1;
+      }
+      .vc-label {
+        font-size: 0.68rem;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .vc-divider {
+        height: 1px;
+        background: var(--border);
+        margin: 12px 0;
+      }
+      .vc-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .vc-stat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.68rem;
+      }
+      .vc-stat-label {
+        color: var(--muted);
+      }
+      .vc-stat-val {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .vc-open-hint {
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+        font-size: 0.64rem;
+        color: var(--vc-color, var(--accent));
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vc-arrow {
+        font-size: 0.9rem;
+        transition: transform 0.2s;
+      }
+      .vendor-common-card:hover .vc-arrow {
+        transform: translateX(4px);
+      }
+      .vc-loading {
+        color: var(--muted);
+        font-size: 0.72rem;
+        text-align: center;
+        padding: 14px 0;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 20px;
+      }
+      .tab {
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-size: 0.74rem;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: transparent;
+        font-family: var(--font-mono);
+        transition: all 0.2s;
+      }
+      .tab.active {
+        background: var(--accent);
+        color: var(--bg);
+        border-color: var(--accent);
+        font-weight: 500;
+      }
+      .tab:hover:not(.active) {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .table-wrap {
+        overflow-x: auto;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+      }
+      thead th {
+        background: var(--surface);
+        padding: 11px 14px;
+        text-align: left;
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s;
+      }
+      thead th:hover {
+        color: var(--accent);
+      }
+      thead th.sort-asc::after {
+        content: " ↑";
+        color: var(--accent);
+      }
+      thead th.sort-desc::after {
+        content: " ↓";
+        color: var(--accent);
+      }
+      tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: background 0.12s;
+      }
+      tbody tr:last-child {
+        border-bottom: none;
+      }
+      tbody tr:hover {
+        background: var(--surface);
+      }
+      tbody td {
+        padding: 9px 14px;
+        white-space: nowrap;
+      }
+      .cert {
+        color: var(--muted);
+        font-size: 0.7rem;
+      }
+      .attr {
+        color: var(--text);
+        font-size: 0.72rem;
+        text-transform: capitalize;
+      }
+      .price {
+        color: var(--text);
+      }
+      .pct-pos {
+        color: var(--green);
+      }
+      .pct-neg {
+        color: var(--red);
+      }
+      .pct-zero {
+        color: var(--muted);
+      }
+      .rouk-cheaper {
+        color: #60a5fa;
+        font-weight: 600;
+      }
+      .pagination {
+        display: flex;
+        gap: 5px;
+        justify-content: center;
+        margin-top: 18px;
+        flex-wrap: wrap;
+      }
+      .page-btn {
+        padding: 5px 11px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--card);
+        font-family: var(--font-mono);
+        transition: all 0.15s;
+      }
+      .page-btn.active {
+        background: var(--accent);
+        color: var(--bg);
+        border-color: var(--accent);
+      }
+      .page-btn:hover:not(.active) {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .empty-state {
+        text-align: center;
+        padding: 60px;
+        color: var(--muted);
+      }
+      .empty-state .icon {
+        font-size: 2.2rem;
+        margin-bottom: 14px;
+      }
+      .empty-state h3 {
+        font-family: var(--font-display);
+        font-size: 1.2rem;
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+      .stats-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+        margin-bottom: 32px;
+      }
+      .stats-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        position: relative;
+        overflow: hidden;
+      }
+      .stats-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--card-color, var(--accent));
+      }
+      .stats-card-title {
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 10px;
+      }
+      .stats-card-value {
+        font-size: 1.7rem;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1;
+      }
+      .stats-card-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+      .stats-row-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .stats-row-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.72rem;
+      }
+      .stats-row-item .label {
+        color: var(--muted);
+      }
+      .stats-row-item .val {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .stats-bar-wrap {
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 3px;
+      }
+      .stats-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.6s ease;
+      }
+      .badge-pct {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 3px;
+        font-size: 0.62rem;
+        font-weight: 600;
+      }
+      .modal-pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .modal-pill {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.65rem;
+        font-weight: 500;
+        border: 1px solid;
+        white-space: nowrap;
+      }
+      .modal-filter-label {
+        font-size: 0.62rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      /* ── active sort indicator ── */
+      .sort-active-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: color-mix(in srgb, var(--accent2) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent2) 35%, transparent);
+        color: var(--accent2);
+        font-size: 0.65rem;
+        padding: 3px 10px;
+        border-radius: 12px;
+        margin-left: 8px;
+      }
+
+      @media (max-width: 768px) {
+        .header,
+        .controls,
+        .main,
+        .topbar {
+          padding: 14px 16px;
+        }
+        .controls {
+          flex-direction: column;
+        }
+        .modal-box {
+          max-height: 95vh;
+        }
+        .modal-header,
+        .modal-controls,
+        .modal-footer {
+          padding: 14px 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loadingOverlay" style="display: none">
+      <div class="spinner"></div>
+      <div class="loading-text">💎 Diamond Dashboard</div>
+      <div class="loading-sub" id="loadingMsg">Starting up…</div>
+    </div>
+    <div id="toast"></div>
+
+    <!-- VENDOR COMMON MODAL -->
+    <div
+      id="vendorCommonModal"
+      class="diamond-modal"
+      onclick="if (event.target === this) closeVendorModal();"
+    >
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">
+              <span id="vcModalIcon">💎</span
+              ><span id="vcModalName">Vendor</span> — Common with ROUK
+            </div>
+            <div class="modal-sub" id="vcModalSub">
+              Rows where both this vendor price and ROUK price are present
+            </div>
+          </div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              flex-wrap: wrap;
+            "
+          >
+            <div id="vcModalPills" class="modal-pills"></div>
+            <button
+              class="modal-close"
+              onclick="closeVendorModal()"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div class="modal-controls">
+          <span class="modal-filter-label">Search</span>
+          <input
+            class="modal-search-inp"
+            id="vcSearchInp"
+            placeholder="Search certificate…"
+            oninput="onVcSearch()"
+          />
+          <span style="flex: 1"></span>
+          <button class="btn btn-ghost btn-sm" onclick="downloadVcCsv()">
+            ⬇ Download CSV
+          </button>
+        </div>
+        <div class="modal-body">
+          <table class="modal-table" id="vcTable">
+            <thead id="vcThead"></thead>
+            <tbody id="vcTbody"></tbody>
+          </table>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-footer-info" id="vcFooterInfo"></div>
+          <div class="modal-pagination" id="vcPagination"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="topbar-section">
+        <label>Dataset</label>
+        <select id="fileSelect" class="inp" onchange="loadSelectedFile()">
+          <option value="">— select a file —</option>
+        </select>
+        <button class="btn btn-gold btn-sm" onclick="refreshFileList()">
+          ↻ Refresh
+        </button>
+      </div>
+      <span class="sep">|</span>
+      <div class="topbar-section">
+        <label>Upload File</label>
+        <div
+          class="upload-zone"
+          onclick="document.getElementById('csvFileInput').click()"
+        >
+          ⬆ Choose CSV or JSON
+        </div>
+        <input
+          type="file"
+          id="csvFileInput"
+          accept=".csv,.json"
+          onchange="uploadAndConvert(event)"
+        />
+        <span style="font-size: 0.65rem; color: var(--muted)"
+          >(.csv or .json)</span
+        >
+      </div>
+      <span class="sep">|</span>
+      <div class="topbar-section">
+        <label>Convert existing CSV</label>
+        <input
+          type="text"
+          id="csvNameInput"
+          class="inp"
+          placeholder="filename.csv"
+          style="width: 200px"
+        />
+        <button class="btn btn-gold btn-sm" onclick="convertByName()">
+          Convert
+        </button>
+      </div>
+      <span class="sep">|</span>
+      <div class="topbar-section">
+        <label>Pipeline</label>
+        <button
+          class="btn btn-gold btn-sm"
+          onclick="runComparePipeline()"
+          id="runCompareBtn"
+        >
+          ⚙ Run Compare
+        </button>
+        <span
+          id="runCompareStatus"
+          style="font-size: 0.68rem; color: var(--muted)"
+        ></span>
+      </div>
+      <div
+        class="loaded-indicator"
+        id="loadedIndicator"
+        style="display: none; margin-left: auto"
+      >
+        <div class="loaded-dot"></div>
+        <span id="loadedLabel">—</span>
+      </div>
+      <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div>
+        <h1>💎 Diamond Price Dashboard UK</h1>
+        <p>
+          · abelini · diamond-heavon · ROUK — parallel % buckets per vendor ·
+          click to filter
+        </p>
+      </div>
+      <div class="stats-row">
+        <div class="stat-pill">
+          <span class="val" id="totalCount">—</span
+          ><span class="lbl">Total Records</span>
+        </div>
+        <div class="stat-pill">
+          <span class="val" id="matchedCount">—</span
+          ><span class="lbl">After Filters</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTROLS — Price filter + Sort by Price / Carat / Shape -->
+    <div class="controls">
+      <!-- ROUK Price range -->
+      <div class="control-group">
+        <label>ROUK Price Range</label>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <select
+            id="priceMinSelect"
+            class="inp"
+            style="width: 140px"
+            onchange="onPriceSelectChange()"
+          >
+            <option value="">Min Price</option>
+          </select>
+          <span style="color: var(--muted)">—</span>
+          <select
+            id="priceMaxSelect"
+            class="inp"
+            style="width: 140px"
+            onchange="onPriceSelectChange()"
+          >
+            <option value="">Max Price</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="clearPriceFilter()">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="controls-divider"></div>
+
+      <!-- Sort By -->
+      <div class="control-group">
+        <label>Sort By</label>
+        <div style="display: flex; gap: 6px; align-items: center">
+          <select id="sortBySelect" class="inp" onchange="onSortChange()">
+            <option value="">— None —</option>
+            <optgroup label="Price">
+              <option value="ROUK Price Pound">ROUK Price</option>
+              <option value="abelini Price Pound">Abelini Price</option>
+              <option value="diamond-heavon Price Pound">
+                Diamond-Heavon Price
+              </option>
+            </optgroup>
+            <optgroup label="Stone">
+              <option value="caratWeight">Carat Weight</option>
+              <option value="shape">Shape (A→Z)</option>
+              <option value="color">Color (D→J)</option>
+              <option value="clarity">Clarity</option>
+              <option value="cut">Cut</option>
+            </optgroup>
+            <optgroup label="Comparison">
+              <option value="abelini vs ROUK %">Abelini vs ROUK %</option>
+              <option value="diamond-heavon vs ROUK %">
+                Diamond-Heavon vs ROUK %
+              </option>
+            </optgroup>
+          </select>
+          <!-- asc/desc toggle -->
+          <button
+            id="sortDirBtn"
+            class="sort-dir-btn"
+            onclick="toggleSortDir()"
+            title="Toggle sort direction"
+          >
+            ↑
+          </button>
+        </div>
+      </div>
+
+      <div class="controls-divider"></div>
+
+      <!-- Shape quick filter -->
+      <div class="control-group">
+        <label>Shape Filter</label>
+        <select id="shapeFilter" class="inp" onchange="onShapeFilterChange()">
+          <option value="">All Shapes</option>
+        </select>
+      </div>
+
+      <!-- Carat range -->
+      <div class="control-group">
+        <label>Carat Range</label>
+        <div style="display: flex; gap: 6px; align-items: center">
+          <input
+            type="number"
+            id="caratMin"
+            class="inp"
+            placeholder="Min"
+            style="width: 80px"
+            step="0.01"
+            oninput="onCaratChange()"
+          />
+          <span style="color: var(--muted)">—</span>
+          <input
+            type="number"
+            id="caratMax"
+            class="inp"
+            placeholder="Max"
+            style="width: 80px"
+            step="0.01"
+            oninput="onCaratChange()"
+          />
+        </div>
+      </div>
+
+      <div class="controls-divider"></div>
+
+      <!-- Search -->
+      <div class="control-group">
+        <label>Search Certificate</label>
+        <input
+          type="text"
+          id="certSearch"
+          class="inp"
+          placeholder="e.g. 719538774"
+          style="width: 180px"
+          oninput="onSearch()"
+        />
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="section-title" style="margin-bottom: 12px">
+        Vendor Statistics
+        <span
+          style="font-size: 0.68rem; color: var(--muted)"
+          id="statsLastRun"
+        ></span>
+        <button
+          class="btn btn-ghost btn-sm"
+          onclick="loadStats()"
+          style="font-size: 0.65rem; padding: 3px 10px; margin-left: 4px"
+        >
+          ↻ Refresh
+        </button>
+      </div>
+      <div class="stats-panel" id="statsPanel">
+        <div
+          class="stats-card"
+          style="--card-color: var(--muted); opacity: 0.5"
+        >
+          <div class="stats-card-title">Stats</div>
+          <div class="stats-card-sub">Run the pipeline to see vendor stats</div>
+        </div>
+      </div>
+
+      <div class="section-title">
+        % Range Buckets
+        <span style="font-size: 0.68rem; color: var(--muted)"
+          >select vendor · click bucket to filter</span
+        >
+      </div>
+      <div class="vendor-tabs" id="vendorTabs"></div>
+      <div
+        id="activeBucketTag"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearBucketFilter()"
+      >
+        <span id="activeBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+      <div class="buckets-grid" id="bucketsGrid">
+        <div class="empty-state" style="grid-column: 1/-1">
+          <div class="icon">💎</div>
+          <h3>No data loaded</h3>
+          <p style="font-size: 0.78rem; margin-top: 6px">
+            Load a dataset above to see distribution
+          </p>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 4px">
+        Vendor Price Buckets
+        <span style="font-size: 0.68rem; color: var(--muted)"
+          >bucketed by vendor price · avg % vs ROUK shown · click to
+          filter</span
+        >
+      </div>
+      <div class="vendor-tabs" id="priceVendorTabs"></div>
+      <div
+        id="activePriceBucketTag"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearPriceBucketFilter()"
+      >
+        <span id="activePriceBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+      <div class="price-buckets-grid" id="priceBucketsGrid">
+        <div class="empty-state" style="grid-column: 1/-1">
+          <div class="icon">💎</div>
+          <h3>No data loaded</h3>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 32px">
+        Records
+        <span
+          id="tableCount"
+          style="font-size: 0.7rem; color: var(--muted)"
+        ></span>
+        <span
+          id="tableSourceLabel"
+          style="font-size: 0.65rem; color: var(--muted)"
+        ></span>
+        <span
+          id="activeSortTag"
+          style="display: none"
+          class="sort-active-tag"
+        ></span>
+      </div>
+      <div class="tabs">
+        <button class="tab active" onclick="setTableMode('all')">All</button>
+        <button class="tab" id="commonTab" onclick="toggleCommonOnly()">
+          ⬡ Common Only
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortTable('certificate_number')">Certificate</th>
+              <th onclick="sortTable('shape')">Shape</th>
+              <th onclick="sortTable('color')">Color</th>
+              <th onclick="sortTable('clarity')">Clarity</th>
+              <th onclick="sortTable('cut')">Cut</th>
+              <th onclick="sortTable('caratWeight')">Carat</th>
+              <th onclick="sortTable('ROUK Price Pound')">ROUK Price</th>
+              <th onclick="sortTable('ROUK disc')">ROUK Disc. Price</th>
+              <th onclick="sortTable('abelini Price Pound')">Abelini Price</th>
+              <th onclick="sortTable('diamond-heavon Price Pound')">
+                Diamond-Heavon Price
+              </th>
+              <th onclick="sortTable('diamond-heavon disc')">
+                Diamond-Heavon Disc. Price
+              </th>
+              <th onclick="sortTable('abelini vs ROUK Pound')">
+                Abelini vs ROUK €
+              </th>
+              <th onclick="sortTable('abelini vs ROUK %')">
+                Abelini vs ROUK %
+              </th>
+              <th onclick="sortTable('diamond-heavon vs ROUK Pound')">
+                Diamond-Heavon vs ROUK €
+              </th>
+              <th onclick="sortTable('diamond-heavon vs ROUK %')">
+                Diamond-Heavon vs ROUK %
+              </th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <script>
+      const API_BASE = "";
+      let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+      if (!AUTH_TOKEN) window.location.href = "/";
+      function logout() {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
+      }
+
+      let ALL_DATA = [],
+        _RAW_DATA = [],
+        filteredData = [],
+        PARTIAL_DATA = [];
+      let tableMode = "all",
+        commonOnly = false;
+      let currentPage = 1,
+        PAGE_SIZE = 20;
+      let priceMin = null,
+        priceMax = null;
+      let activeBucketFilter = null,
+        activePriceBucket = null;
+      let selectedVendorKey = null,
+        selectedPriceVendorKey = null;
+
+      // ── Sort state ─────────────────────────────────────────────────
+      let sortCol = null,
+        sortDir = 1; // 1=asc, -1=desc
+
+      // ── Shape filter ───────────────────────────────────────────────
+      let shapeFilter = "";
+      let caratMin = null,
+        caratMax = null;
+
+      // ── BUCKETS — % range ─────────────────────────────────────────
+      const BUCKETS = [
+        { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
+        { label: "0 – 99%", min: 0, max: 100, color: "#60a5fa" },
+        { label: "100–199%", min: 100, max: 200, color: "#c9a84c" },
+        { label: "200–299%", min: 200, max: 300, color: "#fb923c" },
+        { label: "300–399%", min: 300, max: 400, color: "#f87171" },
+        { label: "400–499%", min: 400, max: 500, color: "#e879f9" },
+        { label: "500%+", min: 500, max: Infinity, color: "#818cf8" },
+      ];
+
+      // ── PRICE_BUCKETS — sorted ascending ─────────────────────────
+      const PRICE_BUCKETS = [
+        { label: "€0 – €150", min: 0, max: 151, color: "#34d399" },
+        { label: "€151 – €300", min: 151, max: 301, color: "#60a5fa" },
+        { label: "€301 – €400", min: 301, max: 401, color: "#c9a84c" },
+        { label: "€401 – €550", min: 401, max: 551, color: "#fb923c" },
+        { label: "€551 – €800", min: 551, max: 801, color: "#f87171" },
+        { label: "€801 – €1,200", min: 801, max: 1201, color: "#e879f9" },
+        { label: "€1,200 – €2,000", min: 1201, max: 2001, color: "#a78bfa" },
+        { label: "€2,000 – €2,500", min: 2001, max: 2501, color: "#818cf8" },
+        { label: "€2,500 – €3,000", min: 2501, max: 3001, color: "#6366f1" },
+        { label: "€3,000 – €4,000", min: 3001, max: 4001, color: "#4f46e5" },
+        { label: "€4,000 – €5,000", min: 4001, max: 5001, color: "#4338ca" },
+        { label: "€5,000+", min: 5001, max: Infinity, color: "#3730a3" },
+      ];
+
+      // ── CLARITY sort order ────────────────────────────────────────
+      const CLARITY_ORDER = [
+        "FL",
+        "IF",
+        "VVS1",
+        "VVS2",
+        "VS1",
+        "VS2",
+        "SI1",
+        "SI2",
+        "SI3",
+        "I1",
+        "I2",
+        "I3",
+      ];
+      const CUT_ORDER = [
+        "Ideal",
+        "Excellent",
+        "Very Good",
+        "Good",
+        "Fair",
+        "Poor",
+      ];
+      const COLOR_ORDER = ["D", "E", "F", "G", "H", "I", "J", "K", "L", "M"];
+
+      function clarityRank(v) {
+        const i = CLARITY_ORDER.indexOf(String(v || "").toUpperCase());
+        return i < 0 ? 99 : i;
+      }
+      function cutRank(v) {
+        const i = CUT_ORDER.findIndex(
+          (c) => c.toLowerCase() === String(v || "").toLowerCase(),
+        );
+        return i < 0 ? 99 : i;
+      }
+      function colorRank(v) {
+        const i = COLOR_ORDER.indexOf(String(v || "").toUpperCase());
+        return i < 0 ? 99 : i;
+      }
+
+      const VENDOR_DEFS = [
+        {
+          key: "abelini",
+          label: "Abelini",
+          color: "#60a5fa",
+          priceColHint: "abelini",
+          pctPattern: /^abelini vs ROUK %$/i,
+        },
+        {
+          key: "diamond-heavon",
+          label: "Diamond-Heavon",
+          color: "#a78bfa",
+          priceColHint: "diamond-heavon",
+          pctPattern: /^diamond-heavon vs ROUK %$/i,
+        },
+      ];
+
+      function resolveCol(row, hint) {
+        if (!row) return null;
+        const pc = `${hint} Price Pound`;
+        if (pc in row) return pc;
+        return (
+          Object.keys(row).find(
+            (k) =>
+              k.toLowerCase().includes(hint.toLowerCase()) &&
+              k.includes("Price Pound"),
+          ) || null
+        );
+      }
+      function resolveDiscCol(row, hint) {
+        if (!row) return null;
+        return (
+          Object.keys(row).find(
+            (k) =>
+              k.toLowerCase().startsWith(hint.toLowerCase()) &&
+              k.includes("Pound") &&
+              !k.includes("Price Pound") &&
+              !k.includes("vs ROUK"),
+          ) || null
+        );
+      }
+      function getPriceCol(vd) {
+        const s = ALL_DATA[0] || PARTIAL_DATA[0] || {};
+        return resolveCol(s, vd.priceColHint);
+      }
+      function getDiscCol(vd) {
+        const s = ALL_DATA[0] || PARTIAL_DATA[0] || {};
+        return resolveDiscCol(s, vd.priceColHint);
+      }
+      function getPct(row, vd) {
+        const col = Object.keys(row).find((k) => vd.pctPattern.test(k));
+        if (!col) return null;
+        const n = Number(row[col]);
+        return isNaN(n) ? null : n;
+      }
+      function getDiff(row, vd) {
+        const col = Object.keys(row).find(
+          (k) =>
+            k.toLowerCase().includes(vd.priceColHint.toLowerCase()) &&
+            k.includes("vs ROUK") &&
+            k.includes("Pound"),
+        );
+        if (!col) return null;
+        const n = Number(row[col]);
+        return isNaN(n) ? null : n;
+      }
+      function vendorHasData(vd) {
+        const col = getPriceCol(vd);
+        if (!col) return false;
+        return ALL_DATA.some((r) => {
+          const v = r[col];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+      }
+
+      // ── Toast / loading ───────────────────────────────────────────
+      let toastTimer;
+      function toast(msg, type = "info", dur = 3500) {
+        const el = document.getElementById("toast");
+        el.className = `show ${type}`;
+        el.textContent =
+          (type === "success" ? "✓  " : type === "error" ? "✗  " : "ℹ  ") + msg;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove("show"), dur);
+      }
+      function showLoading(msg) {
+        const ov = document.getElementById("loadingOverlay");
+        ov.style.display = "flex";
+        document.getElementById("loadingMsg").textContent = msg || "Loading…";
+        ov.classList.remove("hidden");
+      }
+      function hideLoading() {
+        const ov = document.getElementById("loadingOverlay");
+        ov.classList.add("hidden");
+        setTimeout(() => (ov.style.display = "none"), 450);
+      }
+      function markLoaded(label) {
+        document.getElementById("loadedLabel").textContent = label;
+        document.getElementById("loadedIndicator").style.display = "flex";
+      }
+
+      // ── API ───────────────────────────────────────────────────────
+      async function api(method, path, body = null, isForm = false) {
+        const opts = { method, headers: {} };
+        if (AUTH_TOKEN) opts.headers["Authorization"] = "Bearer " + AUTH_TOKEN;
+        if (body) {
+          if (isForm) {
+            opts.body = body;
+          } else {
+            opts.headers["Content-Type"] = "application/json";
+            opts.body = JSON.stringify(body);
+          }
+        }
+        const res = await fetch(API_BASE + path, opts);
+        if (res.status === 401) {
+          AUTH_TOKEN = "";
+          sessionStorage.removeItem("diamond_token");
+          window.location.href = "/";
+          throw new Error("Session expired");
+        }
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || res.statusText);
+        }
+        return res.json();
+      }
+
+      // ── File list ─────────────────────────────────────────────────
+      async function refreshFileList() {
+        try {
+          const data = await api("GET", "/api/uk/files");
+          const sel = document.getElementById("fileSelect");
+          const prev = sel.value;
+          sel.innerHTML = `<option value="">— select a file —</option>`;
+          data.files.forEach((f) => {
+            const o = document.createElement("option");
+            o.value = f.filename;
+            o.textContent = `${f.filename}  (${f.size_kb} KB · ${f.last_modified})`;
+            sel.appendChild(o);
+          });
+          if (prev) sel.value = prev;
+          toast(`${data.count} file(s) found in compare/`, "info");
+        } catch (e) {
+          toast("Could not load file list: " + e.message, "error");
+        }
+      }
+      async function loadSelectedFile() {
+        const filename = document.getElementById("fileSelect").value;
+        if (!filename) return;
+        showLoading("Loading " + filename + "…");
+        try {
+          const data = await api("GET", `/api/uk/data/${filename}`);
+          ingestData(data, filename);
+        } catch (e) {
+          hideLoading();
+          toast("Failed to load: " + e.message, "error");
+        }
+      }
+      async function uploadAndConvert(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const isJSON = file.name.toLowerCase().endsWith(".json");
+        showLoading(
+          (isJSON ? "Uploading JSON " : "Uploading & converting ") +
+            file.name +
+            "…",
+        );
+        const form = new FormData();
+        form.append("file", file);
+        try {
+          const r = await api("POST", "/api/upload", form, true);
+          toast(
+            `[${isJSON ? "JSON" : "CSV→JSON"}] ${file.name} → ${r.file}  (${r.rows.toLocaleString()} rows)`,
+            "success",
+          );
+          await refreshFileList();
+          document.getElementById("fileSelect").value = r.file;
+          await loadSelectedFile();
+        } catch (e) {
+          hideLoading();
+          toast("Upload failed: " + e.message, "error");
+        }
+        event.target.value = "";
+      }
+      async function convertByName() {
+        const name = document.getElementById("csvNameInput").value.trim();
+        if (!name) {
+          toast("Enter a CSV filename first", "error");
+          return;
+        }
+        showLoading("Converting " + name + "…");
+        const form = new FormData();
+        form.append("csv_filename", name);
+        try {
+          const r = await api("POST", "/api/convert", form, true);
+          toast(r.message + ` (${r.rows.toLocaleString()} rows)`, "success");
+          await refreshFileList();
+          document.getElementById("fileSelect").value = r.file;
+          await loadSelectedFile();
+        } catch (e) {
+          hideLoading();
+          toast("Convert failed: " + e.message, "error");
+        }
+      }
+
+      function ingestData(json, label = "") {
+        if (!Array.isArray(json)) {
+          hideLoading();
+          toast("Expected a JSON array", "error");
+          return;
+        }
+        _RAW_DATA = json;
+        ALL_DATA = [...json];
+        activeBucketFilter = null;
+        activePriceBucket = null;
+        selectedPriceVendorKey = null;
+        tableMode = "all";
+        currentPage = 1;
+        priceMin = priceMax = null;
+        caratMin = caratMax = null;
+        shapeFilter = "";
+        sortCol = null;
+        sortDir = 1;
+        document.getElementById("priceMinSelect").value = "";
+        document.getElementById("priceMaxSelect").value = "";
+        document.getElementById("certSearch").value = "";
+        document.getElementById("caratMin").value = "";
+        document.getElementById("caratMax").value = "";
+        document.getElementById("shapeFilter").value = "";
+        document.getElementById("sortBySelect").value = "";
+        document.getElementById("sortDirBtn").textContent = "↑";
+        populatePriceDropdowns();
+        populateShapeDropdown();
+        render();
+        hideLoading();
+        markLoaded(label + "  (" + json.length.toLocaleString() + " rows)");
+        toast(`Loaded ${json.length.toLocaleString()} records`, "success");
+      }
+
+      // ── Populate price dropdowns (sorted) ─────────────────────────
+      function populatePriceDropdowns() {
+        const minSel = document.getElementById("priceMinSelect");
+        const maxSel = document.getElementById("priceMaxSelect");
+        minSel.innerHTML = `<option value="">Min Price</option>`;
+        maxSel.innerHTML = `<option value="">Max Price</option>`;
+        // Use PRICE_BUCKETS (already sorted) to build options
+        PRICE_BUCKETS.forEach((pb) => {
+          if (pb.min === 0) return; // skip 0 as min option (use "Min Price" default)
+          const oMin = document.createElement("option");
+          oMin.value = pb.min;
+          oMin.textContent = `€${pb.min.toLocaleString()}`;
+          minSel.appendChild(oMin);
+        });
+        PRICE_BUCKETS.forEach((pb) => {
+          if (pb.max === Infinity) return;
+          const oMax = document.createElement("option");
+          oMax.value = pb.max;
+          oMax.textContent = `€${pb.max.toLocaleString()}`;
+          maxSel.appendChild(oMax);
+        });
+      }
+
+      // ── Populate shape dropdown (sorted A→Z) ──────────────────────
+      function populateShapeDropdown() {
+        const sel = document.getElementById("shapeFilter");
+        sel.innerHTML = `<option value="">All Shapes</option>`;
+        const shapes = [
+          ...new Set(
+            ALL_DATA.map((r) => r["shape"] || r["Shape"] || "").filter(Boolean),
+          ),
+        ].sort();
+        shapes.forEach((s) => {
+          const o = document.createElement("option");
+          o.value = s;
+          o.textContent = s;
+          sel.appendChild(o);
+        });
+      }
+
+      // ── Filter event handlers ─────────────────────────────────────
+      function onPriceSelectChange() {
+        const mn = document.getElementById("priceMinSelect").value;
+        const mx = document.getElementById("priceMaxSelect").value;
+        priceMin = mn ? parseFloat(mn) : null;
+        priceMax = mx ? parseFloat(mx) : null;
+        currentPage = 1;
+        render();
+      }
+      function clearPriceFilter() {
+        priceMin = priceMax = null;
+        document.getElementById("priceMinSelect").value = "";
+        document.getElementById("priceMaxSelect").value = "";
+        currentPage = 1;
+        render();
+      }
+      function onShapeFilterChange() {
+        shapeFilter = document.getElementById("shapeFilter").value;
+        currentPage = 1;
+        render();
+      }
+      let caratTimer;
+      function onCaratChange() {
+        clearTimeout(caratTimer);
+        caratTimer = setTimeout(() => {
+          caratMin = document.getElementById("caratMin").value
+            ? parseFloat(document.getElementById("caratMin").value)
+            : null;
+          caratMax = document.getElementById("caratMax").value
+            ? parseFloat(document.getElementById("caratMax").value)
+            : null;
+          currentPage = 1;
+          render();
+        }, 250);
+      }
+
+      // ── Sort controls ─────────────────────────────────────────────
+      function onSortChange() {
+        const val = document.getElementById("sortBySelect").value;
+        sortCol = val || null;
+        currentPage = 1;
+        render();
+      }
+      function toggleSortDir() {
+        sortDir *= -1;
+        document.getElementById("sortDirBtn").textContent =
+          sortDir === 1 ? "↑" : "↓";
+        if (sortCol) {
+          currentPage = 1;
+          render();
+        }
+      }
+      // Click on table header column sort
+      function sortTable(col) {
+        if (sortCol === col) {
+          sortDir *= -1;
+        } else {
+          sortCol = col;
+          sortDir = 1;
+        }
+        // Sync the select box if possible
+        const sel = document.getElementById("sortBySelect");
+        const matchingOpt = [...sel.options].find((o) => o.value === col);
+        if (matchingOpt) sel.value = col;
+        document.getElementById("sortDirBtn").textContent =
+          sortDir === 1 ? "↑" : "↓";
+        currentPage = 1;
+        render();
+      }
+
+      // ── Apply all filters + sort ──────────────────────────────────
+      function applyFiltersLocal() {
+        const cert = document.getElementById("certSearch").value.trim();
+        const BASE =
+          activePriceBucket !== null && PARTIAL_DATA.length
+            ? PARTIAL_DATA
+            : ALL_DATA;
+
+        filteredData = BASE.filter((row) => {
+          const ROUK = row["ROUK Price Pound"];
+          if (priceMin !== null && ROUK < priceMin) return false;
+          if (priceMax !== null && ROUK > priceMax) return false;
+          if (cert && !String(row["certificate_number"] ?? "").includes(cert))
+            return false;
+          if (shapeFilter) {
+            const sh = row["shape"] || row["Shape"] || "";
+            if (sh.toLowerCase() !== shapeFilter.toLowerCase()) return false;
+          }
+          if (caratMin !== null || caratMax !== null) {
+            const c = parseFloat(row["caratWeight"] || row["Carat"] || 0);
+            if (caratMin !== null && c < caratMin) return false;
+            if (caratMax !== null && c > caratMax) return false;
+          }
+          if (activeBucketFilter) {
+            const { vendorKey, bucketIdx } = activeBucketFilter;
+            const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
+            const b = BUCKETS[bucketIdx];
+            const p = getPct(row, vd);
+            if (p === null || p < b.min || p >= b.max) return false;
+          }
+          if (activePriceBucket !== null) {
+            const pb = PRICE_BUCKETS[activePriceBucket];
+            const pvd = VENDOR_DEFS.find(
+              (v) => v.key === selectedPriceVendorKey,
+            );
+            if (pvd) {
+              const col = getPriceCol(pvd);
+              const price = col ? Number(row[col]) : NaN;
+              if (
+                isNaN(price) ||
+                price <= 0 ||
+                price < pb.min ||
+                price >= pb.max
+              )
+                return false;
+            }
+          }
+          if (commonOnly) {
+            const pc = Object.keys(row).filter((k) =>
+              k.includes("Price Pound"),
+            );
+            if (
+              !pc.every((k) => {
+                const v = row[k];
+                return (
+                  v !== null && v !== undefined && v !== "" && Number(v) !== 0
+                );
+              })
+            )
+              return false;
+          }
+          return true;
+        });
+
+        // ── Apply sort ────────────────────────────────────────────
+        if (sortCol) {
+          filteredData = [...filteredData].sort((a, b) => {
+            let va, vb;
+            // Special sort keys
+            if (sortCol === "ROUK disc") {
+              const s = ALL_DATA[0] || {};
+              const dc = resolveDiscCol(s, "ROUK");
+              va = dc ? Number(a[dc]) : null;
+              vb = dc ? Number(b[dc]) : null;
+            } else if (sortCol === "diamond-heavon disc") {
+              const s = ALL_DATA[0] || {};
+              const dc = resolveDiscCol(s, "diamond-heavon");
+              va = dc ? Number(a[dc]) : null;
+              vb = dc ? Number(b[dc]) : null;
+            } else if (sortCol === "clarity") {
+              va = clarityRank(a["clarity"] || a["Clarity"]);
+              vb = clarityRank(b["clarity"] || b["Clarity"]);
+            } else if (sortCol === "cut") {
+              va = cutRank(a["cut"] || a["Cut"]);
+              vb = cutRank(b["cut"] || b["Cut"]);
+            } else if (sortCol === "color") {
+              va = colorRank(a["color"] || a["Color"]);
+              vb = colorRank(b["color"] || b["Color"]);
+            } else if (sortCol === "shape") {
+              va = String(a["shape"] || a["Shape"] || "").toLowerCase();
+              vb = String(b["shape"] || b["Shape"] || "").toLowerCase();
+            } else if (sortCol === "caratWeight") {
+              va = parseFloat(a["caratWeight"] || a["Carat"] || 0);
+              vb = parseFloat(b["caratWeight"] || b["Carat"] || 0);
+            } else {
+              va = a[sortCol];
+              vb = b[sortCol];
+            }
+            // Nulls to end
+            if (va === null || va === undefined || va === "")
+              va = sortDir === 1 ? Infinity : "-zzz";
+            if (vb === null || vb === undefined || vb === "")
+              vb = sortDir === 1 ? Infinity : "-zzz";
+            if (typeof va === "string" && typeof vb === "string")
+              return sortDir * va.localeCompare(vb);
+            return sortDir * (Number(va) - Number(vb));
+          });
+        }
+      }
+
+      function toggleCommonOnly() {
+        commonOnly = !commonOnly;
+        document
+          .getElementById("commonTab")
+          .classList.toggle("active", commonOnly);
+        currentPage = 1;
+        render();
+      }
+      function clearBucketFilter() {
+        activeBucketFilter = null;
+        currentPage = 1;
+        render();
+      }
+      function clearPriceBucketFilter() {
+        activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
+      function togglePriceBucket(i) {
+        activePriceBucket = activePriceBucket === i ? null : i;
+        currentPage = 1;
+        render();
+      }
+      function selectPriceVendor(key) {
+        selectedPriceVendorKey = key;
+        activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
+
+      // ── Vendor tabs + buckets ─────────────────────────────────────
+      function renderVendorTabs() {
+        const tabsEl = document.getElementById("vendorTabs");
+        if (!ALL_DATA.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        const av = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
+        if (!av.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
+          selectedVendorKey = av[0].key;
+        tabsEl.innerHTML = av
+          .map((vd) => {
+            const col = getPriceCol(vd);
+            const total = col
+              ? ALL_DATA.filter((r) => {
+                  const v = r[col];
+                  return (
+                    v !== null && v !== undefined && v !== "" && Number(v) !== 0
+                  );
+                }).length
+              : 0;
+            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
+          })
+          .join("");
+      }
+      function selectVendor(key) {
+        selectedVendorKey = key;
+        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
+          activeBucketFilter = null;
+        currentPage = 1;
+        render();
+      }
+      function renderBuckets() {
+        const grid = document.getElementById("bucketsGrid");
+        if (!ALL_DATA.length) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
+        const counts = BUCKETS.map(
+          (b) =>
+            ALL_DATA.filter((r) => {
+              const p = getPct(r, vd);
+              return p !== null && p >= b.min && p < b.max;
+            }).length,
+        );
+        const total = ALL_DATA.length,
+          maxC = Math.max(...counts, 1);
+        grid.innerHTML = BUCKETS.map((b, i) => {
+          const cnt = counts[i],
+            isEmpty = cnt === 0;
+          const isActive =
+            activeBucketFilter &&
+            activeBucketFilter.vendorKey === vd.key &&
+            activeBucketFilter.bucketIdx === i;
+          const pct = ((cnt / total) * 100).toFixed(1),
+            barW = ((cnt / maxC) * 100).toFixed(1);
+          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="${isEmpty ? "" : "toggleBucket(" + i + ")"}"><div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div><div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div><div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div><div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
+        }).join("");
+        const tag = document.getElementById("activeBucketTag");
+        if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
+          document.getElementById("activeBucketTagText").textContent =
+            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
+          tag.style.display = "inline-flex";
+        } else tag.style.display = "none";
+      }
+      function toggleBucket(bucketIdx) {
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) return;
+        activeBucketFilter =
+          activeBucketFilter &&
+          activeBucketFilter.vendorKey === vd.key &&
+          activeBucketFilter.bucketIdx === bucketIdx
+            ? null
+            : { vendorKey: vd.key, bucketIdx };
+        currentPage = 1;
+        render();
+      }
+
+      function renderPriceVendorTabs() {
+        const tabsEl = document.getElementById("priceVendorTabs");
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!SRC.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        const av = VENDOR_DEFS.filter((vd) => {
+          const col = getPriceCol(vd);
+          return (
+            col &&
+            SRC.some((r) => {
+              const v = r[col];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            })
+          );
+        });
+        if (!av.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        if (
+          !selectedPriceVendorKey ||
+          !av.find((v) => v.key === selectedPriceVendorKey)
+        )
+          selectedPriceVendorKey = av[0].key;
+        const sourceLabel = PARTIAL_DATA.length
+          ? `<span style="font-size:.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+          : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
+        tabsEl.innerHTML =
+          av
+            .map((vd) => {
+              const col = getPriceCol(vd);
+              const total = col
+                ? SRC.filter((r) => {
+                    const v = r[col];
+                    return (
+                      v !== null &&
+                      v !== undefined &&
+                      v !== "" &&
+                      Number(v) !== 0
+                    );
+                  }).length
+                : 0;
+              return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
+            })
+            .join("") + sourceLabel;
+      }
+      function renderPriceBuckets() {
+        const grid = document.getElementById("priceBucketsGrid");
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!SRC.length) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
+          document.getElementById("activePriceBucketTag").style.display =
+            "none";
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          return;
+        }
+        const col = getPriceCol(vd);
+        const vendorRows = col
+          ? SRC.filter((r) => {
+              const v = r[col];
+              return (
+                v !== null && v !== undefined && v !== "" && Number(v) !== 0
+              );
+            })
+          : [];
+        const total = vendorRows.length || 1;
+        const activeVendors = VENDOR_DEFS.filter((v) => {
+          const c = getPriceCol(v);
+          return (
+            c &&
+            SRC.some((r) => {
+              const val = r[c];
+              return (
+                val !== null &&
+                val !== undefined &&
+                val !== "" &&
+                Number(val) !== 0
+              );
+            })
+          );
+        });
+        const bucketData = PRICE_BUCKETS.map((pb, i) => {
+          const rows = vendorRows.filter((r) => {
+            const p = col ? Number(r[col]) : NaN;
+            return !isNaN(p) && p >= pb.min && p < pb.max;
+          });
+          const count = rows.length;
+          const allAvgPcts = activeVendors.map((av) => {
+            const vals = rows
+              .map((r) => getPct(r, av))
+              .filter((v) => v !== null);
+            const avg = vals.length
+              ? vals.reduce((a, b) => a + b, 0) / vals.length
+              : null;
+            return { vd: av, avg };
+          });
+          const roukVals = rows
+            .map((r) => Number(r["ROUK Price Pound"]))
+            .filter((v) => !isNaN(v) && v > 0);
+          const avgROUK = roukVals.length
+            ? roukVals.reduce((a, b) => a + b, 0) / roukVals.length
+            : null;
+          return { pb, count, allAvgPcts, avgROUK, idx: i };
+        });
+        const nonEmpty = bucketData.filter((b) => b.count > 0),
+          maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
+        if (!nonEmpty.length) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No price data for ${vd.label}</h3></div>`;
+          document.getElementById("activePriceBucketTag").style.display =
+            "none";
+          return;
+        }
+        grid.innerHTML = nonEmpty
+          .map(({ pb, count, allAvgPcts, avgROUK, idx }) => {
+            const isActive = activePriceBucket === idx;
+            const pctOfTotal = ((count / total) * 100).toFixed(1),
+              barW = ((count / maxCount) * 100).toFixed(1);
+            const avgRows = allAvgPcts
+              .map(({ vd: av, avg }) => {
+                const valStr =
+                  avg === null
+                    ? "—"
+                    : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
+                const valColor =
+                  avg === null
+                    ? "var(--muted)"
+                    : avg < 0
+                      ? "#3ecf8e"
+                      : avg < 100
+                        ? "#60a5fa"
+                        : avg < 200
+                          ? "#c9a84c"
+                          : "#f87171";
+                return `<div class="pb-avg-item"><span class="pb-avg-label" style="color:${av.color}">${av.label} vs ROUK</span><span class="pb-avg-val" style="color:${valColor}">${valStr}</span></div>`;
+              })
+              .join("");
+            const avgROUKStr =
+              avgROUK !== null
+                ? `<div class="pb-avg-item"><span class="pb-avg-label">Avg ROUK Price</span><span class="pb-avg-val" style="color:var(--muted)">€${avgROUK.toFixed(0)}</span></div>`
+                : "";
+            return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})"><div class="pb-range">${pb.label}</div><div class="pb-count">${count.toLocaleString()}</div><div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div><div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div><div class="pb-avg-row">${avgRows}${avgROUKStr}</div></div>`;
+          })
+          .join("");
+        const tag = document.getElementById("activePriceBucketTag");
+        if (activePriceBucket !== null) {
+          const pb = PRICE_BUCKETS[activePriceBucket];
+          document.getElementById("activePriceBucketTagText").textContent = pb
+            ? `${vd.label} price: ${pb.label}`
+            : "Filtered";
+          tag.style.display = "inline-flex";
+        } else tag.style.display = "none";
+      }
+
+      // ── Vendor Common Modal ───────────────────────────────────────
+      let VC_CACHE = {},
+        vcActive = null,
+        vcSearch = "",
+        vcPage = 1;
+      const VC_PAGE = 30;
+      let vcSortCol = null,
+        vcSortDir = 1;
+      const VC_ICONS = { abelini: "🔵", "diamond-heavon": "🟣" };
+      const VC_COLORS = { abelini: "#60a5fa", "diamond-heavon": "#a78bfa" };
+      async function loadVendorCommonCards() {
+        const grid = document.getElementById("vendorCommonGrid");
+        if (!grid) return;
+        grid.innerHTML = `<div class="vc-loading" style="grid-column:1/-1">⏳ Loading vendor common data…</div>`;
+        try {
+          const summary = await api("GET", "/api/uk/vendor-common/summary");
+          if (
+            !summary ||
+            !summary.vendors ||
+            !Object.keys(summary.vendors).length
+          ) {
+            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No common data yet</h3><p style="font-size:.78rem;margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first</p></div>`;
+            return;
+          }
+          grid.innerHTML = Object.entries(summary.vendors)
+            .filter(([name]) => name !== "qualitydiamond")
+            .map(([name, info]) => {
+              const color = VC_COLORS[name] || "#c9a84c";
+              const rows = info.rows || 0;
+              return `<div class="vendor-common-card" style="--vc-color:${color}" onclick="openVendorModal('${name}')"><div class="vc-header"><div class="vc-name"><span class="vc-dot"></span>${name}</div><span class="vc-badge">Common w/ ROUK</span></div><div class="vc-count">${rows.toLocaleString()}</div><div class="vc-label">diamonds matched with ROUK price</div><div class="vc-divider"></div><div class="vc-stats"><div class="vc-stat-row"><span class="vc-stat-label">Generated</span><span class="vc-stat-val" style="font-size:.64rem;color:var(--muted)">${summary.generated_at || "—"}</span></div></div><div class="vc-open-hint">Click to explore <span class="vc-arrow">→</span></div></div>`;
+            })
+            .join("");
+        } catch (e) {
+          if (grid)
+            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div><h3>Run pipeline first</h3><p style="font-size:.74rem;margin-top:6px;color:var(--red)">${e.message}</p></div>`;
+        }
+      }
+      async function openVendorModal(vendorKey) {
+        vcActive = vendorKey;
+        vcSearch = "";
+        vcPage = 1;
+        vcSortCol = null;
+        vcSortDir = 1;
+        const color = VC_COLORS[vendorKey] || "#c9a84c";
+        document
+          .getElementById("vendorCommonModal")
+          .style.setProperty("--vc-border", color);
+        document.getElementById("vcModalName").textContent = vendorKey;
+        document.getElementById("vcModalIcon").textContent =
+          VC_ICONS[vendorKey] || "💎";
+        document.getElementById("vcSearchInp").value = "";
+        document.getElementById("vcModalPills").innerHTML =
+          `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">Loading…</div>`;
+        document.getElementById("vendorCommonModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        if (!VC_CACHE[vendorKey]) {
+          document.getElementById("vcTbody").innerHTML =
+            `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>`;
+          try {
+            const safe = vendorKey.replace(/\//g, "_").replace(/ /g, "_");
+            const data = await api("GET", `/api/uk/vendor-common/${safe}`);
+            VC_CACHE[vendorKey] = Array.isArray(data) ? data : [];
+          } catch (e) {
+            document.getElementById("vcTbody").innerHTML =
+              `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--red)">✗ ${e.message.includes("404") ? "Data not found — run pipeline first." : e.message}</td></tr>`;
+            document.getElementById("vcModalPills").innerHTML =
+              `<div class="modal-pill" style="color:var(--red);border-color:var(--red)">Error</div>`;
+            return;
+          }
+        }
+        const rows = VC_CACHE[vendorKey];
+        document.getElementById("vcModalPills").innerHTML =
+          `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">${rows.length.toLocaleString()} records</div>`;
+        renderVcTable();
+      }
+      function closeVendorModal() {
+        document.getElementById("vendorCommonModal").classList.remove("open");
+        document.body.style.overflow = "";
+      }
+      function onVcSearch() {
+        vcSearch = document.getElementById("vcSearchInp").value.trim();
+        vcPage = 1;
+        renderVcTable();
+      }
+      function getVcFiltered() {
+        let rows = VC_CACHE[vcActive] || [];
+        if (vcSearch)
+          rows = rows.filter((r) =>
+            String(r["certificate_number"] ?? "").includes(vcSearch),
+          );
+        if (vcSortCol) {
+          rows = [...rows].sort((a, b) => {
+            let va = a[vcSortCol],
+              vb = b[vcSortCol];
+            if (va === null || va === undefined)
+              va = vcSortDir === 1 ? Infinity : -Infinity;
+            if (vb === null || vb === undefined)
+              vb = vcSortDir === 1 ? Infinity : -Infinity;
+            if (typeof va === "string" && typeof vb === "string")
+              return vcSortDir * va.localeCompare(vb);
+            return vcSortDir * (va - vb);
+          });
+        }
+        return rows;
+      }
+      function sortVc(col) {
+        if (vcSortCol === col) vcSortDir *= -1;
+        else {
+          vcSortCol = col;
+          vcSortDir = 1;
+        }
+        document.querySelectorAll("#vcThead th").forEach((th) => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (th.dataset.col === col)
+            th.classList.add(vcSortDir === 1 ? "sort-asc" : "sort-desc");
+        });
+        renderVcTable();
+      }
+      function renderVcTable() {
+        if (!vcActive || !VC_CACHE[vcActive]) return;
+        const filtered = getVcFiltered();
+        const tp = Math.ceil(filtered.length / VC_PAGE);
+        vcPage = Math.min(vcPage, tp || 1);
+        const page = filtered.slice((vcPage - 1) * VC_PAGE, vcPage * VC_PAGE);
+        const color = VC_COLORS[vcActive] || "#c9a84c";
+        const sample = (VC_CACHE[vcActive] || [])[0] || {};
+        const allCols = Object.keys(sample);
+        const PINNED = [
+          "certificate_number",
+          "shape",
+          "color",
+          "clarity",
+          "cut",
+          "caratWeight",
+        ];
+        const priceCols = allCols.filter(
+          (c) => c.includes("Price") || c.includes("Pound") || c.includes("%"),
+        );
+        const otherCols = allCols.filter(
+          (c) =>
+            !PINNED.includes(c) &&
+            !priceCols.includes(c) &&
+            c !== "vendors_matched",
+        );
+        const orderedCols = [
+          ...PINNED.filter((c) => allCols.includes(c)),
+          ...priceCols,
+          ...otherCols,
+        ];
+        const thead = document.getElementById("vcThead");
+        if (thead.innerHTML === "" || thead.dataset.vendor !== vcActive) {
+          thead.dataset.vendor = vcActive;
+          thead.innerHTML = `<tr>${orderedCols.map((c) => `<th data-col="${c}" onclick="sortVc('${c}')" style="cursor:pointer">${c.replace(/_/g, " ")}</th>`).join("")}</tr>`;
+        }
+        if (!page.length) {
+          document.getElementById("vcTbody").innerHTML =
+            `<tr><td colspan="${orderedCols.length}" style="text-align:center;padding:40px;color:var(--muted)">🔍 No records match</td></tr>`;
+        } else {
+          document.getElementById("vcTbody").innerHTML = page
+            .map((row) => {
+              const cells = orderedCols
+                .map((col) => {
+                  const v = row[col];
+                  if (v === null || v === undefined || v === "")
+                    return `<td class="cert">—</td>`;
+                  if (col.includes("Price Pound"))
+                    return `<td class="price">€${Number(v).toLocaleString()}</td>`;
+                  if (col.endsWith("Pound") && !col.includes("Price")) {
+                    const n = Number(v);
+                    const cls =
+                      n < 0 ? "pct-neg" : n > 0 ? "pct-pos" : "pct-zero";
+                    return `<td class="${cls}">${n >= 0 ? "+" : ""}€${Math.abs(n).toLocaleString()}</td>`;
+                  }
+                  if (col.endsWith("%")) {
+                    const n = Number(v);
+                    const cls = isNaN(n)
+                      ? "pct-zero"
+                      : n < 0
+                        ? "pct-neg"
+                        : n > 0
+                          ? "pct-pos"
+                          : "pct-zero";
+                    return `<td class="${cls}">${isNaN(n) ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%"}</td>`;
+                  }
+                  if (col === "certificate_number")
+                    return `<td class="cert">${v}</td>`;
+                  return `<td class="attr">${v}</td>`;
+                })
+                .join("");
+              return `<tr>${cells}</tr>`;
+            })
+            .join("");
+        }
+        document.getElementById("vcFooterInfo").textContent =
+          `Showing ${Math.min((vcPage - 1) * VC_PAGE + 1, filtered.length)}–${Math.min(vcPage * VC_PAGE, filtered.length)} of ${filtered.length.toLocaleString()} records`;
+        const d = 2;
+        let pages = "";
+        for (let p = 1; p <= tp; p++) {
+          if (p === 1 || p === tp || (p >= vcPage - d && p <= vcPage + d))
+            pages += `<button class="mpg-btn ${p === vcPage ? "active" : ""}" onclick="vcGoPage(${p})">${p}</button>`;
+          else if (p === vcPage - d - 1 || p === vcPage + d + 1)
+            pages += `<span style="color:var(--muted);padding:4px;font-size:.68rem">…</span>`;
+        }
+        document.getElementById("vcPagination").innerHTML = pages;
+      }
+      function vcGoPage(p) {
+        vcPage = p;
+        renderVcTable();
+      }
+      function downloadVcCsv() {
+        if (!vcActive) return;
+        const rows = getVcFiltered();
+        if (!rows.length) {
+          toast("No data to download", "error");
+          return;
+        }
+        const cols = Object.keys(rows[0]);
+        const csv = [
+          cols.join(","),
+          ...rows.map((r) =>
+            cols
+              .map((c) => {
+                const v = r[c];
+                if (v === null || v === undefined) return "";
+                return String(v).includes(",") && !String(v).startsWith('"')
+                  ? `"${v}"`
+                  : v;
+              })
+              .join(","),
+          ),
+        ].join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${vcActive}_common.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast(`Downloaded ${rows.length.toLocaleString()} rows`, "success");
+      }
+
+      // ── Table render ──────────────────────────────────────────────
+      function fmtPct(v) {
+        return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
+      }
+      function fmtPound(v) {
+        return v === null || v === undefined || v === "" || Number(v) === 0
+          ? "—"
+          : "€" + Number(v).toLocaleString();
+      }
+      function pctClass(v) {
+        return v === null || v === undefined
+          ? "pct-zero"
+          : v > 0
+            ? "pct-pos"
+            : v < 0
+              ? "pct-neg"
+              : "pct-zero";
+      }
+
+      // Header sort indicators
+      function updateHeaderSort() {
+        document.querySelectorAll("thead th").forEach((th) => {
+          th.classList.remove("sort-asc", "sort-desc");
+          const onclick = th.getAttribute("onclick") || "";
+          const match = onclick.match(/sortTable\('(.+?)'\)/);
+          if (match && match[1] === sortCol)
+            th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
+        });
+      }
+
+      function renderTable(data) {
+        document.getElementById("tableCount").textContent =
+          `— ${data.length.toLocaleString()} records`;
+        document.getElementById("matchedCount").textContent =
+          data.length.toLocaleString();
+        // Active sort tag
+        const sortTag = document.getElementById("activeSortTag");
+        if (sortCol) {
+          sortTag.style.display = "inline-flex";
+          sortTag.textContent = `${sortCol.replace(/_/g, " ")} ${sortDir === 1 ? "↑" : "↓"}`;
+        } else sortTag.style.display = "none";
+        updateHeaderSort();
+        const tp = Math.ceil(data.length / PAGE_SIZE);
+        currentPage = Math.min(currentPage, tp || 1);
+        const pr = data.slice(
+          (currentPage - 1) * PAGE_SIZE,
+          currentPage * PAGE_SIZE,
+        );
+        if (!pr.length) {
+          document.getElementById("tableBody").innerHTML =
+            `<tr><td colspan="16"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+          document.getElementById("pagination").innerHTML = "";
+          return;
+        }
+        const sample = pr[0] || {};
+        const abDiscCol = resolveDiscCol(sample, "abelini");
+        const dhDiscCol = resolveDiscCol(sample, "diamond-heavon");
+        const roukDiscCol = resolveDiscCol(sample, "ROUK");
+        document.getElementById("tableBody").innerHTML = pr
+          .map((r) => {
+            const abVD = VENDOR_DEFS.find((v) => v.key === "abelini");
+            const dhVD = VENDOR_DEFS.find((v) => v.key === "diamond-heavon");
+            const abP = getPct(r, abVD),
+              dhP = getPct(r, dhVD);
+            const abD = getDiff(r, abVD),
+              dhD = getDiff(r, dhVD);
+            const sh = r["shape"] || r["Shape"] || "—",
+              co = r["color"] || r["Color"] || "—",
+              cl = r["clarity"] || r["Clarity"] || "—",
+              cu = r["cut"] || r["Cut"] || "—";
+            const ca = r["caratWeight"] || r["Carat"] || "—";
+            const caD =
+              ca === "" || ca === "nan" || ca === "Na" || ca === "None"
+                ? "—"
+                : ca;
+            const roukCls =
+              (abP !== null && abP < 0) || (dhP !== null && dhP < 0)
+                ? "price rouk-cheaper"
+                : "price";
+            const fmtDiff = (v) =>
+              v === null ? "—" : (v >= 0 ? "+" : "") + fmtPound(v);
+            const diffCls = (v) =>
+              v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
+            const abPrice = r["abelini Price Pound"],
+              dhPrice = r["diamond-heavon Price Pound"];
+            const abDisc = abDiscCol ? r[abDiscCol] : null,
+              dhDisc = dhDiscCol ? r[dhDiscCol] : null,
+              roukDisc = roukDiscCol ? r[roukDiscCol] : null;
+            return `<tr>
+      <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
+      <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
+      <td class="${roukCls}">${fmtPound(r["ROUK Price Pound"])}</td>
+      <td class="${roukCls}">${fmtPound(roukDisc)}</td>
+      <td class="price">${fmtPound(abPrice)}</td>
+      <td class="price">${fmtPound(dhPrice)}</td>
+      <td class="price">${fmtPound(dhDisc)}</td>
+      <td class="${diffCls(abD)}">${fmtDiff(abD)}</td>
+      <td class="${pctClass(abP)}">${fmtPct(abP)}</td>
+      <td class="${diffCls(dhD)}">${fmtDiff(dhD)}</td>
+      <td class="${pctClass(dhP)}">${fmtPct(dhP)}</td>
+    </tr>`;
+          })
+          .join("");
+        const d = 2;
+        let pages = "";
+        for (let p = 1; p <= tp; p++) {
+          if (
+            p === 1 ||
+            p === tp ||
+            (p >= currentPage - d && p <= currentPage + d)
+          )
+            pages += `<button class="page-btn ${p === currentPage ? "active" : ""}" onclick="goPage(${p})">${p}</button>`;
+          else if (p === currentPage - d - 1 || p === currentPage + d + 1)
+            pages += `<span style="color:var(--muted);padding:6px 4px;font-size:.72rem">…</span>`;
+        }
+        document.getElementById("pagination").innerHTML = pages;
+      }
+      function setTableMode(m) {
+        tableMode = m;
+        currentPage = 1;
+        document
+          .querySelectorAll(".tab")
+          .forEach((t, i) =>
+            t.classList.toggle(
+              "active",
+              (i === 0 && m === "all") || (i === 1 && m === "filtered"),
+            ),
+          );
+        render();
+      }
+      function goPage(p) {
+        currentPage = p;
+        render();
+      }
+      let sTimer;
+      function onSearch() {
+        clearTimeout(sTimer);
+        sTimer = setTimeout(() => {
+          currentPage = 1;
+          render();
+        }, 200);
+      }
+
+      function render() {
+        applyFiltersLocal();
+        document.getElementById("totalCount").textContent =
+          ALL_DATA.length.toLocaleString();
+        const tl = document.getElementById("tableSourceLabel");
+        if (tl) {
+          if (activePriceBucket !== null && PARTIAL_DATA.length) {
+            tl.textContent = "· showing compare_partial.json (matched)";
+            tl.style.color = "#60a5fa";
+          } else {
+            tl.textContent = "· showing compare.json";
+            tl.style.color = "var(--muted)";
+          }
+        }
+        renderVendorTabs();
+        renderBuckets();
+        renderPriceVendorTabs();
+        renderPriceBuckets();
+        renderTable(filteredData);
+      }
+
+      async function loadPartialData() {
+        try {
+          const data = await api("GET", "/api/uk/data/compare_partial.json");
+          if (Array.isArray(data)) {
+            PARTIAL_DATA = data;
+            toast(
+              `Partial data loaded — ${data.length.toLocaleString()} matched records`,
+              "success",
+              3000,
+            );
+            render();
+          }
+        } catch (e) {
+          PARTIAL_DATA = [];
+        }
+      }
+
+      async function runComparePipeline() {
+        const btn = document.getElementById("runCompareBtn"),
+          st = document.getElementById("runCompareStatus");
+        btn.disabled = true;
+        btn.textContent = "⏳ Running…";
+        st.textContent = "Building compare files…";
+        st.style.color = "var(--accent)";
+        try {
+          const r = await api("POST", "/api/uk/run-compare");
+          if (r.status === "ok") {
+            st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`;
+            st.style.color = "var(--green)";
+            toast(
+              `Compare pipeline complete — ${r.rows.toLocaleString()} records`,
+              "success",
+              5000,
+            );
+            await refreshFileList();
+            loadStats();
+            VC_CACHE = {};
+            loadVendorCommonCards();
+            showLoading("Reloading compare.json…");
+            const data = await api("GET", "/api/uk/compare");
+            ingestData(data, "compare.json");
+            document.getElementById("fileSelect").value = "compare.json";
+            loadPartialData();
+          } else {
+            st.textContent = `✗ Error (code ${r.returncode})`;
+            st.style.color = "var(--red)";
+            toast("Pipeline error", "error", 6000);
+          }
+        } catch (e) {
+          st.textContent = "✗ Failed";
+          st.style.color = "var(--red)";
+          toast("Pipeline failed: " + e.message, "error");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "⚙ Run Compare";
+        }
+      }
+
+      async function loadStats() {
+        const panel = document.getElementById("statsPanel");
+        panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
+        try {
+          const s = await api("GET", "/api/uk/status");
+          renderStats(s);
+        } catch (e) {
+          panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline to generate vendor statistics</div><div class="stats-card-sub" style="margin-top:4px;color:#f87171;font-size:.65rem">${e.message}</div></div>`;
+        }
+      }
+      function renderStats(s) {
+        const panel = document.getElementById("statsPanel");
+        if (!s) {
+          panel.innerHTML =
+            '<div class="stats-card"><div class="stats-card-sub">No stats available</div></div>';
+          return;
+        }
+        document.getElementById("statsLastRun").textContent = s.generated_at
+          ? "· last run " + s.generated_at
+          : "";
+        const rouk_total = s.rouk_total || 0,
+          datasets = s.dataset_counts || {},
+          vTotals = s.vendor_totals || {};
+        const vendors = Object.fromEntries(
+          Object.entries(s.rouk_vs_vendors || {}).filter(
+            ([k]) => k !== "qualitydiamond",
+          ),
+        );
+        const COLORS = {
+          abelini: "#60a5fa",
+          "diamond-heavon": "#a78bfa",
+          ROUK: "#e879f9",
+        };
+        let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 ROUK (Master List)</div><div class="stats-card-value">${rouk_total.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in ROUK master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (all vendors+ROUK)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div></div></div>`;
+        for (const [name, v] of Object.entries(vendors)) {
+          const color = COLORS[name] || "var(--accent2)";
+          const matched = v.matched || 0,
+            vTotal = v.vendor_total || vTotals[name] || 0;
+          const notInROUK = v.vendor_not_in_rouk || 0,
+            rate = v.match_rate_pct || 0;
+          const barW = rouk_total
+            ? Math.min((matched / rouk_total) * 100, 100).toFixed(1)
+            : 0;
+          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}</div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in ROUK</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in ROUK</span><span class="val" style="color:var(--red)">${notInROUK.toLocaleString()}</span></div></div></div>`;
+        }
+        html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${rouk_total ? (((datasets.common || 0) / rouk_total) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${rouk_total ? (((datasets.partial || 0) / rouk_total) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div></div></div>`;
+        panel.innerHTML = html;
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeVendorModal();
+      });
+
+      async function startDashboard() {
+        showLoading("Connecting to API…");
+        try {
+          const health = await api("GET", "/api/uk/health");
+          await refreshFileList();
+          loadStats();
+          loadVendorCommonCards();
+          if (health.default_dataset) {
+            showLoading("Loading compare.json…");
+            const data = await api("GET", "/api/uk/compare");
+            ingestData(data, "compare.json");
+            document.getElementById("fileSelect").value = "compare.json";
+            loadPartialData();
+          } else {
+            hideLoading();
+            toast(
+              "No compare.json found — run pipeline or upload a CSV/JSON",
+              "info",
+              6000,
+            );
+          }
+        } catch (e) {
+          hideLoading();
+          toast(
+            "API not reachable — run: uvicorn main:app --reload",
+            "error",
+            8000,
+          );
+        }
+      }
+      startDashboard();
+    </script>
+  </body>
+</html>
