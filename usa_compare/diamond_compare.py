@@ -35,7 +35,18 @@ os.makedirs(COMPARE_DIR, exist_ok=True)
 def load_vendor(csv_path, cert_col, price_col, name):
     log.debug(f"Loading vendor '{name}' from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
-    df["certificate_number"] = df[cert_col].astype(str).str.strip()
+    def _norm_cert(x):
+        if pd.isna(x):
+            return ""
+        s = str(x).strip()
+        if s in ("", "nan"):
+            return ""
+        try:
+            return str(int(float(s)))
+        except (ValueError, OverflowError):
+            return s
+
+    df["certificate_number"] = df[cert_col].apply(_norm_cert)
     df = df[["certificate_number", price_col]].copy()
     df = df.rename(columns={price_col: f"{name} Price USD"})
     df[f"{name} Price USD"] = pd.to_numeric(df[f"{name} Price USD"], errors="coerce")
@@ -120,7 +131,7 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
     from dotenv import load_dotenv
     load_dotenv(ENV_PATH)
     lg_csv   = os.path.join(DIAMOND_FILES_DIR, get_env("LOOSE_GROWN_CSV", "loosegrowndiamond.csv"))
-    lg_cert  = get_env("LOOSE_GROWN_CERT_COL", "sku")
+    lg_cert  = get_env("LOOSE_GROWN_CERT_COL", "certificate_no")
     lg_price = get_env("LOOSE_GROWN_PRICE_COL", "price")
     lg_df    = load_lg_with_attrs(lg_csv, lg_cert, lg_price)
 
