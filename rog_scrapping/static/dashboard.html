@@ -1664,12 +1664,12 @@
               <th>Novita Price</th>
               <th>77 Diamonds Price</th>
               <th>Renesim Price</th>
-              <th>Novita vs ROG €</th>
-              <th>Novita vs ROG %</th>
-              <th>77D vs ROG €</th>
-              <th>77D vs ROG %</th>
-              <th>Renesim vs ROG €</th>
-              <th>Renesim vs ROG %</th>
+              <th onclick="sortTable('novita vs ROG EUR')">Novita vs ROG €</th>
+              <th onclick="sortTable('novita vs ROG %')">Novita vs ROG %</th>
+              <th onclick="sortTable('77diamonds vs ROG EUR')">77D vs ROG €</th>
+              <th onclick="sortTable('77diamonds vs ROG %')">77D vs ROG %</th>
+              <th onclick="sortTable('renesim vs ROG EUR')">Renesim vs ROG €</th>
+              <th onclick="sortTable('renesim vs ROG %')">Renesim vs ROG %</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -1696,6 +1696,7 @@
         PARTIAL_DATA = [];
       let tableMode = "all",
         commonOnly = false;
+      let sortCol = null, sortDir = "asc";
       let currentPage = 1,
         PAGE_SIZE = 20;
       let priceMin = null,
@@ -2553,6 +2554,13 @@
       }
 
       // ── TABLE ──────────────────────────────────────────────────────
+      function sortTable(col) {
+        if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else { sortCol = col; sortDir = "asc"; }
+        currentPage = 1;
+        render();
+      }
+
       function fmtPct(v) {
         return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
       }
@@ -2572,6 +2580,11 @@
       }
 
       function renderTable(data) {
+        document.querySelectorAll(".table-wrap thead th").forEach(th => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
+            th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
+        });
         document.getElementById("tableCount").textContent =
           `— ${data.length.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent =
@@ -2684,6 +2697,13 @@
       // ── MASTER RENDER ──────────────────────────────────────────────
       function render() {
         applyFiltersLocal();
+        if (sortCol) {
+          filteredData.sort((a, b) => {
+            const av = a[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(a[sortCol]);
+            const bv = b[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(b[sortCol]);
+            return sortDir === "asc" ? av - bv : bv - av;
+          });
+        }
         document.getElementById("totalCount").textContent =
           ALL_DATA.length.toLocaleString();
         const tl = document.getElementById("tableSourceLabel");
