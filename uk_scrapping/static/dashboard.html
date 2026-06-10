@@ -206,6 +206,10 @@
         text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
         border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1;
       }
+      thead th[onclick] { cursor: pointer; user-select: none; transition: color 0.15s; }
+      thead th[onclick]:hover { color: var(--accent); }
+      thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
+      thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
       tbody tr { border-bottom: 1px solid var(--border); transition: background 0.12s; }
       tbody tr:last-child { border-bottom: none; }
       tbody tr:hover { background: var(--surface); }
@@ -387,10 +391,10 @@
               <th>Abelini Price</th>
               <th>Diamond-Heavon Price</th>
               <th>Diamond-Heavon -30%</th>
-              <th>Abelini vs ROUK £</th>
-              <th>Abelini vs ROUK %</th>
-              <th>Diamond-Heavon vs ROUK £</th>
-              <th>Diamond-Heavon vs ROUK %</th>
+              <th onclick="sortTable('abelini vs ROUK Pound')">Abelini vs ROUK £</th>
+              <th onclick="sortTable('abelini vs ROUK %')">Abelini vs ROUK %</th>
+              <th onclick="sortTable('diamond-heavon vs ROUK Pound')">Diamond-Heavon vs ROUK £</th>
+              <th onclick="sortTable('diamond-heavon vs ROUK %')">Diamond-Heavon vs ROUK %</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -418,6 +422,7 @@
       let selectedVendorKey = null;
       let certSearch = "";
       let tableMode = "all";
+      let sortCol = null, sortDir = "asc";
 
       const BUCKETS = [
         { label: "< 0%",      min: -Infinity, max: 0,        color: "#3ecf8e" },
@@ -845,6 +850,14 @@
         } else tag.style.display = "none";
       }
 
+      // ── Main table sort ───────────────────────────────────────
+      function sortTable(col) {
+        if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else { sortCol = col; sortDir = "asc"; }
+        currentPage = 1;
+        render();
+      }
+
       // ── Table rendering ──────────────────────────────────────────
       function fmtPct(v) { return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%"; }
       function fmtGBP(v) {
@@ -853,6 +866,11 @@
       function pctClass(v) { return v === null || v === undefined ? "pct-zero" : v > 0 ? "pct-pos" : v < 0 ? "pct-neg" : "pct-zero"; }
 
       function renderTable() {
+        document.querySelectorAll(".table-wrap thead th").forEach(th => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
+            th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
+        });
         document.getElementById("tableCount").textContent = `— ${filteredData.length.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent = filteredData.length.toLocaleString();
         const tp = Math.max(1, Math.ceil(filteredData.length / PAGE_SIZE));
@@ -911,6 +929,13 @@
       // ── Master render ────────────────────────────────────────────
       function render() {
         applyFilters();
+        if (sortCol) {
+          filteredData.sort((a, b) => {
+            const av = a[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(a[sortCol]);
+            const bv = b[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(b[sortCol]);
+            return sortDir === "asc" ? av - bv : bv - av;
+          });
+        }
         renderPriceVendorTabs();
         renderPriceBuckets();
         renderPctBucketsTop();

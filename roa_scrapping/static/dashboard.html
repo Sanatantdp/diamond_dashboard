@@ -307,6 +307,10 @@
         color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
         position: sticky; top: 0; z-index: 1;
       }
+      thead th[onclick] { cursor: pointer; user-select: none; transition: color 0.15s; }
+      thead th[onclick]:hover { color: var(--accent); }
+      thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
+      thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
       tbody tr { border-bottom: 1px solid var(--border); transition: background 0.12s; }
       tbody tr:last-child { border-bottom: none; }
       tbody tr:hover { background: var(--surface); }
@@ -598,10 +602,10 @@
               <th>ROA -30%</th>
               <th>Cullen Price</th>
               <th>GS Price</th>
-              <th>Cullen vs ROA $</th>
-              <th>Cullen vs ROA %</th>
-              <th>GS vs ROA $</th>
-              <th>GS vs ROA %</th>
+              <th onclick="sortTable('cullen vs ROA USD')">Cullen vs ROA $</th>
+              <th onclick="sortTable('cullen vs ROA %')">Cullen vs ROA %</th>
+              <th onclick="sortTable('gs vs ROA USD')">GS vs ROA $</th>
+              <th onclick="sortTable('gs vs ROA %')">GS vs ROA %</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -624,6 +628,7 @@
       // ── STATE ─────────────────────────────────────────────────────
       let ALL_DATA = [], _RAW_DATA = [], filteredData = [], PARTIAL_DATA = [];
       let tableMode = "all", commonOnly = false;
+      let sortCol = null, sortDir = "asc";
       let currentPage = 1, PAGE_SIZE = 20;
       let priceMin = null, priceMax = null;
       let activeBucketFilter = null, activePriceBucket = null;
@@ -1177,6 +1182,13 @@
       }
 
       // ── TABLE ──────────────────────────────────────────────────────
+      function sortTable(col) {
+        if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else { sortCol = col; sortDir = "asc"; }
+        currentPage = 1;
+        render();
+      }
+
       function fmtPct(v) { return v===null||v===undefined ? "—" : Number(v).toFixed(2) + "%"; }
       function fmtUSD(v) {
         return v===null||v===undefined||v===""||Number(v)===0 ? "—" : "$" + Number(v).toLocaleString();
@@ -1184,6 +1196,11 @@
       function pctClass(v) { return v===null||v===undefined ? "pct-zero" : v>0 ? "pct-pos" : v<0 ? "pct-neg" : "pct-zero"; }
 
       function renderTable(data) {
+        document.querySelectorAll(".table-wrap thead th").forEach(th => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
+            th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
+        });
         document.getElementById("tableCount").textContent = `— ${data.length.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent = data.length.toLocaleString();
         const tp = Math.ceil(data.length / PAGE_SIZE);
@@ -1240,6 +1257,13 @@
       // ── MASTER RENDER ──────────────────────────────────────────────
       function render() {
         applyFiltersLocal();
+        if (sortCol) {
+          filteredData.sort((a, b) => {
+            const av = a[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(a[sortCol]);
+            const bv = b[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(b[sortCol]);
+            return sortDir === "asc" ? av - bv : bv - av;
+          });
+        }
         document.getElementById("totalCount").textContent = ALL_DATA.length.toLocaleString();
         const tl = document.getElementById("tableSourceLabel");
         if (tl) {

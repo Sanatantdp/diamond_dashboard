@@ -782,6 +782,22 @@
         top: 0;
         z-index: 1;
       }
+      thead th[onclick] {
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s;
+      }
+      thead th[onclick]:hover {
+        color: var(--accent);
+      }
+      thead th.sort-asc::after {
+        content: " ↑";
+        color: var(--accent);
+      }
+      thead th.sort-desc::after {
+        content: " ↓";
+        color: var(--accent);
+      }
       tbody tr {
         border-bottom: 1px solid var(--border);
         transition: background 0.12s;
@@ -1296,10 +1312,10 @@
               <th>LG -30%</th>
               <th>Brilliance Price</th>
               <th>Brilliance -30%</th>
-              <th>LG vs PC $</th>
-              <th>LG vs PC %</th>
-              <th>Brilliance vs PC $</th>
-              <th>Brilliance vs PC %</th>
+              <th onclick="sortTable('loose-grown vs PC USD')">LG vs PC $</th>
+              <th onclick="sortTable('loose-grown vs PC %')">LG vs PC %</th>
+              <th onclick="sortTable('brilliance vs PC USD')">Brilliance vs PC $</th>
+              <th onclick="sortTable('brilliance vs PC %')">Brilliance vs PC %</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -1793,6 +1809,18 @@
         } else tag.style.display = "none";
       }
 
+      // ── Main table sort ───────────────────────────────────────
+      function sortTable(col) {
+        if (sortCol === col)
+          sortDir = sortDir === "asc" ? "desc" : "asc";
+        else {
+          sortCol = col;
+          sortDir = "asc";
+        }
+        currentPage = 1;
+        render();
+      }
+
       // TABLE
       function fmtPct(v) {
         return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
@@ -1814,6 +1842,11 @@
 
       function renderTable() {
         // pageRows + pageTotal come from the server (fetchPage()).
+        document.querySelectorAll(".table-wrap thead th").forEach((th) => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
+            th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
+        });
         document.getElementById("tableCount").textContent =
           `— ${pageTotal.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent =
