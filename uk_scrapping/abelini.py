@@ -1,50 +1,3 @@
-"""
-abelini.py — Sharded scraper for abelini.com lab-grown diamonds, with VPN rotation.
-
-Drop-in replacement for the previous abelini.py.
-
-WHAT'S NEW (vs your old scraper):
-  1. SHAPE × CARAT-BAND SHARDING
-     The old scraper hit each shape as one 20K-page scan with stone_carat 0.20-10.
-     Server-side pagination is unstable over that big a window — the back half of
-     the pages produced mostly duplicates, and your dup detection only flagged
-     them AFTER the request had already cost you. Now each shape is split into
-     ~14 narrow carat bands; pagination within a band is stable and terminates
-     cleanly.
-
-  2. DUP-STREAK EARLY EXIT (per shard)
-     After 2 consecutive pages where every cert_no is already seen, bail the
-     shard. Old code paged to total_pages regardless. This alone halves request
-     volume on RND.
-
-  3. GRANULAR RESUME
-     status.json now tracks done_shards (list of [shape, carat_min, carat_max])
-     AND in-progress shard_progress (current page per shard). Resume picks up
-     mid-shard, not mid-shape, so a Ctrl+C never costs you more than one shard.
-
-  4. BUFFERED CSV WRITES + LESS FREQUENT STATE PERSISTENCE
-     Disk writes cut ~100×. CSV flushes every FLUSH_EVERY records; status.json
-     persists every STATE_PERSIST_EVERY shards.
-
-WHAT'S KEPT (your old infrastructure, verbatim where possible):
-  - Threading + ThreadPoolExecutor model (NOT async)
-  - TokenBucket + global semaphore + 429 back-off
-  - 403 / Cloudflare block → hard_stop → VPNRotateNeeded → run_with_vpn_rotation
-  - File layout: <BASE_DIR>/abelini/abelini.csv  +  ../diamond_files/uk/abelini.csv mirror
-  - FIELDS schema (cert_no_clean dedupe, status, page_no)
-  - BeautifulSoup parsing of <tr.diamond-data-row> rows
-  - VPN rotator integration (vpn_rotator module)
-  - User-Agent rotation, headers, sec-ch-ua client hints
-
-Tune via env vars (defaults are sane for direct connection):
-  ABELINI_PAGE_WORKERS         (default 4)   — page workers per band
-  ABELINI_LARGE_PAGE_WORKERS   (default 12)  — page workers for high-count shards
-  ABELINI_MAX_RPS              (default 12)  — global requests/sec
-  ABELINI_MAX_CONCURRENT       (default 15)  — hard cap on simultaneous HTTP
-  ABELINI_FLUSH_EVERY          (default 500) — flush mirror CSV every N new records
-  ABELINI_FAST_MODE            (default 0)   — set 1 to scrape only 0.30-3.00ct
-"""
-
 import csv
 import json
 import logging
@@ -107,8 +60,8 @@ def _build_carat_bands(fast: bool):
     """Return list of (carat_min, carat_max) tuples. Fast mode = engagement range."""
     bands = []
     if fast:
-        # 0.30 → 1.00 in 0.20 steps
-        v = 0.30
+        # 0.50 → 1.00 in 0.20 steps
+        v = 0.50
         while v < 1.00 - 1e-9:
             bands.append((round(v, 2), round(v + 0.20, 2))); v += 0.20
         # 1.00 → 2.00 in 0.20
