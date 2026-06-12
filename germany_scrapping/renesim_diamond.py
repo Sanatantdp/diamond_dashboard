@@ -1,10 +1,9 @@
 from curl_cffi import requests as curl_requests
 import csv, os, time, random, json, logging
 import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock, Event
+from pathlib import Path
 
-from status_writer import write_status
+from status import write_status
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -38,16 +37,22 @@ CSV_FILE     = "renesim_eur.csv"          # ← no date in filename
 BASE_DIR     = os.getcwd()
 
 PAGE_SIZE  = 20
-WORKERS    = 5
-TIMEOUT    = 60
-SAVE_EVERY = 50
+TIMEOUT    = 45       # increased from 30 — give slow responses more room
 
-DELAY_MIN       = 1.5
-DELAY_MAX       = 3.0
-RATELIMIT_PAUSE = 60
+VPN_ROTATE_AFTER_FAILS = 3          # rotate sooner (was 5) — don't burn the IP
+VPN_CONFIG_SUBDIR      = "renesim"
+
+
+class VPNRotateNeeded(Exception):
+    def __init__(self, fails):
+        super().__init__(f"VPN rotate: {fails} consecutive failed pages")
+
+DELAY_MIN       = 0.2   # was 0.2 — space out requests
+DELAY_MAX       = 0.5   # was 0.5
+RATELIMIT_PAUSE = 60    # was 30 — longer pause on 429/503
 
 renesim_path  = os.path.join(BASE_DIR, "renesim")
-diamond_files = os.path.join(BASE_DIR, "diamond_files")
+diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 
 for d in (renesim_path, diamond_files):
     os.makedirs(d, exist_ok=True)
@@ -56,8 +61,6 @@ MAIN_CSV      = os.path.join(renesim_path,  CSV_FILE)
 EXTRA_CSV     = os.path.join(diamond_files, CSV_FILE)
 PROGRESS_FILE = os.path.join(diamond_files, "renesim_progress.json")
 
-pause_event = Event()
-pause_event.set()
 
 
 # ── Headers ───────────────────────────────────────────────────────────────────
@@ -87,7 +90,7 @@ GQL_QUERY = """{{
     page: "{page}",
     shapes: "",
     color: "",
-    carat: "0.19, 43.12",
+    carat: "0.50, 15",
     clarity: "",
     symmetry: "",
     polish: "",
@@ -192,10 +195,18 @@ def load_progress() -> dict:
         try:
             with open(PROGRESS_FILE) as f:
                 data = json.load(f)
+            if data.get("status") == "done":
+                log.info("Previous run completed successfully — starting fresh")
+                return {"done_pages": [], "total_saved": 0, "total_pages": None}
+            last_page   = data.get("last_page", 0)
+            done_count  = len(data.get("done_pages", []))
+            total_pages = data.get("total_pages") or "?"
             log.info(
-                f"Progress file found — "
-                f"done pages: {len(data.get('done_pages', []))}, "
-                f"saved: {data.get('total_saved', 0):,}"
+                f"Interrupted run found — "
+                f"stopped at page {last_page} / {total_pages} | "
+                f"pages done: {done_count} | "
+                f"saved: {data.get('total_saved', 0):,} | "
+                f"resuming from page {last_page + 1}"
             )
             return data
         except Exception as e:
@@ -203,15 +214,18 @@ def load_progress() -> dict:
     return {"done_pages": [], "total_saved": 0, "total_pages": None}
 
 
-def save_progress(done_pages: set, total_saved: int, total_pages: int):
+def save_progress(done_pages: set, total_saved: int, total_pages: int, status: str = "running"):
+    last_page = max(done_pages) if done_pages else 0
     try:
         with open(PROGRESS_FILE, "w") as f:
             json.dump({
+                "status":      status,
+                "last_page":   last_page,
                 "done_pages":  sorted(done_pages),
                 "total_saved": total_saved,
                 "total_pages": total_pages,
                 "updated_at":  datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }, f)
+            }, f, indent=2)
     except Exception as e:
         log.warning(f"Could not save progress: {e}")
 
@@ -234,18 +248,15 @@ def load_existing_certs(csv_path: str) -> set:
 
 def fetch_page(page: int, session: curl_requests.Session) -> tuple:
     for attempt in range(1, 6):
-        pause_event.wait()
         try:
             resp = session.post(URL, json=build_payload(page), timeout=TIMEOUT)
 
             if resp.status_code in (429, 503):
                 log.warning(
                     f"[page {page}] HTTP {resp.status_code} — rate limited. "
-                    f"Pausing all workers for {RATELIMIT_PAUSE}s…"
+                    f"Pausing for {RATELIMIT_PAUSE}s…"
                 )
-                pause_event.clear()
                 time.sleep(RATELIMIT_PAUSE)
-                pause_event.set()
                 continue
 
             resp.raise_for_status()
@@ -255,7 +266,9 @@ def fetch_page(page: int, session: curl_requests.Session) -> tuple:
             return page, diamonds
 
         except Exception as e:
-            wait = (2 ** (attempt + 1)) + random.uniform(0, 3)
+            is_timeout = "timed out" in str(e).lower() or "curl: (28)" in str(e).lower()
+            base = (3 ** attempt) if is_timeout else (2 ** attempt)
+            wait = base + random.uniform(0, 2)
             log.warning(f"[page {page}] attempt {attempt}/5 failed: {e} — retrying in {wait:.1f}s")
             time.sleep(wait)
 
@@ -333,8 +346,7 @@ def make_row(d: dict, status: str, page: int) -> dict:
 
 def scrape():
     log.info("=" * 55)
-    log.info("Starting Renesim scraper — SAFE/SLOW mode")
-    log.info(f"Workers  : {WORKERS}")
+    log.info("Starting Renesim scraper")
     log.info(f"Timeout  : {TIMEOUT}s")
     log.info(f"Delay    : {DELAY_MIN}–{DELAY_MAX}s per request")
     log.info(f"Output  → {MAIN_CSV}")
@@ -348,6 +360,7 @@ def scrape():
 
     done_pages  = set(progress.get("done_pages", []))
     total_saved = progress.get("total_saved", 0)
+    last_page   = progress.get("last_page", 0)
 
     try:
         if progress.get("total_pages"):
@@ -361,10 +374,14 @@ def scrape():
 
     seen_certs = load_existing_certs(MAIN_CSV)
 
-    all_pages = list(range(1, total_pages + 1))
-    remaining = [p for p in all_pages if p not in done_pages]
+    # Start from last_page + 1 so we continue sequentially from where we stopped.
+    # Also skip any pages already done (handles out-of-order completions from parallel workers).
+    resume_from = last_page + 1 if last_page else 1
+    all_pages   = list(range(resume_from, total_pages + 1))
+    remaining   = [p for p in all_pages if p not in done_pages]
 
     log.info(f"Pages done     : {len(done_pages):,}")
+    log.info(f"Resume from    : page {resume_from}")
     log.info(f"Pages remaining: {len(remaining):,}")
 
     write_status(
@@ -373,7 +390,7 @@ def scrape():
         current_page=len(done_pages),
         total_pages=total_pages,
         diamonds_saved=total_saved,
-        message=f"Resuming — {len(remaining):,} pages remaining",
+        message=f"Resuming from page {resume_from} — {len(remaining):,} pages remaining",
     )
 
     if not remaining:
@@ -400,107 +417,113 @@ def scrape():
         writer_main.writeheader()
         writer_extra.writeheader()
 
-    lock        = Lock()
-    saved_count = [0]
-    skip_count  = [0]
-    fail_count  = [0]
-    completed   = [0]
-    last_page   = [len(done_pages)]   # tracks highest completed page number
+    saved_count = 0
+    skip_count  = 0
+    fail_count  = 0
+    fail_streak = 0
+    last_page   = len(done_pages)
     total_rem   = len(remaining)
+    session     = make_session()
 
     try:
-        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {
-                executor.submit(fetch_page, p, make_session()): p
-                for p in remaining
-            }
+        for idx, p in enumerate(remaining, 1):
+            page, diamonds = fetch_page(p, session)
+            pct = idx / total_rem * 100
 
-            for future in as_completed(futures):
-                page, diamonds = future.result()
+            if diamonds is None:
+                fail_count  += 1
+                fail_streak += 1
+                log.error(
+                    f"[{idx:>6}/{total_rem}] page {page:>5} FAILED "
+                    f"(streak {fail_streak})"
+                )
+                write_status(
+                    SCRAPER_NAME,
+                    state="running",
+                    current_page=last_page,
+                    total_pages=total_pages,
+                    diamonds_saved=total_saved + saved_count,
+                    duplicates=skip_count,
+                    failed_pages=fail_count,
+                    message=f"Page {page} failed — will retry",
+                )
+                if fail_streak >= VPN_ROTATE_AFTER_FAILS:
+                    raise VPNRotateNeeded(fail_streak)
+                continue
 
-                with lock:
-                    completed[0] += 1
-                    pct = completed[0] / total_rem * 100
+            fail_streak    = 0
+            new_rows       = []
+            dup_count_page = 0
+            for d in diamonds:
+                cert = str(d.get("certificateNumber", "")).strip()
+                if cert and cert not in seen_certs:
+                    seen_certs.add(cert)
+                    new_rows.append(make_row(d, "new", page))
+                else:
+                    skip_count += 1
+                    dup_count_page += 1
 
-                    if diamonds is None:
-                        fail_count[0] += 1
-                        log.error(
-                            f"[{completed[0]:>6}/{total_rem}] page {page:>5} FAILED "
-                            f"(will retry on next run)"
-                        )
-                        write_status(
-                            SCRAPER_NAME,
-                            state="running",
-                            current_page=last_page[0],
-                            total_pages=total_pages,
-                            diamonds_saved=total_saved + saved_count[0],
-                            duplicates=skip_count[0],
-                            failed_pages=fail_count[0],
-                            message=f"Page {page} failed — will retry",
-                        )
-                        continue
+            if new_rows:
+                writer_main.writerows(new_rows)
+                writer_extra.writerows(new_rows)
+                f_main.flush()
+                f_extra.flush()
+                saved_count += len(new_rows)
 
-                    new_rows       = []
-                    dup_count_page = 0
-                    for d in diamonds:
-                        cert = str(d.get("certificateNumber", "")).strip()
-                        if cert and cert not in seen_certs:
-                            seen_certs.add(cert)
-                            new_rows.append(make_row(d, "new", page))
-                        else:
-                            skip_count[0] += 1
-                            dup_count_page += 1
+            done_pages.add(page)
+            last_page = max(last_page, page)
+            total_saved_now = total_saved + saved_count
 
-                    if new_rows:
-                        writer_main.writerows(new_rows)
-                        writer_extra.writerows(new_rows)
-                        f_main.flush()
-                        f_extra.flush()
-                        saved_count[0] += len(new_rows)
+            log.info(
+                f"[{idx:>6}/{total_rem}] "
+                f"page {page:>5} | "
+                f"+{len(new_rows):>2} new | "
+                f"skipped {dup_count_page} dupes | "
+                f"total saved: {total_saved_now:,} | "
+                f"{pct:.1f}%"
+            )
 
-                    done_pages.add(page)
-                    last_page[0] = max(last_page[0], page)
-                    total_saved_now = total_saved + saved_count[0]
+            write_status(
+                SCRAPER_NAME,
+                state="running",
+                current_page=last_page,
+                total_pages=total_pages,
+                diamonds_saved=total_saved_now,
+                duplicates=skip_count,
+                failed_pages=fail_count,
+                message=f"Processing… {pct:.1f}% complete",
+                extra={
+                    "pages_done":        len(done_pages),
+                    "pages_remaining":   total_rem - idx,
+                    "last_page_scraped": last_page,
+                },
+            )
 
-                    log.info(
-                        f"[{completed[0]:>6}/{total_rem}] "
-                        f"page {page:>5} | "
-                        f"+{len(new_rows):>2} new | "
-                        f"skipped {dup_count_page} dupes | "
-                        f"total saved: {total_saved_now:,} | "
-                        f"{pct:.1f}%"
-                    )
+            save_progress(done_pages, total_saved_now, total_pages)
 
-                    # ── Live status update every page ─────────
-                    write_status(
-                        SCRAPER_NAME,
-                        state="running",
-                        current_page=last_page[0],
-                        total_pages=total_pages,
-                        diamonds_saved=total_saved_now,
-                        duplicates=skip_count[0],
-                        failed_pages=fail_count[0],
-                        message=f"Processing… {pct:.1f}% complete",
-                        extra={
-                            "pages_done":      len(done_pages),
-                            "pages_remaining": total_rem - completed[0],
-                            "last_page_scraped": last_page[0],
-                        },
-                    )
-                    # ─────────────────────────────────────────
-
-                    if completed[0] % SAVE_EVERY == 0:
-                        save_progress(done_pages, total_saved_now, total_pages)
-
+    except KeyboardInterrupt:
+        log.warning("Ctrl+C received — saving progress…")
+        save_progress(done_pages, total_saved + saved_count, total_pages)
+        write_status(
+            SCRAPER_NAME,
+            state="interrupted",
+            current_page=last_page,
+            total_pages=total_pages,
+            diamonds_saved=total_saved + saved_count,
+            duplicates=skip_count,
+            failed_pages=fail_count,
+            message="Stopped by Ctrl+C — progress saved",
+        )
+        raise
     except Exception as e:
         write_status(
             SCRAPER_NAME,
             state="failed",
-            current_page=last_page[0],
+            current_page=last_page,
             total_pages=total_pages,
-            diamonds_saved=total_saved + saved_count[0],
-            duplicates=skip_count[0],
-            failed_pages=fail_count[0],
+            diamonds_saved=total_saved + saved_count,
+            duplicates=skip_count,
+            failed_pages=fail_count,
             message=f"Crashed: {e}",
         )
         raise
@@ -508,30 +531,26 @@ def scrape():
         f_main.close()
         f_extra.close()
 
-    final_saved = total_saved + saved_count[0]
-    save_progress(done_pages, final_saved, total_pages)
+    final_saved = total_saved + saved_count
+    save_progress(done_pages, final_saved, total_pages, status="done")
 
-    # ── Final status ──────────────────────────────────────────
     write_status(
         SCRAPER_NAME,
         state="done",
         current_page=total_pages,
         total_pages=total_pages,
         diamonds_saved=final_saved,
-        duplicates=skip_count[0],
-        failed_pages=fail_count[0],
+        duplicates=skip_count,
+        failed_pages=fail_count,
         message="Scrape complete",
-        extra={
-            "output_csv":  MAIN_CSV,
-            "mirror_csv":  EXTRA_CSV,
-        },
+        extra={"output_csv": MAIN_CSV, "mirror_csv": EXTRA_CSV},
     )
 
     log.info("=" * 55)
     log.info("DONE")
-    log.info(f"  New rows saved  : {saved_count[0]:,}")
-    log.info(f"  Duplicates skip : {skip_count[0]:,}")
-    log.info(f"  Pages failed    : {fail_count[0]:,}")
+    log.info(f"  New rows saved  : {saved_count:,}")
+    log.info(f"  Duplicates skip : {skip_count:,}")
+    log.info(f"  Pages failed    : {fail_count:,}")
     log.info(f"  Total in CSV    : {final_saved:,}")
     log.info(f"  CSV    → {MAIN_CSV}")
     log.info(f"  Mirror → {EXTRA_CSV}")
@@ -540,13 +559,119 @@ def scrape():
     return {
         "action":       "scrape_complete",
         "total_saved":  final_saved,
-        "new_rows":     saved_count[0],
-        "duplicates":   skip_count[0],
-        "failed_pages": fail_count[0],
+        "new_rows":     saved_count,
+        "duplicates":   skip_count,
+        "failed_pages": fail_count,
         "output":       MAIN_CSV,
         "end_time":     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# VPN ROTATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_with_vpn_rotation():
+    from pathlib import Path as _Path
+    from vpn_rotator import (
+        VPNConnection,
+        VPNError,
+        find_openvpn_executable,
+        is_admin,
+        parse_credentials_file,
+        write_auth_file,
+    )
+
+    log.info("=" * 60)
+    log.info("Renesim scraper — VPN rotation enabled")
+    log.info(f"  Rotate after fails   : {VPN_ROTATE_AFTER_FAILS}")
+    log.info(f"  Delay per request    : {DELAY_MIN}–{DELAY_MAX}s")
+    log.info("=" * 60)
+
+    if not is_admin():
+        log.error("OpenVPN requires Administrator/root — re-run from an elevated shell.")
+        return
+
+    try:
+        find_openvpn_executable()
+    except VPNError as exc:
+        log.error("OpenVPN unavailable: %s", exc)
+        return
+
+    repo_root = _Path(__file__).resolve().parent.parent
+    vpn_dir   = repo_root / "vpnbook" / "germany" / VPN_CONFIG_SUBDIR
+    if not vpn_dir.exists():
+        log.error("VPN config dir not found: %s", vpn_dir)
+        return
+
+    proton_auth  = None
+    proton_creds = repo_root / "vpnbook" / "proton_credentials.txt"
+    if proton_creds.exists():
+        user, pwd   = parse_credentials_file(proton_creds)
+        proton_auth = write_auth_file(user, pwd, proton_creds.parent / "proton_auth.txt")
+        log.info("Using ProtonVPN credentials from %s", proton_creds)
+    else:
+        log.warning("proton_credentials.txt not found — falling back to per-config lookup")
+
+    openvpn_log = repo_root / "vpnbook" / "openvpn.log"
+    configs     = sorted(vpn_dir.glob("*.ovpn"))
+    if not configs:
+        log.error("No .ovpn files in %s", vpn_dir)
+        return
+
+    import random as _random
+    _random.shuffle(configs)
+    total   = len(configs)
+    deleted = 0
+    log.info("VPN pool: %d config(s) in %s", total, vpn_dir)
+
+    for attempt, cfg in enumerate(configs, start=1):
+        log.info("--- VPN attempt %d/%d: %s ---", attempt, total, cfg.name)
+        try:
+            with VPNConnection(cfg, auth_file=proton_auth, log_file=openvpn_log) as vpn:
+                log.info("Tunnel up. Exit IP = %s", vpn.ip_after)
+                scrape()
+            log.info("Scrape completed — VPN torn down.")
+            return
+
+        except VPNRotateNeeded as e:
+            log.warning(
+                "IP burned (%d consecutive fails) — rotating VPN: %s",
+                VPN_ROTATE_AFTER_FAILS, e,
+            )
+            log.info("Cooling down 15s before next VPN…")
+            time.sleep(15)
+
+        except VPNError as e:
+            if "authentication failed" in str(e).lower():
+                log.error("VPN auth failed on %s — aborting. Check proton_credentials.txt.", cfg.name)
+                return
+            log.error("VPN error on %s: %s — skipping config", cfg.name, e)
+            # try:
+            #     cfg.unlink()
+            #     deleted += 1
+            # except OSError as del_exc:
+            #     log.warning("Could not delete %s: %s", cfg.name, del_exc)
+
+        except KeyboardInterrupt:
+            log.warning("Ctrl+C — exiting VPN loop.")
+            return
+
+    log.error(
+        "Tried all %d VPN config(s) — none completed the scrape (%d deleted).",
+        total, deleted,
+    )
+
+
 if __name__ == "__main__":
-    scrape()
+    import sys
+    try:
+        if "--no-vpn" in sys.argv:
+            scrape()
+        else:
+            run_with_vpn_rotation()
+    except KeyboardInterrupt:
+        log.warning("Ctrl+C — stopped.")
+    except Exception as e:
+        log.error("Fatal error: %s", e)
+        raise

@@ -1,8 +1,7 @@
 from curl_cffi import requests as curl_requests
 import csv, os, time, random, json, logging
 import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
+from pathlib import Path
 
 def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
@@ -35,12 +34,10 @@ URL        = "https://py.preciouscarbon.com/roa/graphql"
 DATE_STR   = datetime.datetime.now().strftime("%Y-%m-%d")
 CSV_FILE   = f"rog_{DATE_STR}.csv"
 PAGE_SIZE  = 20
-WORKERS    = 20          # you can lower to 10-15 if you get rate-limited
-SAVE_EVERY = 100
 
 base_dir      = os.getcwd()
 rog_path      = os.path.join(base_dir, "rog")
-diamond_files = os.path.join(base_dir, "diamond_files")
+diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 
 for d in (rog_path, diamond_files):
     os.makedirs(d, exist_ok=True)
@@ -103,7 +100,8 @@ GQL_QUERY = """{{
     diamondType:"lab",
     sortBy:"asc",
     orderBy:"price",
-    currencyFlag:"USD"
+    currencyFlag:"USD",
+    pageSize:"2000"
   ) {{
     dataCount
     diamondsReturned
@@ -153,8 +151,11 @@ def load_progress() -> dict:
         try:
             with open(PROGRESS_FILE) as f:
                 data = json.load(f)
+            if data.get("status") == "done":
+                log.info("Previous run completed — starting fresh")
+                return {"done_pages": [], "total_saved": 0, "total_pages": None}
             log.info(
-                f"Progress file found — "
+                f"Interrupted run found — "
                 f"done pages: {len(data.get('done_pages', []))}, "
                 f"saved: {data.get('total_saved', 0):,}"
             )
@@ -164,10 +165,11 @@ def load_progress() -> dict:
     return {"done_pages": [], "total_saved": 0, "total_pages": None}
 
 
-def save_progress(done_pages: set, total_saved: int, total_pages: int):
+def save_progress(done_pages: set, total_saved: int, total_pages: int, status: str = "running"):
     try:
         with open(PROGRESS_FILE, "w") as f:
             json.dump({
+                "status":      status,
                 "done_pages":  sorted(done_pages),
                 "total_saved": total_saved,
                 "total_pages": total_pages,
@@ -277,8 +279,7 @@ def make_row(d: dict, status: str, page: int) -> dict:
 
 def scrape():
     log.info("=" * 55)
-    log.info("Starting ROG scraper (concurrent - Renesim style)")
-    log.info(f"Workers : {WORKERS}")
+    log.info("Starting ROG scraper")
     log.info(f"Output  → {MAIN_CSV}")
     log.info(f"Mirror  → {EXTRA_CSV}")
 
@@ -318,73 +319,64 @@ def scrape():
         writer_main.writeheader()
         writer_extra.writeheader()
 
-    lock        = Lock()
-    saved_count = [0]
-    skip_count  = [0]
-    fail_count  = [0]
-    completed   = [0]
+    saved_count = 0
+    skip_count  = 0
+    fail_count  = 0
     total_rem   = len(remaining)
 
-    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-        futures = {executor.submit(fetch_page, p, session): p for p in remaining}
+    for idx, p in enumerate(remaining, 1):
+        page, diamonds = fetch_page(p, session)
+        pct = idx / total_rem * 100
 
-        for future in as_completed(futures):
-            page, diamonds = future.result()
+        if diamonds is None:
+            fail_count += 1
+            log.error(f"[{idx:>6}/{total_rem}] page {page:>5} FAILED")
+            done_pages.add(page)
+            continue
 
-            with lock:
-                completed[0] += 1
-                pct = completed[0] / total_rem * 100
+        new_rows = []
+        dup_count_page = 0
+        for d in diamonds:
+            cert = str(d.get("certificateNumber", "")).strip()
+            if cert and cert not in seen_certs:
+                seen_certs.add(cert)
+                new_rows.append(make_row(d, "new", page))
+            else:
+                skip_count += 1
+                dup_count_page += 1
 
-                if diamonds is None:
-                    fail_count[0] += 1
-                    log.error(f"[{completed[0]:>6}/{total_rem}] page {page:>5} FAILED")
-                    done_pages.add(page)
-                    continue
+        if new_rows:
+            writer_main.writerows(new_rows)
+            writer_extra.writerows(new_rows)
+            f_main.flush()
+            f_extra.flush()
+            saved_count += len(new_rows)
 
-                new_rows = []
-                dup_count_page = 0
-                for d in diamonds:
-                    cert = str(d.get("certificateNumber", "")).strip()
-                    if cert and cert not in seen_certs:
-                        seen_certs.add(cert)
-                        new_rows.append(make_row(d, "new", page))
-                    else:
-                        skip_count[0] += 1
-                        dup_count_page += 1
+        done_pages.add(page)
+        total_saved_now = total_saved + saved_count
 
-                if new_rows:
-                    writer_main.writerows(new_rows)
-                    writer_extra.writerows(new_rows)
-                    f_main.flush()
-                    f_extra.flush()
-                    saved_count[0] += len(new_rows)
+        log.info(
+            f"[{idx:>6}/{total_rem}] "
+            f"page {page:>5} | "
+            f"+{len(new_rows):>2} new | "
+            f"skipped {dup_count_page} dupes | "
+            f"total saved: {total_saved_now:,} | "
+            f"{pct:.1f}%"
+        )
 
-                done_pages.add(page)
-                total_saved_now = total_saved + saved_count[0]
-
-                log.info(
-                    f"[{completed[0]:>6}/{total_rem}] "
-                    f"page {page:>5} | "
-                    f"+{len(new_rows):>2} new | "
-                    f"skipped {dup_count_page} dupes | "
-                    f"total saved: {total_saved_now:,} | "
-                    f"{pct:.1f}%"
-                )
-
-                if completed[0] % SAVE_EVERY == 0:
-                    save_progress(done_pages, total_saved_now, total_pages)
+        save_progress(done_pages, total_saved_now, total_pages)
 
     f_main.close()
     f_extra.close()
 
-    final_saved = total_saved + saved_count[0]
-    save_progress(done_pages, final_saved, total_pages)
+    final_saved = total_saved + saved_count
+    save_progress(done_pages, final_saved, total_pages, status="done")
 
     log.info("=" * 55)
     log.info("DONE")
-    log.info(f"  New rows saved  : {saved_count[0]:,}")
-    log.info(f"  Duplicates skip : {skip_count[0]:,}")
-    log.info(f"  Pages failed    : {fail_count[0]:,}")
+    log.info(f"  New rows saved  : {saved_count:,}")
+    log.info(f"  Duplicates skip : {skip_count:,}")
+    log.info(f"  Pages failed    : {fail_count:,}")
     log.info(f"  Total in CSV    : {final_saved:,}")
     log.info(f"  CSV    → {MAIN_CSV}")
     log.info(f"  Mirror → {EXTRA_CSV}")
@@ -393,9 +385,9 @@ def scrape():
     return {
         "action":       "scrape_complete",
         "total_saved":  final_saved,
-        "new_rows":     saved_count[0],
-        "duplicates":   skip_count[0],
-        "failed_pages": fail_count[0],
+        "new_rows":     saved_count,
+        "duplicates":   skip_count,
+        "failed_pages": fail_count,
         "output":       MAIN_CSV,
         "end_time":     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }

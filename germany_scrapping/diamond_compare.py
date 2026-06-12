@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 import json
 import datetime
@@ -12,7 +13,7 @@ load_dotenv()
 log = get_logger("comparator")
 
 # ── Directories ────────────────────────────────────────────────
-DIAMOND_FILES_DIR       = os.path.join(os.getcwd(), "diamond_files")
+DIAMOND_FILES_DIR       = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 COMPARE_DIR             = os.path.join(os.getcwd(), "compare")
 FILE_STATUS_JSON        = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
 COMPARE_CSV              = os.path.join(COMPARE_DIR, "compare.csv")
@@ -509,10 +510,10 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
 
     # Upload all JSON files to PostgreSQL (truncate + insert)
     try:
-        import rog_compare_to_db
+        import germany_scrapping.germany_compare_to_db as germany_compare_to_db
         log.info("=" * 50)
         log.info("UPLOADING ROG JSON FILES TO POSTGRESQL")
-        rog_compare_to_db.main()
+        germany_compare_to_db.main()
         log.info("PostgreSQL upload complete.")
     except Exception as exc:
         log.error(f"PostgreSQL upload failed (compare files are still saved locally): {exc}")

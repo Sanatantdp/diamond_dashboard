@@ -1,6 +1,7 @@
 from curl_cffi import requests
 import csv, os, time, random, json
 import datetime
+from pathlib import Path
 
 from status import write_status
 
@@ -11,17 +12,26 @@ CSV_FILE         = "77diamonds.csv"      # ← no date in filename
 BASE_DIR         = os.getcwd()
 
 diamonds_path    = os.path.join(BASE_DIR, "77diamonds")
-diamond_files    = os.path.join(BASE_DIR, "diamond_files")
+diamond_files    = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 
 for d in (diamonds_path, diamond_files):
     os.makedirs(d, exist_ok=True)
 
 RESULTS_PER_PAGE = 10000
-SLEEP_MIN        = 1.0
-SLEEP_MAX        = 2.0
+SLEEP_MIN        = 0.3
+SLEEP_MAX        = 0.8
 
-MAIN_CSV  = os.path.join(diamonds_path, CSV_FILE)
-EXTRA_CSV = os.path.join(diamond_files, CSV_FILE)
+VPN_ROTATE_AFTER_FAILS = 5
+VPN_CONFIG_SUBDIR      = "77diamonds"
+
+
+class VPNRotateNeeded(Exception):
+    def __init__(self, fails):
+        super().__init__(f"VPN rotate: {fails} consecutive failed pages")
+
+MAIN_CSV      = os.path.join(diamonds_path, CSV_FILE)
+EXTRA_CSV     = os.path.join(diamond_files, CSV_FILE)
+PROGRESS_FILE = os.path.join(diamonds_path, "progress.json")
 
 # ── Headers ───────────────────────────────────────────────────────────────────
 HEADERS = {
@@ -31,38 +41,71 @@ HEADERS = {
     "domain":             "https://www.77diamonds.com",
     "origin":             "https://www.77diamonds.com",
     "priority":           "u=1, i",
-    "referer":            "https://www.77diamonds.com/engagement-rings?item=-1",
-    "sec-ch-ua":          '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+    "referer":            "https://www.77diamonds.com/de/verlobungsringe/brillant?item=-1&stone=3",
+    "sec-ch-ua":          '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
     "sec-ch-ua-mobile":   "?0",
     "sec-ch-ua-platform": '"Windows"',
     "sec-fetch-dest":     "empty",
     "sec-fetch-mode":     "cors",
     "sec-fetch-site":     "same-origin",
+    "traceparent":        "00-08da4a6f136520f080a7b86eceb7aff1-3a35aaadf612e955-00",
     "user-agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/146.0.0.0 Safari/537.36"
+        "Chrome/149.0.0.0 Safari/537.36"
     ),
 }
 
 COOKIES = {
-    "session":            "82d3d743-19d8-483c-9a68-5b51a17f171b",
-    "currentCountryId":   "756",
-    "currentCurrencyId":  "17",
-    "addDiscount":        "EARLYSPRING2026",
-    "showCookieBar":      "true",
-    "h3": (
-        "Fe26.2**bda276330a5ed3643beeaa80f18e659bfb56a32cbaf750712cadbd63091d239a"
-        "*PZ-dB6vDHFn77VuryN2gvw*pBPBA_0n8tSnIF0Dqbjle7QQLR4RfP2mRdDd3PogJSaMt5npleYkIwq0cxuLo66Y"
-        "hXwJdKS1NVw4Y0zFFaKOm2ciPVOLeM5sovDb4TO16NKogZBfJHZYlxERbu5P07hc"
-        "**7c2e108ffb4a08b38ce10b8fc8cc33a6cb3e10e090cfe3fcf0f7b258f793d744"
-        "*BlzwkuLPoqCat8lMaY2FsckkQy4opYss95qqg8Ku9JE"
+    "session":                      "96faf19a-6e2c-4cae-8590-0873f9468382",
+    "addDiscount":                  "LATESPRING2026",
+    "trustedsite_visit":            "1",
+    "sgtm__ga":                     "GA1.1.567279997.1781081617",
+    "FPID":                         "FPID2.2.4I3bF9RTegHr7K3dALe7iqCO1GYvL2qoVppJTWGF0mY=.1781081617",
+    "_tt_enable_cookie":            "1",
+    "_ttp":                         "01KTRBSD4312YA1TVPZ6B8YDRD_.tt.1",
+    "_fbp":                         "fb.1.1781081617660.166783200137986487",
+    "_clck":                        "1bwp9ew^2^g6s^0^2352",
+    "FPLC": (
+        "EIVcoRrjK7CIicbkyONslrg8eJUxE3r4bYoUHd3ez18RQ/RdziJ8rhP/mP3Onubv2vyieMEBcCBu11OU89hL"
+        "ReXHFUObobEfONPGuIYqDeL/GiG8KSV415uuzlvqLQ=="
+    ),
+    "FPAU":                         "1.2.1946190473.1781081620",
+    "ometria": (
+        "2_cid=ATpGYyNkzCk64Fqn&nses=3&osts=1781081616&sid=e966df151o3r382tJ2X8j"
+        "&npv=0&tids=&ecamp=&src=google.com|NOT_SUPPLIED|search||Google||20614"
+        "&osrc=google.com|NOT_SUPPLIED|search||Google||20614&slt=1781083220"
+    ),
+    "_uetsid":                      "ded501c064a911f18b0b39e7d6c99a01",
+    "_uetvid":                      "ded585a064a911f188e57542db7ab8d1",
+    "ttcsid_CEVGTMJC77U3HAH3HV8G":  "1781081617542::F8PzIlv8pie5EnyPxpMU.1.1781083222990.1",
+    "ttcsid":                       "1781081617542::NNPYZYF2ghNR7aO172vD.1.1781083222991.0::1.1598838.1605449::1585367.4.430.2004::1613473.170.3680",
+    "_clsk":                        "1lvvz2d^1781084500938^10^1^k.clarity.ms/collect",
+    "currentCountryId":             "276",
+    "currentCurrencyId":            "2",
+    "showCookieBar":                "true",
+    "__cf_bm": (
+        "9rWL0LtllWD5KC7k_1BQXMHR4UPbhGwGPoVxfRThS8w-1781095957.1539342-1.0.1.1"
+        "-v6LKC3LFdWhc9b43k7VE3KY4qYx8_upD410WCBBhhoLHwKiFxBuqvicUBPzcNwZFdaaE414dyzOava"
+        "WaHtAwf5yAZ2HtKBtlRGbbBvsnpK8PQcaFdQ0BTArI_DK5Ne1f"
+    ),
+    "viewport":                     "sm",
+    "OptanonAlertBoxClosed":        "2026-06-10T12:56:43.171Z",
+    "FPGSID":                       "1.1781094536.1781096203.G-ZEY1KN5E2P.OQ5v8cH6hoAmBKt2Aun47g",
+    "OptanonConsent": (
+        "isGpcEnabled=0&datestamp=Wed+Jun+10+2026+18%3A26%3A44+GMT%2B0530+(India+Standard+Time)"
+        "&version=202510.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&landingPath=NotLandingPage"
+        "&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false&geolocation=JP%3B13"
+    ),
+    "sgtm__ga_ZEY1KN5E2P": (
+        "GS2.1.s1781086245$o2$g1$t1781096257$j2$l0$h1599193214"
+        "$dqzXfxqoFEXDf-wSJb1CaRWEhcnGkG9uk1Q"
     ),
 }
 
 
 BASE_PAYLOAD = {
-    "categoryId":       7,
+    "categoryId":       1,
     "clarities":        [],
     "colors":           [],
     "country":          0,
@@ -100,16 +143,16 @@ BASE_PAYLOAD = {
     "GemClarityTreatment": [],
     "WithMedia":        False,
     "QuickShipping":    False,
-    "CountryId":        484,
-    "CurrencyId":       28,
-    "LanguageId":       1,
+    "CountryId":        276,
+    "CurrencyId":       2,
+    "LanguageId":       2,
     "UserPreference": {
-        "CountryId":    484,
-        "CurrencyId":   28,
-        "LanguageId":   1,
-        "DiscountCode": "EARLYSPRING2026",
+        "CountryId":    276,
+        "CurrencyId":   2,
+        "LanguageId":   2,
+        "DiscountCode": "LATESPRING2026",
     },
-    "Url": "https://www.77diamonds.com/round-cut-diamonds?item=-1&stone=3",
+    "Url": "https://www.77diamonds.com/de/verlobungsringe/brillant?item=-1&stone=3",
 }
 
 # ── CSV columns ───────────────────────────────────────────────────────────────
@@ -139,6 +182,40 @@ FIELDS = [
 ]
 
 
+def ts() -> str:
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+
+def load_progress() -> dict:
+    """Return saved progress if an interrupted run exists, else {}."""
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("status") != "done":
+            return data
+    return {}
+
+
+def save_progress(page: int, total_pages: int, total_saved: int) -> None:
+    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "last_completed_page": page,
+                "total_pages":         total_pages,
+                "total_saved":         total_saved,
+                "updated_at":          datetime.datetime.now().isoformat(),
+                "status":              "running",
+            },
+            f,
+            indent=2,
+        )
+
+
+def mark_progress_done() -> None:
+    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+        json.dump({"status": "done", "updated_at": datetime.datetime.now().isoformat()}, f, indent=2)
+
+
 def load_existing_codes(file_path: str) -> set:
     codes: set = set()
     if os.path.exists(file_path):
@@ -147,7 +224,7 @@ def load_existing_codes(file_path: str) -> set:
                 v = row.get("CertificateNumber") or row.get("Code")
                 if v:
                     codes.add(v)
-    print(f"Loaded {len(codes)} existing records from {file_path}")
+    print(f"[{ts()}] Loaded {len(codes)} existing records from {file_path}")
     return codes
 
 
@@ -247,6 +324,15 @@ def save_diamonds(
 def fetch_77diamonds() -> None:
     session = requests.Session(impersonate="chrome")
 
+    # ── Resume logic ──────────────────────────────────────────────────────────
+    progress    = load_progress()
+    start_page  = progress.get("last_completed_page", 0) + 1
+    if start_page > 1:
+        print(f"[{ts()}] Resuming from page {start_page} (last run stopped at page {start_page - 1})")
+    else:
+        print(f"[{ts()}] Starting fresh from page 1")
+    # ─────────────────────────────────────────────────────────────────────────
+
     existing    = load_existing_codes(MAIN_CSV)
     file_exists = os.path.exists(MAIN_CSV)
     open_mode   = "a" if file_exists else "w"
@@ -254,8 +340,8 @@ def fetch_77diamonds() -> None:
     write_status(SCRAPER_NAME, state="running", message="Starting up…")
 
     total_saved = len(existing)
-    page        = 1
-    total_pages = 1          # updated once first response arrives
+    page        = start_page
+    total_pages = progress.get("total_pages", 1)   # carry over known total if resuming
     fail_streak = 0
 
     try:
@@ -288,7 +374,7 @@ def fetch_77diamonds() -> None:
                     )
                 except Exception as exc:
                     fail_streak += 1
-                    print(f"  Request error on page {page}: {exc}")
+                    print(f"[{ts()}]  Request error on page {page} (streak {fail_streak}): {exc}")
                     write_status(
                         SCRAPER_NAME,
                         state="running",
@@ -298,12 +384,14 @@ def fetch_77diamonds() -> None:
                         failed_pages=fail_streak,
                         message=f"Request error page {page}: {exc}",
                     )
+                    if fail_streak >= VPN_ROTATE_AFTER_FAILS:
+                        raise VPNRotateNeeded(fail_streak)
                     time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
                     continue
 
                 if r.status_code >= 400:
                     fail_streak += 1
-                    print(f"  HTTP {r.status_code} on page {page} — {r.text[:300]}")
+                    print(f"[{ts()}]  HTTP {r.status_code} on page {page} (streak {fail_streak})")
                     write_status(
                         SCRAPER_NAME,
                         state="running",
@@ -313,6 +401,8 @@ def fetch_77diamonds() -> None:
                         failed_pages=fail_streak,
                         message=f"HTTP {r.status_code} on page {page}",
                     )
+                    if fail_streak >= VPN_ROTATE_AFTER_FAILS:
+                        raise VPNRotateNeeded(fail_streak)
                     time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
                     continue
 
@@ -322,7 +412,7 @@ def fetch_77diamonds() -> None:
                 diamonds    = body.get("Diamonds", [])
 
                 if not diamonds:
-                    print("No more diamonds — done.")
+                    print(f"[{ts()}] No more diamonds — done.")
                     break
 
                 total_pages = max(1, (total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
@@ -335,8 +425,10 @@ def fetch_77diamonds() -> None:
                 total_saved += new_n
                 pct          = round(page / total_pages * 100, 1)
 
+                save_progress(page, total_pages, total_saved)
+
                 print(
-                    f"Page {page:>5}/{total_pages} | "
+                    f"[{ts()}] Page {page:>5}/{total_pages} | "
                     f"items: {len(diamonds):>5} | "
                     f"new: {new_n}, dup: {dup_n} | "
                     f"total API: {total:,}"
@@ -360,12 +452,12 @@ def fetch_77diamonds() -> None:
                 # ─────────────────────────────────────────────
 
                 if len(diamonds) < RESULTS_PER_PAGE:
-                    print("Last page reached.")
+                    print(f"[{ts()}] Last page reached.")
                     break
 
                 page += 1
                 sleep_secs = random.uniform(SLEEP_MIN, SLEEP_MAX)
-                print(f"  sleeping {sleep_secs:.2f}s …")
+                print(f"[{ts()}]  sleeping {sleep_secs:.2f}s …")
                 time.sleep(sleep_secs)
 
     except Exception as e:
@@ -392,8 +484,105 @@ def fetch_77diamonds() -> None:
         extra={"output_csv": MAIN_CSV, "mirror_csv": EXTRA_CSV},
     )
 
-    print(f"\nSaved to:\n  {MAIN_CSV}\n  {EXTRA_CSV}")
+    mark_progress_done()
+    print(f"\n[{ts()}] Saved to:\n  {MAIN_CSV}\n  {EXTRA_CSV}")
+
+
+def run_with_vpn_rotation():
+    from pathlib import Path as _Path
+    from vpn_rotator import (
+        VPNConnection,
+        VPNError,
+        find_openvpn_executable,
+        is_admin,
+        parse_credentials_file,
+        write_auth_file,
+    )
+    import logging as _logging
+    log = _logging.getLogger("77diamonds")
+
+    log.info("=" * 60)
+    log.info("77Diamonds scraper with VPN rotation")
+    log.info(f"Rotate after {VPN_ROTATE_AFTER_FAILS} consecutive failures")
+    log.info("=" * 60)
+
+    if not is_admin():
+        log.error("OpenVPN requires Administrator/root — re-run from an elevated shell.")
+        return
+
+    try:
+        find_openvpn_executable()
+    except VPNError as exc:
+        log.error("OpenVPN unavailable: %s", exc)
+        return
+
+    repo_root = _Path(__file__).resolve().parent.parent
+    vpn_dir   = repo_root / "vpnbook" / "germany" / VPN_CONFIG_SUBDIR
+    if not vpn_dir.exists():
+        log.error("VPN config dir not found: %s", vpn_dir)
+        return
+
+    proton_auth  = None
+    proton_creds = repo_root / "vpnbook" / "proton_credentials.txt"
+    if proton_creds.exists():
+        user, pwd   = parse_credentials_file(proton_creds)
+        proton_auth = write_auth_file(user, pwd, proton_creds.parent / "proton_auth.txt")
+        log.info("Using ProtonVPN credentials from %s", proton_creds)
+    else:
+        log.warning("proton_credentials.txt not found — falling back to per-config lookup")
+
+    openvpn_log = repo_root / "vpnbook" / "openvpn.log"
+    configs     = sorted(vpn_dir.glob("*.ovpn"))
+    if not configs:
+        log.error("No .ovpn files in %s", vpn_dir)
+        return
+
+    random.shuffle(configs)
+    total   = len(configs)
+    deleted = 0
+    log.info("VPN pool: %d config(s) in %s", total, vpn_dir)
+
+    for attempt, cfg in enumerate(configs, start=1):
+        log.info("--- VPN attempt %d/%d: %s ---", attempt, total, cfg.name)
+        try:
+            with VPNConnection(cfg, auth_file=proton_auth, log_file=openvpn_log) as vpn:
+                log.info("Tunnel up. Exit IP = %s", vpn.ip_after)
+                fetch_77diamonds()
+            log.info("Scrape completed — VPN torn down.")
+            return
+
+        except VPNRotateNeeded as e:
+            log.warning("Rotating VPN (IP burned after %d fails): %s", VPN_ROTATE_AFTER_FAILS, e)
+
+        except VPNError as e:
+            if "authentication failed" in str(e).lower():
+                log.error("VPN auth failed on %s — aborting. Check proton_credentials.txt.", cfg.name)
+                return
+            log.error("VPN error on %s: %s — deleting dead config", cfg.name, e)
+            try:
+                cfg.unlink()
+                deleted += 1
+            except OSError as del_exc:
+                log.warning("Could not delete %s: %s", cfg.name, del_exc)
+
+        except KeyboardInterrupt:
+            log.warning("Interrupted — exiting VPN loop.")
+            return
+
+    log.error("Tried all %d VPN config(s) — none completed the scrape (%d deleted).", total, deleted)
 
 
 if __name__ == "__main__":
-    fetch_77diamonds()
+    import sys
+    try:
+        if "--no-vpn" in sys.argv:
+            fetch_77diamonds()
+        else:
+            run_with_vpn_rotation()
+    except KeyboardInterrupt:
+        print(f"\n[{ts()}] Ctrl+C — stopping.")
+        try:
+            from vpn_rotator import kill_openvpn_processes
+            kill_openvpn_processes()
+        except Exception:
+            pass

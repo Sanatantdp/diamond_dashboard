@@ -19,9 +19,10 @@ API_LOG_FILE        = os.path.join(_AUS_DIR, "cullen_api_log.jsonl")
 MAX_WORKERS         = 10
 CPU_LIMIT           = 80
 CHECKPOINT_MAX_DAYS = 2
+CERT_BATCH_SIZE     = 100   # process certs in batches instead of per page
 VPN_LOG_FILE        = Path(__file__).resolve().parent.parent / "vpnbook" / "openvpn.log"
-BLOCK_STATUS_CODES  = {403, 429, 503}   # HTTP codes that mean "rotate VPN"
-MAX_CONSEC_ERRORS   = 3                 # rotate after this many consecutive failures
+BLOCK_STATUS_CODES  = {403, 429, 503}
+MAX_CONSEC_ERRORS   = 3
 
 # ── Shared session (connection pool reused across all requests) ───
 _session = requests.Session()
@@ -41,9 +42,9 @@ BASE_FILTER = {
     "filter": {
         "type": "diamond",
         "shapes": ["round","oval","emerald","radiant","pear","cushion",
-                   "elongated_cushion","elongated_hexagon","marquise",
+                   "marquise",
                    "princess","asscher","heart"],
-        "minCarat": 2,          "maxCarat": 10,
+        "minCarat": 0.5,          "maxCarat": 10,
         "minClarity": "i1",     "maxClarity": "if1",
         "minColour": "j",       "maxColour": "d",
         "minCut": "ex",         "maxCut": "id",
@@ -93,8 +94,15 @@ def _last_logged_position():
     if not os.path.exists(API_LOG_FILE):
         return None
     try:
-        with open(API_LOG_FILE, "r", encoding="utf-8") as f:
-            lines = [l.strip() for l in f if l.strip()]
+        # Read only the tail of the log file to avoid loading gigabytes into memory
+        with open(API_LOG_FILE, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            if size == 0:
+                return None
+            f.seek(max(0, size - 4096))
+            tail = f.read().decode("utf-8", errors="replace")
+        lines = [l.strip() for l in tail.splitlines() if l.strip()]
         if len(lines) < 2:
             tprint(f"API log has only {len(lines)} entry — starting from page 1.")
             return None
@@ -138,8 +146,8 @@ def clear_checkpoint():
 
 # ── Helpers ───────────────────────────────────────────────────────
 def wait_for_cpu():
-    while psutil.cpu_percent(interval=1) > CPU_LIMIT:
-        time.sleep(2)
+    while psutil.cpu_percent(interval=0.5) > CPU_LIMIT:
+        time.sleep(1)
 
 def get_certificate(diamond_id):
     try:
@@ -156,7 +164,17 @@ def get_certificate(diamond_id):
         return diamond_id, None
 
 def build_row(d):
-    return {field: d.get(field) for field in FIELDS if field != "certificate_number"} | {"certificate_number": None}
+    row = {"certificate_number": None}
+    for field in FIELDS:
+        if field == "certificate_number":
+            continue
+        val = d.get(field)
+        # API returns dimensions (and occasionally other fields) as dicts/lists.
+        # Serialize them to JSON so commas inside never break the CSV column count.
+        if isinstance(val, (dict, list)):
+            val = json.dumps(val, separators=(",", ":"))
+        row[field] = val
+    return row
 
 def load_existing_ids():
     if not os.path.exists(CSV_FILE):
@@ -170,11 +188,13 @@ def process_certificates(all_ids: list):
         return
 
     tprint(f"Scanning {len(all_ids)} certificate(s)...")
-    df = pd.read_csv(CSV_FILE, dtype=str)
+    df = pd.read_csv(CSV_FILE, dtype=str, on_bad_lines="warn")
     if "certificate_number" not in df.columns:
         df["certificate_number"] = pd.NA
 
-    ids = [i for i in all_ids if i in df["id"].astype(str).values]
+    id_col = df["id"].astype(str)
+    id_set = set(id_col)  # O(1) membership checks
+    ids = [i for i in all_ids if i in id_set]
     if not ids:
         tprint("No matching IDs in CSV — skipping cert scan.")
         return
@@ -186,12 +206,15 @@ def process_certificates(all_ids: list):
     found     = {did: cert for did, cert in results.items() if cert}
     not_found = set(ids) - set(found)
 
-    for did, cert in found.items():
-        df.loc[df["id"].astype(str) == did, "certificate_number"] = cert
-        tprint(f"  {did} -> {cert}")
+    if found:
+        # Vectorized update: one pass over the column instead of N individual loc calls
+        update_mask = id_col.isin(found)
+        df.loc[update_mask, "certificate_number"] = id_col[update_mask].map(found)
+        for did, cert in found.items():
+            tprint(f"  {did} -> {cert}")
 
     if not_found:
-        df = df[~df["id"].astype(str).isin(not_found)]
+        df = df[~id_col.isin(not_found)]
         tprint(f"Removed {len(not_found)} row(s) with no certificate.")
 
     df.to_csv(CSV_FILE, index=False)
@@ -246,68 +269,73 @@ def fetch_all_diamonds():
                 tprint(f"VPN connect failed ({cfg.name}): {e} — trying next...")
                 continue
 
+            HEADERS["user-agent"] = UserAgent().random  # fresh UA per VPN session
             tprint(f"VPN up: {cfg.name} | exit IP: {conn.ip_after}")
-            scrape_done    = False
-            blocked        = False
-            consec_errors  = 0
-            pages_this_vpn = 0
+            scrape_done      = False
+            blocked          = False
+            consec_errors    = 0
+            pages_this_vpn   = 0
+            pending_cert_ids: list[str] = []
 
             try:
-                while not blocked:
-                    payload = {**BASE_FILTER, "start": start}
-                    try:
-                        r = _session.post(URL, headers=HEADERS, data=json.dumps(payload), timeout=15)
-                    except Exception as e:
-                        consec_errors += 1
-                        tprint(f"Request error ({consec_errors}/{MAX_CONSEC_ERRORS}): {e}")
-                        if consec_errors >= MAX_CONSEC_ERRORS:
-                            tprint("Too many errors — rotating VPN...")
+                # Keep the CSV writer open for the full VPN session — one open/close
+                # instead of one per page, which matters when pages run into the hundreds.
+                with open(CSV_FILE, "a" if file_exists else "w", newline="", encoding="utf-8") as csv_f:
+                    writer = csv.DictWriter(csv_f, fieldnames=FIELDS, quoting=csv.QUOTE_ALL)
+                    if not file_exists:
+                        writer.writeheader()
+                        file_exists = True
+
+                    while not blocked:
+                        payload = {**BASE_FILTER, "start": start}
+                        try:
+                            # json= serialises once internally; avoids the manual json.dumps
+                            r = _session.post(URL, headers=HEADERS, json=payload, timeout=15)
+                        except Exception as e:
+                            consec_errors += 1
+                            tprint(f"Request error ({consec_errors}/{MAX_CONSEC_ERRORS}): {e}")
+                            if consec_errors >= MAX_CONSEC_ERRORS:
+                                tprint("Too many errors — rotating VPN...")
+                                blocked = True
+                            else:
+                                time.sleep(5)
+                            continue
+
+                        if r.status_code in BLOCK_STATUS_CODES:
+                            tprint(f"HTTP {r.status_code} — blocked, rotating VPN...")
                             blocked = True
-                        else:
-                            time.sleep(5)
-                        continue
+                            continue
 
-                    if r.status_code in BLOCK_STATUS_CODES:
-                        tprint(f"HTTP {r.status_code} — blocked, rotating VPN...")
-                        blocked = True
-                        continue
+                        if r.status_code != 200:
+                            consec_errors += 1
+                            tprint(f"HTTP {r.status_code} ({consec_errors}/{MAX_CONSEC_ERRORS}) — retrying...")
+                            if consec_errors >= MAX_CONSEC_ERRORS:
+                                tprint("Too many errors — rotating VPN...")
+                                blocked = True
+                            else:
+                                time.sleep(5)
+                            continue
 
-                    if r.status_code != 200:
-                        consec_errors += 1
-                        tprint(f"HTTP {r.status_code} ({consec_errors}/{MAX_CONSEC_ERRORS}) — retrying...")
-                        if consec_errors >= MAX_CONSEC_ERRORS:
-                            tprint("Too many errors — rotating VPN...")
-                            blocked = True
-                        else:
-                            time.sleep(5)
-                        continue
+                        try:
+                            stones = r.json().get("stones", [])
+                        except Exception:
+                            consec_errors += 1
+                            tprint(f"Invalid JSON ({consec_errors}/{MAX_CONSEC_ERRORS}) — retrying...")
+                            if consec_errors >= MAX_CONSEC_ERRORS:
+                                blocked = True
+                            else:
+                                time.sleep(5)
+                            continue
 
-                    try:
-                        stones = r.json().get("stones", [])
-                    except Exception:
-                        consec_errors += 1
-                        tprint(f"Invalid JSON ({consec_errors}/{MAX_CONSEC_ERRORS}) — retrying...")
-                        if consec_errors >= MAX_CONSEC_ERRORS:
-                            blocked = True
-                        else:
-                            time.sleep(5)
-                        continue
+                        consec_errors = 0  # reset on any successful response
 
-                    consec_errors = 0  # reset on any successful response
+                        if not stones:
+                            tprint("Finished downloading.")
+                            clear_checkpoint()
+                            scrape_done = True
+                            break
 
-                    if not stones:
-                        tprint("Finished downloading.")
-                        clear_checkpoint()
-                        scrape_done = True
-                        break
-
-                    new_ids = []
-                    with open(CSV_FILE, "a" if file_exists else "w", newline="", encoding="utf-8") as f:
-                        writer = csv.DictWriter(f, fieldnames=FIELDS)
-                        if not file_exists:
-                            writer.writeheader()
-                            file_exists = True
-
+                        new_ids = []
                         for s in stones:
                             d = s.get("info")
                             if not d:
@@ -319,17 +347,23 @@ def fetch_all_diamonds():
                             existing_ids.add(did)
                             new_ids.append(did)
 
-                    pages_this_vpn += 1
-                    tprint(f"Page {page} | Inserted {len(new_ids)} | Pages on VPN: {pages_this_vpn}")
-                    log_api_call(page, start, len(stones), len(new_ids))
-                    page  += 1
-                    start += 20
-                    save_checkpoint(page, start)
+                        pages_this_vpn += 1
+                        tprint(f"Page {page} | Inserted {len(new_ids)} | Pages on VPN: {pages_this_vpn}")
+                        log_api_call(page, start, len(stones), len(new_ids))
+                        page  += 1
+                        start += 20
+                        save_checkpoint(page, start)
 
-                    if new_ids:
-                        process_certificates(new_ids)
+                        pending_cert_ids.extend(new_ids)
+                        if len(pending_cert_ids) >= CERT_BATCH_SIZE:
+                            csv_f.flush()  # ensure rows are on disk before cert scan reads the file
+                            process_certificates(pending_cert_ids)
+                            pending_cert_ids = []
 
             finally:
+                # Flush any remaining certs before disconnecting
+                if pending_cert_ids:
+                    process_certificates(pending_cert_ids)
                 conn.disconnect()
                 tprint(f"VPN down: {cfg.name} | served {pages_this_vpn} page(s)")
 

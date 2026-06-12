@@ -3,7 +3,7 @@
 __pycache__/
 /diamond_files
 /logs
-/diamond_files2
+/compare
 *.csv*
 *.log*
 *.json*
