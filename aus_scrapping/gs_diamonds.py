@@ -1,5 +1,5 @@
 from curl_cffi import requests as cf_requests
-import json, os, csv, sys, re, time, random, logging, datetime
+import json, os, csv, sys, re, time, random, logging
 from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import unquote, urlencode
@@ -17,33 +17,63 @@ log = logging.getLogger("gs")
 # ─────────────────────────────────────────────────────────────
 #  CONFIG — edit here only
 # ─────────────────────────────────────────────────────────────
+
 _REPO          = Path(__file__).resolve().parent.parent
 CURL_FILE      = str(Path(__file__).resolve().parent / "curl_gs.txt")
 VPN_DIR        = _REPO / "vpnbook" / "roa" / "gs"
 PROTON_CREDS   = _REPO / "vpnbook" / "proton_credentials.txt"
 OPENVPN_LOG    = _REPO / "vpnbook" / "openvpn.log"
-OUTPUT_DIR     = str(_REPO / "diamond_files" / "aus")
+OUTPUT_DIR      = str(_REPO / "diamond_files" / "aus")
 VPN_ROTATE_AFTER_FAILS = 3
+JSON_DIR        = os.path.join(OUTPUT_DIR, "gs_pages")
 CSV_FILE        = os.path.join(OUTPUT_DIR, "gs_diamonds.csv")
 CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "gs_checkpoint.json")
-SLEEP_MIN       = 1.5   # random jitter range (seconds)
-SLEEP_MAX       = 3.0
+SLEEP_SEC       = 2.0
 CHECKPOINT_MAX_DAYS = 2
 
-# Pre-compiled once at import time — reused for every card on every page
-_CERT_RE = re.compile(r'gs(\d+)')
+import datetime
 
-# Fast O(1) shape lookup: "round" -> "Round"
-_SHAPE_MAP = {s.lower(): s for s in [
+# ── Checkpoint helpers ────────────────────────────────────────
+def load_checkpoint():
+    """Return (shape, page) to resume from, or (None, 1) for fresh start."""
+    if not os.path.exists(CHECKPOINT_FILE):
+        return None, 1
+    try:
+        with open(CHECKPOINT_FILE) as f:
+            cp = json.load(f)
+        saved = datetime.datetime.fromisoformat(cp["timestamp"])
+        age = (datetime.datetime.now() - saved).days
+        if age >= CHECKPOINT_MAX_DAYS:
+            os.remove(CHECKPOINT_FILE)
+            log.info(f"Checkpoint is {age} day(s) old (>= {CHECKPOINT_MAX_DAYS}) — starting from beginning.")
+            return None, 1
+        log.info(f"Resuming from shape={cp['shape']} page={cp['page']} (checkpoint age: {age} day(s))")
+        return cp["shape"], cp["page"]
+    except Exception as e:
+        log.warning(f"Checkpoint read error: {e} — starting from beginning.")
+        return None, 1
+
+def save_checkpoint(shape, page):
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump({"shape": shape, "page": page,
+                   "timestamp": datetime.datetime.now().isoformat()}, f)
+
+def clear_checkpoint():
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+        log.info("Checkpoint cleared (scrape complete).")
+
+BASE_URL = "https://www.gsdiamonds.com.au/lab-diamonds"
+
+SHAPES = [
     "Round", "Oval", "Cushion", "Princess", "Emerald",
     "Pear", "Radiant", "Asscher", "Heart", "Marquise",
-]}
-SHAPES = list(_SHAPE_MAP.values())
+]
 
 FILTERS = {
     "creation_method":     "Lab-White",
     "min-carat":           "0.3",
-    "max-carat":           "15",
+    "max-carat":           "20.1",
     "min-clarity_numeric": "0",
     "max-clarity_numeric": "75.5",
     "min-color_numeric":   "0",
@@ -55,47 +85,10 @@ FIELDS = [
     "cut", "polish", "symmetry", "price_aud", "url",
 ]
 
-
-# ─────────────────────────────────────────────────────────────
-#  CHECKPOINT
-# ─────────────────────────────────────────────────────────────
-def load_checkpoint():
-    """Return (shape, page) to resume from, or (None, 1) for a fresh start."""
-    if not os.path.exists(CHECKPOINT_FILE):
-        return None, 1
-    try:
-        with open(CHECKPOINT_FILE) as f:
-            cp = json.load(f)
-        age = (datetime.datetime.now() - datetime.datetime.fromisoformat(cp["timestamp"])).days
-        if age >= CHECKPOINT_MAX_DAYS:
-            os.remove(CHECKPOINT_FILE)
-            log.info(f"Checkpoint is {age} day(s) old — starting from beginning.")
-            return None, 1
-        log.info(f"Resuming from shape={cp['shape']} page={cp['page']} (age: {age} day(s))")
-        return cp["shape"], cp["page"]
-    except Exception as e:
-        log.warning(f"Checkpoint read error: {e} — starting from beginning.")
-        return None, 1
-
-
-def save_checkpoint(shape, page):
-    with open(CHECKPOINT_FILE, "w") as f:
-        json.dump({"shape": shape, "page": page,
-                   "timestamp": datetime.datetime.now().isoformat()}, f)
-
-
-def clear_checkpoint():
-    if os.path.exists(CHECKPOINT_FILE):
-        os.remove(CHECKPOINT_FILE)
-        log.info("Checkpoint cleared (scrape complete).")
-
-
-BASE_URL = "https://www.gsdiamonds.com.au/lab-diamonds"
-
-
 # ─────────────────────────────────────────────────────────────
 #  CURL.TXT PARSER
 # ─────────────────────────────────────────────────────────────
+
 class GSBlockedException(Exception):
     """Raised after N consecutive 403s — signals VPN rotation."""
     def __init__(self, page: int, consecutive: int):
@@ -123,12 +116,12 @@ def load_curl(path):
     # Normalise both Unix (\) and Windows CMD (^) line continuations
     raw = raw.replace("^\r\n", " ").replace("^\n", " ").replace("\\\n", " ")
     # Decode Windows CMD escape sequences before parsing
-    raw = re.sub(r'\^%\^', '%', raw)
-    raw = raw.replace('^$', '$')
-    raw = raw.replace('^&', '&')
-    raw = raw.replace(r'^\^"', '"')
-    raw = raw.replace('^"', '"')
-    raw = raw.replace('^^', '^')
+    raw = re.sub(r'\^%\^', '%', raw)   # ^%^ → %  (encoded URL chars)
+    raw = raw.replace('^$', '$')        # ^$ → $
+    raw = raw.replace('^&', '&')        # ^& → &  (URL ampersands)
+    raw = raw.replace(r'^\^"', '"')     # ^\^" → " (quoted value inside -H)
+    raw = raw.replace('^"', '"')        # ^"  → "  (outer delimiters)
+    raw = raw.replace('^^', '^')        # ^^ → ^   (literal caret)
     raw = re.sub(r"\s+", " ", raw).strip()
 
     q = "'" if raw.lstrip().startswith("curl '") else '"'
@@ -136,6 +129,7 @@ def load_curl(path):
 
     result = {}
 
+    # Cookies
     cookie_m = re.search(rf'-b\s+{Q}([^{q}]+){Q}', raw)
     cookies = {}
     if cookie_m:
@@ -151,6 +145,7 @@ def load_curl(path):
                 cookies[k.strip()] = v.strip()
     result["cookies"] = cookies
 
+    # Headers
     headers = {}
     for hm in re.finditer(rf'-H\s+{Q}([^{q}]+){Q}', raw):
         hdr = hm.group(1)
@@ -178,6 +173,7 @@ def validate_curl(c):
 # ─────────────────────────────────────────────────────────────
 #  CSV HELPERS
 # ─────────────────────────────────────────────────────────────
+
 def ensure_csv():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     if not os.path.exists(CSV_FILE):
@@ -197,8 +193,9 @@ def load_existing_certs():
 
 
 # ─────────────────────────────────────────────────────────────
-#  HTML PARSER  (called once per page — no second pass)
+#  HTML PARSER
 # ─────────────────────────────────────────────────────────────
+
 def parse_html_to_rows(html, shape, existing_certs):
     soup = BeautifulSoup(html, "lxml")
     grid = soup.select_one("div.product-list")
@@ -218,8 +215,9 @@ def parse_html_to_rows(html, shape, existing_certs):
 
         url = a.get("href", "")
 
+        # Extract cert_no from URL
         cert_no = ""
-        m = _CERT_RE.search(url)      # pre-compiled regex
+        m = re.search(r'gs(\d+)', url)
         if m:
             cert_no = m.group(1)
         elif "gs" in url:
@@ -230,38 +228,233 @@ def parse_html_to_rows(html, shape, existing_certs):
         if cert_no:
             existing_certs.add(cert_no)
 
-        spans = a.find_all("span")
-        color, clarity = "", ""
-        if len(spans) >= 2:
-            cc = spans[1].get_text(strip=True)
-            if "/" in cc:
-                color, clarity = (x.strip() for x in cc.split("/", 1))
-
-        price_el = card.select_one(".text-primary-dark")
-
-        rows.append({
+        data = {
             "shape":     shape,
             "cert_no":   cert_no,
             "url":       url,
-            "carat":     spans[0].get_text(strip=True).replace("ct", "").strip() if spans else "",
-            "color":     color,
-            "clarity":   clarity,
-            "cut":       spans[2].get_text(strip=True) if len(spans) >= 3 else "",
-            "polish":    spans[3].get_text(strip=True) if len(spans) >= 4 else "",
-            "symmetry":  spans[4].get_text(strip=True) if len(spans) >= 5 else "",
-            "price_aud": (
-                price_el.get_text(strip=True).replace("A$", "").replace(",", "").strip()
-                if price_el else ""
-            ),
-        })
+            "carat":     "",
+            "color":     "",
+            "clarity":   "",
+            "cut":       "",
+            "polish":    "",
+            "symmetry":  "",
+            "price_aud": "",
+        }
+
+        spans = a.find_all("span")
+        if len(spans) >= 1:
+            data["carat"] = spans[0].get_text(strip=True).replace("ct", "").strip()
+        if len(spans) >= 2:
+            cc = spans[1].get_text(strip=True)
+            if "/" in cc:
+                data["color"], data["clarity"] = [x.strip() for x in cc.split("/", 1)]
+        if len(spans) >= 3:
+            data["cut"] = spans[2].get_text(strip=True)
+        if len(spans) >= 4:
+            data["polish"] = spans[3].get_text(strip=True)
+        if len(spans) >= 5:
+            data["symmetry"] = spans[4].get_text(strip=True)
+
+        price_el = card.select_one(".text-primary-dark")
+        if price_el:
+            data["price_aud"] = (
+                price_el.get_text(strip=True)
+                .replace("A$", "").replace(",", "").strip()
+            )
+
+        rows.append(data)
 
     return rows, True
 
 
 # ─────────────────────────────────────────────────────────────
-#  SINGLE-PASS SCRAPE  (fetch + parse + CSV in one loop)
-#  Eliminates the old fetch→JSON→parse→delete pipeline entirely.
+#  STEP 1 — FETCH: live HTML pages -> save as JSON
 # ─────────────────────────────────────────────────────────────
+
+def fetch_all_pages(curl, rotate_after_fails=None):
+    os.makedirs(JSON_DIR, exist_ok=True)
+    session = cf_requests.Session(impersonate="chrome")
+
+    resume_shape, resume_page = load_checkpoint()
+    total_saved = 0
+    consecutive_fails = 0
+    reached_resume = (resume_shape is None)  # True = no checkpoint, start normally
+
+    for shape in SHAPES:
+        # Skip shapes before the checkpoint shape
+        if not reached_resume:
+            if shape != resume_shape:
+                log.info(f"[{shape}] skipping (before checkpoint)")
+                continue
+            reached_resume = True
+
+        log.info(f"[{shape}]")
+        page = resume_page if shape == resume_shape else 1
+        resume_page = 1  # reset for subsequent shapes
+
+        while True:
+            params = {**FILTERS, "shape": shape, "page": str(page)}
+            url = BASE_URL + "?" + urlencode(params)
+
+            json_filename = f"{shape.lower()}_page{page:03d}.json"
+            json_path = os.path.join(JSON_DIR, json_filename)
+
+            if os.path.exists(json_path):
+                log.info(f"  Page {page:>3}  -> cached, skip")
+                page += 1
+                consecutive_fails = 0
+                continue
+
+            try:
+                r = session.get(
+                    url,
+                    headers=curl["headers"],
+                    cookies=curl["cookies"],
+                    timeout=30,
+                )
+            except Exception as e:
+                log.warning(f"  [ERROR] Page {page}: {e}")
+                time.sleep(3)
+                break
+
+            # 403 = Cloudflare blocked — count consecutive fails then rotate
+            if r.status_code == 403:
+                consecutive_fails += 1
+                log.warning(
+                    f"  [403] {shape} page {page} "
+                    f"(consecutive: {consecutive_fails}/{rotate_after_fails or '∞'})"
+                )
+                if rotate_after_fails and consecutive_fails >= rotate_after_fails:
+                    raise GSBlockedException(page, consecutive_fails)
+                time.sleep(5)
+                continue
+
+            if r.status_code == 404:
+                log.info(f"  Page {page:>3}  -> 404, no more pages for {shape}")
+                break
+
+            if r.status_code >= 400:
+                log.warning(f"  [WARN] HTTP {r.status_code} on page {page}")
+                time.sleep(2)
+                break
+
+            consecutive_fails = 0
+            html = r.text
+
+            # Check for products before saving
+            soup = BeautifulSoup(html, "lxml")
+            grid = soup.select_one("div.product-list")
+            cards = grid.select("div.bg-white") if grid else []
+
+            if not cards:
+                log.info(f"  Page {page:>3}  -> no products, end of {shape}")
+                break
+
+            # Save HTML wrapped in same JSON format as your existing gs_pages
+            with open(json_path, "w", encoding="utf-8") as jf:
+                json.dump({"commands": [{"html": html}]}, jf)
+
+            log.info(f"  Page {page:>3}  -> {len(cards)} cards  -> {json_filename}")
+            total_saved += 1
+            save_checkpoint(shape, page + 1)
+            page += 1
+            time.sleep(SLEEP_SEC)
+
+    clear_checkpoint()
+    log.info(f"Fetch done. {total_saved} new pages saved.")
+
+
+# ─────────────────────────────────────────────────────────────
+#  STEP 2 — PARSE: JSON files -> CSV rows
+# ─────────────────────────────────────────────────────────────
+
+def parse_all_json(existing_certs):
+    files = sorted(f for f in os.listdir(JSON_DIR) if f.endswith(".json"))
+
+    if not files:
+        print("  No JSON files to parse.")
+        return []
+
+    parsed_files = []
+    total_rows = 0
+
+    with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDS)
+
+        for filename in files:
+            path = os.path.join(JSON_DIR, filename)
+
+            # Shape from filename: round_page001.json -> Round
+            shape_slug = filename.split("_page")[0]
+            shape = next(
+                (s for s in SHAPES if s.lower() == shape_slug.lower()),
+                shape_slug.capitalize()
+            )
+
+            try:
+                with open(path, "r", encoding="utf-8") as jf:
+                    data = json.load(jf)
+            except Exception as e:
+                print(f"  [ERROR] {filename}: {e}")
+                continue
+
+            commands = data.get("commands", [])
+            if not commands:
+                print(f"  [SKIP]  {filename} — no commands")
+                parsed_files.append(path)
+                continue
+
+            html = commands[0].get("html", "")
+            if not html:
+                print(f"  [SKIP]  {filename} — no html")
+                parsed_files.append(path)
+                continue
+
+            rows, has_products = parse_html_to_rows(html, shape, existing_certs)
+
+            if not has_products:
+                print(f"  {filename:<35}  -> no product grid")
+            else:
+                writer.writerows(rows)
+                print(f"  {filename:<35}  -> {len(rows):>3} new rows  [{shape}]")
+                total_rows += len(rows)
+
+            parsed_files.append(path)
+
+    print()
+    print(f"  Parse done. {total_rows} new rows -> {CSV_FILE}")
+    print()
+    return parsed_files
+
+
+# ─────────────────────────────────────────────────────────────
+#  STEP 3 — CLEANUP: delete JSON files
+# ─────────────────────────────────────────────────────────────
+
+def delete_json_files(file_paths):
+    deleted = 0
+    for path in file_paths:
+        try:
+            os.remove(path)
+            deleted += 1
+        except Exception as e:
+            print(f"  [WARN] Could not delete {path}: {e}")
+
+    try:
+        if os.path.exists(JSON_DIR) and not os.listdir(JSON_DIR):
+            os.rmdir(JSON_DIR)
+            print(f"  Removed empty folder: {JSON_DIR}/")
+    except Exception:
+        pass
+
+    print(f"  Deleted {deleted} JSON files.")
+    print()
+
+
+# ─────────────────────────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────────────────────────
+
 def scrape(rotate_after_fails=None):
     print()
     print("=" * 60)
@@ -269,104 +462,31 @@ def scrape(rotate_after_fails=None):
     print("=" * 60)
     print()
 
-    print("[1/3] Reading curl_gs.txt ...")
+    print("[1/4] Reading curl_gs.txt ...")
     curl = load_curl(CURL_FILE)
     validate_curl(curl)
 
-    print("[2/3] Preparing CSV ...")
+    print("[2/4] Preparing CSV ...")
     ensure_csv()
     existing_certs = load_existing_certs()
     print()
 
-    log.info("[3/3] Fetching + parsing (shape by shape) ...")
-    resume_shape, resume_page = load_checkpoint()
-    reached_resume = (resume_shape is None)
-    total_rows = 0
-    consecutive_fails = 0
+    log.info("[3/4] Fetching pages (shape by shape) ...")
+    fetch_all_pages(curl, rotate_after_fails=rotate_after_fails)
 
-    session = cf_requests.Session(impersonate="chrome")
-
-    # CSV writer stays open for the entire run: one open/close, one flush per page
-    with open(CSV_FILE, "a", newline="", encoding="utf-8") as csv_f:
-        writer = csv.DictWriter(csv_f, fieldnames=FIELDS)
-
-        for shape in SHAPES:
-            if not reached_resume:
-                if shape != resume_shape:
-                    log.info(f"[{shape}] skipping (before checkpoint)")
-                    continue
-                reached_resume = True
-
-            log.info(f"[{shape}]")
-            page = resume_page if shape == resume_shape else 1
-            resume_page = 1  # reset for all subsequent shapes
-
-            while True:
-                params = {**FILTERS, "shape": shape, "page": str(page)}
-                url = BASE_URL + "?" + urlencode(params)
-
-                try:
-                    r = session.get(
-                        url,
-                        headers=curl["headers"],
-                        cookies=curl["cookies"],
-                        timeout=30,
-                    )
-                except Exception as e:
-                    log.warning(f"  [ERROR] Page {page}: {e}")
-                    time.sleep(3)
-                    break
-
-                if r.status_code == 403:
-                    consecutive_fails += 1
-                    log.warning(
-                        f"  [403] {shape} page {page} "
-                        f"(consecutive: {consecutive_fails}/{rotate_after_fails or '∞'})"
-                    )
-                    if rotate_after_fails and consecutive_fails >= rotate_after_fails:
-                        raise GSBlockedException(page, consecutive_fails)
-                    time.sleep(5)
-                    continue
-
-                if r.status_code == 404:
-                    log.info(f"  Page {page:>3}  -> 404, end of {shape}")
-                    break
-
-                if r.status_code >= 400:
-                    log.warning(f"  [WARN] HTTP {r.status_code} on page {page}")
-                    time.sleep(2)
-                    break
-
-                consecutive_fails = 0
-
-                # Single parse: no intermediate JSON, no second BeautifulSoup pass
-                rows, has_products = parse_html_to_rows(r.text, shape, existing_certs)
-
-                if not has_products:
-                    log.info(f"  Page {page:>3}  -> no products, end of {shape}")
-                    break
-
-                if rows:
-                    writer.writerows(rows)
-                    csv_f.flush()   # rows survive a crash between pages
-                    total_rows += len(rows)
-
-                log.info(f"  Page {page:>3}  -> {len(rows):>3} new rows  [{shape}]")
-                save_checkpoint(shape, page + 1)
-                page += 1
-                time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))  # jitter
-
-    clear_checkpoint()
+    print("[4/4] Parsing JSON -> CSV ...")
     print()
+    parsed_files = parse_all_json(existing_certs)
+
+    print("      Cleaning up JSON files ...")
+    delete_json_files(parsed_files)
+
     print("=" * 60)
-    print(f"  DONE  {total_rows} new rows  ->  {CSV_FILE}")
+    print(f"  DONE  ->  {CSV_FILE}")
     print("=" * 60)
     print()
 
 
-# ─────────────────────────────────────────────────────────────
-#  VPN ROTATION WRAPPER
-# ─────────────────────────────────────────────────────────────
 def run_with_vpn_rotation():
     from vpn_rotator import (
         VPNConnection, VPNError,
@@ -396,6 +516,7 @@ def run_with_vpn_rotation():
         log.error(f"VPN config dir not found: {VPN_DIR}")
         return
 
+    # ProtonVPN credentials
     proton_auth = None
     if PROTON_CREDS.exists():
         user, pwd = parse_credentials_file(PROTON_CREDS)
@@ -452,7 +573,9 @@ def run_with_vpn_rotation():
 
 if __name__ == "__main__":
     try:
+        
         scrape()
+        
     except KeyboardInterrupt:
         log.warning("Ctrl+C — stopping GS scraper.")
-    
+        

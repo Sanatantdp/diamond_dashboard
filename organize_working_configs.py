@@ -1,23 +1,3 @@
-"""
-organize_working_configs.py
-===========================
-
-Reads vpnbook/vpn_scraper_results.json (produced by test_vpn_scrapers.py) and
-copies each working .ovpn into a per-scraper subfolder:
-
-    vpnbook/brilliance/   ← configs whose tunnel let the brilliance API through
-    vpnbook/loosegrown/   ← configs whose tunnel let the loosegrown API through
-
-Idempotent — the target folders are emptied of .ovpn files before each run,
-so removing a config (or re-testing) gives accurate folder contents.
-
-    python organize_working_configs.py
-    python organize_working_configs.py --dry-run
-
-The launcher script (run_with_vpn.py) picks configs from these folders at
-scrape time.
-"""
-
 from __future__ import annotations
 
 import argparse
