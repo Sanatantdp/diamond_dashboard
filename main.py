@@ -70,7 +70,7 @@ app.add_middleware(
 )
 
 PUBLIC_PATHS = {
-    "/", "/dashboard", "/dashboard/usa", "/dashboard/uk", "/dashboard/roa", "/dashboard/rog",
+    "/", "/dashboard", "/dashboard/usa", "/dashboard/uk", "/dashboard/aus", "/dashboard/germany",
     "/api/login", "/api/login/config", "/api/health", "/api/file-dates",
     "/api/uk/health", "/api/roa/health", "/api/rog/health",
 }
