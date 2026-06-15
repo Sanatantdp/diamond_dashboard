@@ -32,18 +32,13 @@ log = get_logger("rog")
 # ── Config ────────────────────────────────────────────────────────────────────
 URL        = "https://py.preciouscarbon.com/roa/graphql"
 DATE_STR   = datetime.datetime.now().strftime("%Y-%m-%d")
-CSV_FILE   = f"rog_{DATE_STR}.csv"
-PAGE_SIZE  = 20
+CSV_FILE   = f"rog_diamonds.csv"
+PAGE_SIZE  = 2000
 
-base_dir      = os.getcwd()
-rog_path      = os.path.join(base_dir, "rog")
 diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
+os.makedirs(diamond_files, exist_ok=True)
 
-for d in (rog_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
-
-MAIN_CSV      = os.path.join(rog_path,      CSV_FILE)
-EXTRA_CSV     = os.path.join(diamond_files, CSV_FILE)
+CSV_PATH      = os.path.join(diamond_files, CSV_FILE)
 PROGRESS_FILE = os.path.join(diamond_files, "rog_progress.json")
 
 
@@ -55,7 +50,7 @@ def delete_if_older_than_1_day(file_path: str):
             os.remove(file_path)
             log.info(f"Deleted old file: {file_path}")
 
-for _f in (MAIN_CSV, EXTRA_CSV, PROGRESS_FILE):
+for _f in (CSV_PATH, PROGRESS_FILE):
     delete_if_older_than_1_day(_f)
 
 
@@ -101,7 +96,7 @@ GQL_QUERY = """{{
     sortBy:"asc",
     orderBy:"price",
     currencyFlag:"USD",
-    pageSize:"2000"
+    pageSize:"{page_size}"
   ) {{
     dataCount
     diamondsReturned
@@ -141,7 +136,7 @@ def make_session() -> curl_requests.Session:
 
 
 def build_payload(page: int) -> dict:
-    return {"query": GQL_QUERY.format(page=page)}
+    return {"query": GQL_QUERY.format(page=page, page_size=PAGE_SIZE)}
 
 
 # ── Progress ──────────────────────────────────────────────────────────────────
@@ -214,7 +209,7 @@ def fetch_page(page: int, session: curl_requests.Session) -> tuple:
     return page, None
 
 
-def get_total_pages(session: curl_requests.Session) -> int:
+def get_total_pages(session: curl_requests.Session) -> tuple:
     log.info("Fetching page 1 to determine total count…")
     for attempt in range(1, 5):
         try:
@@ -225,7 +220,7 @@ def get_total_pages(session: curl_requests.Session) -> int:
             total_pages  = (total_count + PAGE_SIZE - 1) // PAGE_SIZE
             log.info(f"Total diamonds : {total_count:,}")
             log.info(f"Total pages    : {total_pages:,}")
-            return total_pages
+            return total_count, total_pages
         except Exception as e:
             wait = 2 ** attempt
             log.warning(f"get_total_pages attempt {attempt}/4 failed: {e} — wait {wait}s")
@@ -280,8 +275,7 @@ def make_row(d: dict, status: str, page: int) -> dict:
 def scrape():
     log.info("=" * 55)
     log.info("Starting ROG scraper")
-    log.info(f"Output  → {MAIN_CSV}")
-    log.info(f"Mirror  → {EXTRA_CSV}")
+    log.info(f"Output  → {CSV_PATH}")
 
     session  = make_session()
     progress = load_progress()
@@ -292,10 +286,18 @@ def scrape():
     if progress.get("total_pages"):
         total_pages = progress["total_pages"]
         log.info(f"Resuming — total pages from progress: {total_pages:,}")
+        total_count = total_pages * PAGE_SIZE  # approximate; refined below if fresh
     else:
-        total_pages = get_total_pages(session)
+        total_count, total_pages = get_total_pages(session)
 
-    seen_certs = load_existing_certs(MAIN_CSV)
+    seen_certs = load_existing_certs(CSV_PATH)
+
+    if len(seen_certs) >= total_count:
+        log.info(
+            f"CSV already has {len(seen_certs):,} diamonds — "
+            f"matches API total ({total_count:,}). Nothing to do."
+        )
+        return {"total_saved": len(seen_certs), "new_rows": 0}
 
     all_pages = list(range(1, total_pages + 1))
     remaining = [p for p in all_pages if p not in done_pages]
@@ -307,17 +309,14 @@ def scrape():
         log.info("All pages already fetched — nothing to do.")
         return {"total_saved": total_saved, "new_rows": 0}
 
-    file_exists = os.path.exists(MAIN_CSV) and os.path.getsize(MAIN_CSV) > 0
+    file_exists = os.path.exists(CSV_PATH) and os.path.getsize(CSV_PATH) > 0
     write_mode  = "a" if file_exists else "w"
     log.info(f"CSV mode: {'APPEND' if write_mode == 'a' else 'NEW'}")
 
-    f_main  = open(MAIN_CSV,  write_mode, newline="", encoding="utf-8")
-    f_extra = open(EXTRA_CSV, write_mode, newline="", encoding="utf-8")
-    writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS, extrasaction="ignore")
-    writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS, extrasaction="ignore")
+    f_csv  = open(CSV_PATH, write_mode, newline="", encoding="utf-8")
+    writer = csv.DictWriter(f_csv, fieldnames=FIELDS, extrasaction="ignore")
     if write_mode == "w":
-        writer_main.writeheader()
-        writer_extra.writeheader()
+        writer.writeheader()
 
     saved_count = 0
     skip_count  = 0
@@ -346,10 +345,8 @@ def scrape():
                 dup_count_page += 1
 
         if new_rows:
-            writer_main.writerows(new_rows)
-            writer_extra.writerows(new_rows)
-            f_main.flush()
-            f_extra.flush()
+            writer.writerows(new_rows)
+            f_csv.flush()
             saved_count += len(new_rows)
 
         done_pages.add(page)
@@ -366,8 +363,7 @@ def scrape():
 
         save_progress(done_pages, total_saved_now, total_pages)
 
-    f_main.close()
-    f_extra.close()
+    f_csv.close()
 
     final_saved = total_saved + saved_count
     save_progress(done_pages, final_saved, total_pages, status="done")
@@ -378,8 +374,7 @@ def scrape():
     log.info(f"  Duplicates skip : {skip_count:,}")
     log.info(f"  Pages failed    : {fail_count:,}")
     log.info(f"  Total in CSV    : {final_saved:,}")
-    log.info(f"  CSV    → {MAIN_CSV}")
-    log.info(f"  Mirror → {EXTRA_CSV}")
+    log.info(f"  CSV    → {CSV_PATH}")
     log.info("=" * 55)
 
     return {
@@ -388,7 +383,7 @@ def scrape():
         "new_rows":     saved_count,
         "duplicates":   skip_count,
         "failed_pages": fail_count,
-        "output":       MAIN_CSV,
+        "output":       CSV_PATH,
         "end_time":     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 

@@ -1,14 +1,17 @@
 import asyncio
 import csv, os, time, json, datetime
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import aiohttp
 import cv2, numpy as np, pandas as pd, psutil
 import requests
 from fake_useragent import UserAgent
-from requests.adapters import HTTPAdapter
 
 _ua = UserAgent()
+from requests.adapters import HTTPAdapter
+
+_executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 
 # ── Config ────────────────────────────────────────────────────────
 _AUS_DIR = str(Path(__file__).resolve().parent.parent / "diamond_files" / "aus")
@@ -19,6 +22,7 @@ API_LOG_FILE        = os.path.join(_AUS_DIR, "cullen_api_log.jsonl")
 MAX_WORKERS         = 10
 CPU_LIMIT           = 80
 CHECKPOINT_MAX_DAYS = 2
+CERT_BATCH_SIZE     = 100   # process certs in batches instead of per page
 CERT_TIMEOUT        = aiohttp.ClientTimeout(connect=3, sock_read=5)
 BLOCK_STATUS_CODES  = {403, 429, 503}
 MAX_CONSEC_ERRORS   = 3
@@ -151,24 +155,34 @@ def wait_for_cpu():
 def _backoff(attempt: int):
     time.sleep(min(5 * (2 ** attempt), 60))
 
-async def _fetch_cert_async(session, diamond_id):
+def _decode_qr(data: bytes):
+    """CPU-bound — runs in thread pool so it never blocks the event loop."""
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return None
+    text, _, _ = _qr_detector.detectAndDecode(img)
+    return text.split("=")[-1] if text else None
+
+async def _fetch_cert_async(session, sem, loop, diamond_id):
     try:
-        async with session.get(
-            f"https://diamonds.cullenjewellery.com/{diamond_id}/cert.jpeg"
-        ) as r:
-            if r.status != 200:
-                return diamond_id, None
-            data = await r.read()
-        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
-        text, _, _ = _qr_detector.detectAndDecode(img)
-        return diamond_id, text.split("=")[-1] if text else None
+        async with sem:
+            async with session.get(
+                f"https://diamonds.cullenjewellery.com/{diamond_id}/cert.jpeg"
+            ) as r:
+                if r.status != 200:
+                    return diamond_id, None
+                data = await r.read()
+        cert = await loop.run_in_executor(_executor, _decode_qr, data)
+        return diamond_id, cert
     except Exception:
         return diamond_id, None
 
 async def _fetch_certs_async(ids):
-    connector = aiohttp.TCPConnector(limit=100, limit_per_host=50)
+    sem  = asyncio.Semaphore(50)
+    loop = asyncio.get_event_loop()
+    connector = aiohttp.TCPConnector(limit=200, limit_per_host=100)
     async with aiohttp.ClientSession(connector=connector, timeout=CERT_TIMEOUT) as session:
-        return await asyncio.gather(*[_fetch_cert_async(session, did) for did in ids])
+        return await asyncio.gather(*[_fetch_cert_async(session, sem, loop, did) for did in ids])
 
 def build_row(d):
     row = {"certificate_number": None}
@@ -190,6 +204,8 @@ def load_existing_ids():
         return {row["id"] for row in csv.DictReader(f)}
 
 # ── Certificate processing ────────────────────────────────────────
+_CERT_SCAN_CHUNK = 300
+
 def process_certificates(all_ids: list):
     if not all_ids or not os.path.exists(CSV_FILE):
         return
@@ -200,34 +216,61 @@ def process_certificates(all_ids: list):
         df["certificate_number"] = pd.NA
 
     id_col = df["id"].astype(str)
-    id_set = set(id_col)  # O(1) membership checks
-    ids = [i for i in all_ids if i in id_set]
+    ids = [i for i in all_ids if i in set(id_col)]
     if not ids:
         tprint("No matching IDs in CSV — skipping cert scan.")
         return
 
-    wait_for_cpu()
-    results = dict(asyncio.run(_fetch_certs_async(ids)))
+    total_found = total_removed = 0
 
-    found = {did: cert for did, cert in results.items() if cert}
+    for chunk_start in range(0, len(ids), _CERT_SCAN_CHUNK):
+        chunk = ids[chunk_start: chunk_start + _CERT_SCAN_CHUNK]
+        wait_for_cpu()
+        results = dict(asyncio.run(_fetch_certs_async(chunk)))
 
-    if found:
-        # Vectorized update: one pass over the column instead of N individual loc calls
-        update_mask = id_col.isin(found)
-        df.loc[update_mask, "certificate_number"] = id_col[update_mask].map(found)
-        for did, cert in found.items():
-            tprint(f"  {did} -> {cert}")
+        found     = {did: cert for did, cert in results.items() if cert}
+        not_found = set(chunk) - set(found)
 
-    df.to_csv(CSV_FILE, index=False)
-    tprint(f"Cert scan done | Collected: {len(found)}/{len(ids)}")
+        if found:
+            update_mask = id_col.isin(found)
+            df.loc[update_mask, "certificate_number"] = id_col[update_mask].map(found)
+            for did, cert in found.items():
+                tprint(f"  {did} -> {cert}")
+
+        if not_found:
+            df     = df[~id_col.isin(not_found)]
+            id_col = df["id"].astype(str)
+            tprint(f"  Removed {len(not_found)} row(s) with no certificate.")
+
+        total_found   += len(found)
+        total_removed += len(not_found)
+        df.to_csv(CSV_FILE, index=False)
+        tprint(f"  Progress: {chunk_start + len(chunk)}/{len(ids)} scanned")
+
+    tprint(f"Cert scan done | Collected: {total_found} | Removed: {total_removed} | Total: {len(ids)}")
 
 # ── Main scrape loop ──────────────────────────────────────────────
+def _ids_missing_cert() -> list:
+    """Return IDs already in the CSV that have no certificate number."""
+    if not os.path.exists(CSV_FILE):
+        return []
+    try:
+        df = pd.read_csv(CSV_FILE, dtype=str, usecols=["id", "certificate_number"])
+        mask = df["certificate_number"].isna() | (df["certificate_number"].str.strip() == "")
+        ids = df.loc[mask, "id"].tolist()
+        if ids:
+            tprint(f"Found {len(ids)} existing row(s) with no certificate — will scan.")
+        return ids
+    except Exception as e:
+        tprint(f"Could not check missing certs: {e}")
+        return []
+
 def fetch_all_diamonds():
     existing_ids     = load_existing_ids()
     file_exists      = os.path.exists(CSV_FILE)
     page, start      = load_checkpoint()
     consec_errors    = 0
-    pending_cert_ids: list[str] = []
+    pending_cert_ids: list[str] = _ids_missing_cert()
 
     with open(CSV_FILE, "a" if file_exists else "w", newline="", encoding="utf-8") as csv_f:
         writer = csv.DictWriter(csv_f, fieldnames=FIELDS, quoting=csv.QUOTE_ALL)
@@ -245,7 +288,7 @@ def fetch_all_diamonds():
                 if consec_errors >= MAX_CONSEC_ERRORS:
                     tprint("Too many errors — stopping.")
                     break
-                _backoff(consec_errors)
+                time.sleep(5)
                 continue
 
             if r.status_code in BLOCK_STATUS_CODES:
@@ -258,7 +301,7 @@ def fetch_all_diamonds():
                 if consec_errors >= MAX_CONSEC_ERRORS:
                     tprint("Too many errors — stopping.")
                     break
-                _backoff(consec_errors)
+                time.sleep(5)
                 continue
 
             try:
@@ -268,7 +311,7 @@ def fetch_all_diamonds():
                 tprint(f"Invalid JSON ({consec_errors}/{MAX_CONSEC_ERRORS}) — retrying...")
                 if consec_errors >= MAX_CONSEC_ERRORS:
                     break
-                _backoff(consec_errors)
+                time.sleep(5)
                 continue
 
             consec_errors = 0
@@ -297,6 +340,10 @@ def fetch_all_diamonds():
             save_checkpoint(page, start)
 
             pending_cert_ids.extend(new_ids)
+            if len(pending_cert_ids) >= CERT_BATCH_SIZE:
+                csv_f.flush()
+                process_certificates(pending_cert_ids)
+                pending_cert_ids = []
 
     if pending_cert_ids:
         process_certificates(pending_cert_ids)

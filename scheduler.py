@@ -127,15 +127,15 @@ PIPELINES: dict[str, list[Path]] = {
 WEEKLY_JOBS: dict[tuple[str, str], list[str]] = {
     # USA  → 2× per week  (Mon start, Thu second run)
     ("monday",    "02:00"): ["usa"],
-    ("thursday",  "02:00"): ["usa"],
+    # ("thursday",  "02:00"): ["usa"],
 
     # UK   → 2× per week  (Wed start, Sat second run)
     ("wednesday", "02:00"): ["uk"],
-    ("saturday",  "02:00"): ["uk"],
+    # ("saturday",  "02:00"): ["uk"],
 
     # AUS  → 2× per week  (Fri start, Tue second run)
     ("friday",    "02:00"): ["aus"],
-    ("tuesday",   "02:00"): ["aus"],
+    # ("tuesday",   "02:00"): ["aus"],
 
     # GERMANY → 1× per week  (Sun)
     ("sunday",    "02:00"): ["germany"],
@@ -146,11 +146,6 @@ WEEKLY_JOBS: dict[tuple[str, str], list[str]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 TIMEOUT_PER_SCRIPT = 60 * 60 * 3   # 3 hours max per individual script
 SKIP_MISSING       = True           # skip scripts that don't exist (warn, don't abort)
-
-GIT_ENABLED  = True
-GIT_REMOTE   = "origin"
-GIT_BRANCH   = ""                   # empty → auto-detect current branch
-GIT_TIMEOUT  = 300
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -355,7 +350,11 @@ def _write_html() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Script runner
 # ─────────────────────────────────────────────────────────────────────────────
-def run_script(label: str, script: Path) -> bool:
+def run_script(label: str, script: Path) -> bool | None:
+    """
+    Returns True on success, False on crash/bad exit-code, None on timeout.
+    Callers treat None as "continue to next script" rather than "abort pipeline".
+    """
     if not script.exists():
         if SKIP_MISSING:
             log.warning(f"[{label}] SKIP — script not found: {script}")
@@ -379,8 +378,8 @@ def run_script(label: str, script: Path) -> bool:
         log.error(f"[{label}] ❌  exit code {result.returncode} after {elapsed}s")
         return False
     except subprocess.TimeoutExpired:
-        log.error(f"[{label}] ⏰  timed out after {TIMEOUT_PER_SCRIPT}s")
-        return False
+        log.error(f"[{label}] ⏰  timed out after {TIMEOUT_PER_SCRIPT}s — skipping to next script")
+        return None
     except Exception as exc:
         log.error(f"[{label}] 💥  {exc}")
         return False
@@ -402,10 +401,20 @@ def run_pipeline(region: str) -> bool:
     pipeline_start = datetime.now()
     ok = True
     for script in scripts:
-        ok = run_script(region.upper(), script)
-        if not ok:
-            log.error(f"Pipeline [{region}] aborted at {script.name}")
-            break
+        result = run_script(region.upper(), script)
+        if result is None:
+            # Timeout — move on, no retry
+            log.warning(f"Pipeline [{region}] timed out at {script.name} — continuing with next script")
+            ok = False
+        elif not result:
+            # Crash — retry once from where it left off (checkpoint resumes automatically)
+            log.warning(f"Pipeline [{region}] crashed at {script.name} — retrying once from last checkpoint...")
+            retry = run_script(region.upper(), script)
+            if retry is True:
+                log.info(f"Pipeline [{region}] retry succeeded for {script.name}")
+            else:
+                log.warning(f"Pipeline [{region}] retry also failed for {script.name} — continuing with next script")
+                ok = False
 
     _update_region_status(region, pipeline_start, datetime.now(), ok)
 
@@ -436,61 +445,6 @@ def run_job(regions: list[str]) -> None:
     log.info("=" * 60)
 
     _write_html()
-
-    if GIT_ENABLED:
-        git_commit_and_push()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Git auto commit & push
-# ─────────────────────────────────────────────────────────────────────────────
-def _git(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(BASE),
-        capture_output=True,
-        text=True,
-        timeout=GIT_TIMEOUT,
-    )
-
-
-def git_commit_and_push() -> None:
-    log.info("GIT: auto commit & push")
-    try:
-        if _git(["rev-parse", "--is-inside-work-tree"]).stdout.strip() != "true":
-            log.warning("  Not a git repo — skipping.")
-            return
-
-        branch = GIT_BRANCH or _git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
-        if not branch or branch == "HEAD":
-            log.warning("  Could not resolve branch — skipping.")
-            return
-
-        _git(["add", "--", "."])
-
-        if not _git(["status", "--porcelain"]).stdout.strip():
-            log.info("  No changes to commit.")
-            return
-
-        msg = f"Auto: scraper run {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        commit = _git(["commit", "-m", msg])
-        if commit.returncode != 0:
-            log.error(f"  git commit failed: {commit.stderr.strip() or commit.stdout.strip()}")
-            return
-        log.info(f"  Committed: {msg}")
-
-        push = _git(["push", GIT_REMOTE, branch])
-        if push.returncode != 0:
-            log.error(f"  git push failed: {push.stderr.strip() or push.stdout.strip()}")
-        else:
-            log.info(f"  Pushed → {GIT_REMOTE}/{branch}")
-
-    except subprocess.TimeoutExpired:
-        log.error(f"  git step timed out after {GIT_TIMEOUT}s")
-    except FileNotFoundError:
-        log.error("  git not found on PATH")
-    except Exception as exc:
-        log.error(f"  git error: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

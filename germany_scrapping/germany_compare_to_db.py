@@ -270,6 +270,16 @@ def main() -> None:
     if not COMPARE_DIR.exists():
         raise SystemExit(f"compare/ folder not found: {COMPARE_DIR}")
 
+    # Guard: if ALL main compare files are missing, abort before touching the DB.
+    # Without this, the script would truncate all tables to empty and exit 0.
+    main_files = ["compare.json", "compare_all.json", "compare_partial.json"]
+    present = [f for f in main_files if (COMPARE_DIR / f).exists()]
+    if not present:
+        raise SystemExit(
+            f"ABORT — no compare JSON files found in {COMPARE_DIR}\n"
+            "Run diamond_compare.py first. Database was NOT modified."
+        )
+
     conn = connect()
     try:
         with conn.cursor() as cur:

@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 import json
 import datetime
@@ -583,7 +584,7 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
 
     if combined is None or (hasattr(combined, "empty") and combined.empty):
         log.error("compare.csv is empty — aborting.")
-        return {}
+        sys.exit(1)
 
     # Build BR vs LG file
     br_vs_lg_count = build_br_vs_lg(loaded, discounts)
@@ -600,6 +601,7 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
         log.info("PostgreSQL upload complete.")
     except Exception as exc:
         log.error(f"PostgreSQL upload failed (compare files are still saved locally): {exc}")
+        sys.exit(1)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -651,9 +653,10 @@ def check_all_files_and_run():
     missing = [s for s in statuses if s["status"] == "MISSING"]
     if missing:
         log.error(f"ABORT: missing files: {[m['file'] for m in missing]}")
-        return None
+        sys.exit(1)
     return compare_all_vendors(vendors=vendors, PC_csv=PC_csv, PC_discount=PC_discount)
 
 
 if __name__ == "__main__":
     check_all_files_and_run()
+    sys.exit(0)

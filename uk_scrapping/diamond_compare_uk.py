@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 import json
 import datetime
@@ -484,7 +485,7 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     generate_vendor_vs_rouk_csv(combined, discounts)
     if combined is None or (hasattr(combined, "empty") and combined.empty):
         log.error("compare.csv is empty — aborting.")
-        return {}
+        sys.exit(1)
     # Save status
     _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records)
 
@@ -538,9 +539,10 @@ def check_all_files_and_run():
     missing = [s for s in statuses if s["status"] == "MISSING"]
     if missing:
         log.error(f"ABORT: missing files: {[m['file'] for m in missing]}")
-        return None
+        sys.exit(1)
     return compare_all_vendors(vendors=vendors, PC_csv=PC_csv, PC_discount=PC_discount)
 
 
 if __name__ == "__main__":
     check_all_files_and_run()
+    sys.exit(0)

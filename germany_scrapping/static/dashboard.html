@@ -1261,6 +1261,96 @@
           padding: 14px 16px;
         }
       }
+
+      /* ── PCT BUCKET CARDS ── */
+      .pct-bucket-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 18px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .pct-bucket-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--pc-color, var(--accent));
+      }
+      .pct-bucket-card:hover {
+        border-color: var(--pc-color, var(--accent));
+        transform: translateY(-2px);
+      }
+      .pct-bucket-card.active {
+        border-color: var(--pc-color, var(--accent));
+        background: color-mix(
+          in srgb,
+          var(--pc-color, var(--accent)) 10%,
+          var(--card)
+        );
+      }
+      .pct-bucket-card.empty {
+        opacity: 0.42;
+        cursor: default;
+      }
+      .pct-bucket-card.empty:hover {
+        transform: none;
+        border-color: var(--border);
+      }
+      .pct-buckets-top-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .sub-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 18px 0 14px;
+      }
+      .sub-divider-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .sub-divider-line {
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .sub-divider-hint {
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .avg-info-row {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid var(--border);
+      }
+      .avg-info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.62rem;
+      }
+      .avg-info-label {
+        color: var(--muted);
+      }
+      .avg-info-val {
+        font-weight: 500;
+      }
     </style>
   </head>
   <body>
@@ -1579,35 +1669,8 @@
         </div>
       </div>
 
-      <!-- % RANGE BUCKETS -->
-      <div class="section-title">
-        % Range Buckets
-        <span style="font-size: 0.68rem; color: var(--muted)"
-          >select vendor · click bucket to filter</span
-        >
-      </div>
-      <div class="vendor-tabs" id="vendorTabs"></div>
-      <div
-        id="activeBucketTag"
-        style="display: none"
-        class="bucket-filter-tag"
-        onclick="clearBucketFilter()"
-      >
-        <span id="activeBucketTagText">Filtered</span
-        ><span class="x">✕ clear</span>
-      </div>
-      <div class="buckets-grid" id="bucketsGrid">
-        <div class="empty-state" style="grid-column: 1/-1">
-          <div class="icon">💎</div>
-          <h3>No data loaded</h3>
-          <p style="font-size: 0.78rem; margin-top: 6px">
-            Load a dataset above to see distribution
-          </p>
-        </div>
-      </div>
-
       <!-- VENDOR PRICE BUCKETS -->
-      <div class="section-title" style="margin-top: 4px">
+      <div class="section-title">
         Vendor Price Buckets
         <span style="font-size: 0.68rem; color: var(--muted)"
           >bucketed by vendor price · select vendor · avg % vs ROG shown · click
@@ -1628,6 +1691,48 @@
         <div class="empty-state" style="grid-column: 1/-1">
           <div class="icon">💎</div>
           <h3>No data loaded</h3>
+        </div>
+      </div>
+      <div
+        id="activeBucketTagTop"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearBucketTopFilter()"
+      >
+        <span id="activeBucketTagTopText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+      <div
+        class="pct-buckets-top-grid"
+        id="pctBucketsTopGrid"
+        style="margin-top: 4px"
+      ></div>
+
+      <!-- % RANGE FILTER -->
+      <div class="sub-divider">
+        <span class="sub-divider-label">% Range Filter</span>
+        <span class="sub-divider-line"></span>
+        <span class="sub-divider-hint"
+          >select vendor · click to filter by % vs ROG</span
+        >
+      </div>
+      <div class="vendor-tabs" id="vendorTabs"></div>
+      <div
+        id="activeBucketTag"
+        style="display: none"
+        class="bucket-filter-tag"
+        onclick="clearBucketFilter()"
+      >
+        <span id="activeBucketTagText">Filtered</span
+        ><span class="x">✕ clear</span>
+      </div>
+      <div class="buckets-grid" id="bucketsGrid">
+        <div class="empty-state" style="grid-column: 1/-1">
+          <div class="icon">💎</div>
+          <h3>No data loaded</h3>
+          <p style="font-size: 0.78rem; margin-top: 6px">
+            Load a dataset above to see distribution
+          </p>
         </div>
       </div>
 
@@ -1703,6 +1808,7 @@
         priceMax = null;
       let activeBucketFilter = null,
         activePriceBucket = null;
+      let activeBucketTop = null;
       let selectedVendorKey = null,
         selectedPriceVendorKey = null;
 
@@ -1905,6 +2011,7 @@
         ALL_DATA = [...json];
         activeBucketFilter = null;
         activePriceBucket = null;
+        activeBucketTop = null;
         selectedPriceVendorKey = null;
         tableMode = "all";
         currentPage = 1;
@@ -1922,7 +2029,7 @@
       function applyFiltersLocal() {
         const cert = document.getElementById("certSearch").value.trim();
         const BASE =
-          activePriceBucket !== null && PARTIAL_DATA.length
+          (activePriceBucket !== null || activeBucketTop !== null) && PARTIAL_DATA.length
             ? PARTIAL_DATA
             : ALL_DATA;
         filteredData = BASE.filter((row) => {
@@ -1931,6 +2038,15 @@
           if (priceMax !== null && ROG > priceMax) return false;
           if (cert && !String(row["certificate_number"] ?? "").includes(cert))
             return false;
+          if (activeBucketTop) {
+            const { vendorKey, bucketIdx } = activeBucketTop;
+            const vtd = VENDOR_DEFS.find((v) => v.key === vendorKey);
+            if (vtd) {
+              const b = BUCKETS[bucketIdx];
+              const p = getPct(row, vtd);
+              if (p === null || p < b.min || p >= b.max) return false;
+            }
+          }
           if (activeBucketFilter) {
             const { vendorKey, bucketIdx } = activeBucketFilter;
             const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
@@ -2101,6 +2217,7 @@
       function selectPriceVendor(key) {
         selectedPriceVendorKey = key;
         activePriceBucket = null;
+        activeBucketTop = null;
         currentPage = 1;
         render();
       }
@@ -2162,39 +2279,19 @@
           return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
         });
         const total = vendorRows.length || 1;
-        const activeVendors = VENDOR_DEFS.filter((v) =>
-          SRC.some((r) => {
-            const val = r[v.bucketPriceCol];
-            return (
-              val !== null &&
-              val !== undefined &&
-              val !== "" &&
-              Number(val) !== 0
-            );
-          }),
-        );
         const bucketData = PRICE_BUCKETS.map((pb, i) => {
           const rows = vendorRows.filter((r) => {
             const p = Number(r[vd.bucketPriceCol]);
             return !isNaN(p) && p >= pb.min && p < pb.max;
           });
           const count = rows.length;
-          const allAvgPcts = activeVendors.map((av) => {
-            const vals = rows
-              .map((r) => getPct(r, av))
-              .filter((v) => v !== null);
-            const avg = vals.length
-              ? vals.reduce((a, b) => a + b, 0) / vals.length
-              : null;
-            return { vd: av, avg };
-          });
           const rogVals = rows
             .map((r) => Number(r["ROG Price EUR"]))
             .filter((v) => !isNaN(v) && v > 0);
           const avgROG = rogVals.length
             ? rogVals.reduce((a, b) => a + b, 0) / rogVals.length
             : null;
-          return { pb, count, allAvgPcts, avgROG, idx: i };
+          return { pb, count, avgROG, idx: i };
         });
         const nonEmpty = bucketData.filter((b) => b.count > 0),
           maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
@@ -2205,38 +2302,19 @@
           return;
         }
         grid.innerHTML = nonEmpty
-          .map(({ pb, count, allAvgPcts, avgROG, idx }) => {
+          .map(({ pb, count, avgROG, idx }) => {
             const isActive = activePriceBucket === idx;
             const pctOfTotal = ((count / total) * 100).toFixed(1),
               barW = ((count / maxCount) * 100).toFixed(1);
-            const avgRows = allAvgPcts
-              .map(({ vd: av, avg }) => {
-                const valStr =
-                  avg === null
-                    ? "—"
-                    : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
-                const valColor =
-                  avg === null
-                    ? "var(--muted)"
-                    : avg < 0
-                      ? "#3ecf8e"
-                      : avg < 100
-                        ? "#60a5fa"
-                        : avg < 200
-                          ? "#c9a84c"
-                          : "#f87171";
-                return `<div class="pb-avg-item"><span class="pb-avg-label" style="color:${av.color}">${av.label} vs ROG</span><span class="pb-avg-val" style="color:${valColor}">${valStr}</span></div>`;
-              })
-              .join("");
             const avgROGStr =
               avgROG !== null
-                ? `<div class="pb-avg-item"><span class="pb-avg-label">Avg ROG Price</span><span class="pb-avg-val" style="color:var(--muted)">€${avgROG.toFixed(0)}</span></div>`
+                ? `<div class="avg-info-row"><div class="avg-info-item"><span class="avg-info-label">Avg ROG Price</span><span class="avg-info-val" style="color:var(--muted)">€${avgROG.toFixed(0)}</span></div></div>`
                 : "";
             return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})">
           <div class="pb-range">${pb.label}</div><div class="pb-count">${count.toLocaleString()}</div>
           <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
           <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-          <div class="pb-avg-row">${avgRows}${avgROGStr}</div></div>`;
+          ${avgROGStr}</div>`;
           })
           .join("");
         const tag = document.getElementById("activePriceBucketTag");
@@ -2247,6 +2325,77 @@
             : "Filtered";
           tag.style.display = "inline-flex";
         } else tag.style.display = "none";
+      }
+
+      function renderPctBucketsTop() {
+        const grid = document.getElementById("pctBucketsTopGrid");
+        const tagTop = document.getElementById("activeBucketTagTop");
+        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
+        if (!SRC.length || !selectedPriceVendorKey) {
+          grid.innerHTML = "";
+          if (tagTop) tagTop.style.display = "none";
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) {
+          grid.innerHTML = "";
+          if (tagTop) tagTop.style.display = "none";
+          return;
+        }
+        const vendorRows = SRC.filter((r) => {
+          const v = r[vd.priceCol];
+          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
+        });
+        const total = vendorRows.length || 1;
+        const counts = BUCKETS.map((b) =>
+          vendorRows.filter((r) => {
+            const p = getPct(r, vd);
+            return p !== null && p >= b.min && p < b.max;
+          }).length,
+        );
+        const maxC = Math.max(...counts, 1);
+        grid.innerHTML = BUCKETS.map((b, i) => {
+          const cnt = counts[i];
+          const isEmpty = cnt === 0;
+          const isActive =
+            activeBucketTop &&
+            activeBucketTop.vendorKey === vd.key &&
+            activeBucketTop.bucketIdx === i;
+          const pct = ((cnt / total) * 100).toFixed(1);
+          const barW = ((cnt / maxC) * 100).toFixed(1);
+          const color = isEmpty ? "var(--border)" : b.color;
+          return `<div class="pct-bucket-card ${isActive ? "active" : ""} ${isEmpty ? "empty" : ""}"
+            style="--pc-color:${color}"
+            onclick="${isEmpty ? "" : "toggleBucketTop(" + i + ")"}">
+            <div class="pb-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+            <div class="pb-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+            <div class="pb-pct-of-total" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of ${total.toLocaleString()} matched</div>
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+          </div>`;
+        }).join("");
+        if (activeBucketTop && activeBucketTop.vendorKey === vd.key) {
+          document.getElementById("activeBucketTagTopText").textContent =
+            `${vd.label} · ${BUCKETS[activeBucketTop.bucketIdx].label}`;
+          tagTop.style.display = "inline-flex";
+        } else {
+          tagTop.style.display = "none";
+        }
+      }
+      function toggleBucketTop(bucketIdx) {
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) return;
+        const same =
+          activeBucketTop &&
+          activeBucketTop.vendorKey === vd.key &&
+          activeBucketTop.bucketIdx === bucketIdx;
+        activeBucketTop = same ? null : { vendorKey: vd.key, bucketIdx };
+        currentPage = 1;
+        render();
+      }
+      function clearBucketTopFilter() {
+        activeBucketTop = null;
+        currentPage = 1;
+        render();
       }
 
       // ══ VENDOR COMMON CARDS & MODAL ═══════════════════════════════
@@ -2716,10 +2865,11 @@
             tl.style.color = "var(--muted)";
           }
         }
-        renderVendorTabs();
-        renderBuckets();
         renderPriceVendorTabs();
         renderPriceBuckets();
+        renderPctBucketsTop();
+        renderVendorTabs();
+        renderBuckets();
         renderTable(filteredData);
       }
 

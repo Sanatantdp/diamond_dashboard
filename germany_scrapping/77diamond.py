@@ -18,8 +18,8 @@ for d in (diamonds_path, diamond_files):
     os.makedirs(d, exist_ok=True)
 
 RESULTS_PER_PAGE = 10000
-SLEEP_MIN        = 0.3
-SLEEP_MAX        = 0.8
+SLEEP_MIN        = 1
+SLEEP_MAX        = 3
 
 VPN_ROTATE_AFTER_FAILS = 5
 VPN_CONFIG_SUBDIR      = "77diamonds"
@@ -370,7 +370,7 @@ def fetch_77diamonds() -> None:
                         headers=HEADERS,
                         cookies=COOKIES,
                         json=payload,
-                        timeout=30,
+                        timeout=60,
                     )
                 except Exception as exc:
                     fail_streak += 1

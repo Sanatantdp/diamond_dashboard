@@ -1,6 +1,8 @@
 from curl_cffi import requests as curl_requests
 import csv, os, time, random, json, logging
 import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from status import write_status
@@ -38,6 +40,7 @@ BASE_DIR     = os.getcwd()
 
 PAGE_SIZE  = 20
 TIMEOUT    = 45       # increased from 30 — give slow responses more room
+WORKERS    = 5        # concurrent page fetchers; raise to 8-10 if the server allows it
 
 VPN_ROTATE_AFTER_FAILS = 3          # rotate sooner (was 5) — don't burn the IP
 VPN_CONFIG_SUBDIR      = "renesim"
@@ -423,11 +426,21 @@ def scrape():
     fail_streak = 0
     last_page   = len(done_pages)
     total_rem   = len(remaining)
-    session     = make_session()
 
-    try:
-        for idx, p in enumerate(remaining, 1):
-            page, diamonds = fetch_page(p, session)
+    # Thread-safety primitives
+    csv_lock      = threading.Lock()
+    state_lock    = threading.Lock()
+    completed_idx = [0]  # mutable counter shared across threads
+
+    def _process_page(p: int) -> None:
+        nonlocal saved_count, skip_count, fail_count, fail_streak, last_page
+
+        session = make_session()
+        page, diamonds = fetch_page(p, session)
+
+        with state_lock:
+            completed_idx[0] += 1
+            idx = completed_idx[0]
             pct = idx / total_rem * 100
 
             if diamonds is None:
@@ -449,18 +462,20 @@ def scrape():
                 )
                 if fail_streak >= VPN_ROTATE_AFTER_FAILS:
                     raise VPNRotateNeeded(fail_streak)
-                continue
+                return
 
-            fail_streak    = 0
-            new_rows       = []
-            dup_count_page = 0
+            fail_streak = 0
+
+        # Build new rows outside the lock (no shared state touched yet)
+        new_rows: list = []
+        dup_count_page = 0
+        with csv_lock:
             for d in diamonds:
                 cert = str(d.get("certificateNumber", "")).strip()
                 if cert and cert not in seen_certs:
                     seen_certs.add(cert)
                     new_rows.append(make_row(d, "new", page))
                 else:
-                    skip_count += 1
                     dup_count_page += 1
 
             if new_rows:
@@ -468,8 +483,10 @@ def scrape():
                 writer_extra.writerows(new_rows)
                 f_main.flush()
                 f_extra.flush()
-                saved_count += len(new_rows)
 
+        with state_lock:
+            skip_count  += dup_count_page
+            saved_count += len(new_rows)
             done_pages.add(page)
             last_page = max(last_page, page)
             total_saved_now = total_saved + saved_count
@@ -500,6 +517,17 @@ def scrape():
             )
 
             save_progress(done_pages, total_saved_now, total_pages)
+
+    try:
+        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+            futures = {pool.submit(_process_page, p): p for p in remaining}
+            for fut in as_completed(futures):
+                exc = fut.exception()
+                if exc is not None:
+                    if isinstance(exc, VPNRotateNeeded):
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise exc
+                    log.error(f"Unexpected error in worker: {exc}")
 
     except KeyboardInterrupt:
         log.warning("Ctrl+C received — saving progress…")

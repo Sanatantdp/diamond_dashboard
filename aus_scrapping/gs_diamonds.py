@@ -154,7 +154,9 @@ def load_curl(path):
             k = k.strip().lower()
             if k not in ("host", "content-length"):
                 headers[k] = v.strip()
-    headers["accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    # Only set accept if the curl file didn't provide one
+    if "accept" not in headers:
+        headers["accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
     result["headers"] = headers
 
     return result
@@ -271,9 +273,67 @@ def parse_html_to_rows(html, shape, existing_certs):
 #  STEP 1 — FETCH: live HTML pages -> save as JSON
 # ─────────────────────────────────────────────────────────────
 
+def warm_session(session, curl):
+    """
+    Make a browser-style HTML GET to refresh the Cloudflare cf_clearance cookie.
+    curl_cffi's Chrome TLS fingerprint can pass Cloudflare bot checks without a
+    pre-existing cf_clearance. On success the new cookie is written back into
+    curl["cookies"] so subsequent AJAX requests use it.
+    Returns True if a 200 was received, False otherwise.
+    """
+    log.info("  Warming Cloudflare session (browser-style HTML GET)...")
+
+    warm_headers = {k: v for k, v in curl["headers"].items()
+                    if k not in ("x-xsrf-token",)}
+    warm_headers.update({
+        "accept": ("text/html,application/xhtml+xml,application/xml;"
+                   "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
+                   "application/signed-exchange;v=b3;q=0.7"),
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
+    })
+
+    # Remove any stale cf_clearance from session — let curl_cffi get a fresh one
+    try:
+        session.cookies.delete("cf_clearance")
+    except Exception:
+        pass
+
+    try:
+        # No cookies= kwarg — the session jar manages cookies automatically
+        r = session.get(BASE_URL, headers=warm_headers, timeout=30)
+        log.info(f"  Warm response: HTTP {r.status_code}")
+        if r.status_code == 200:
+            new_cf = session.cookies.get("cf_clearance")
+            if new_cf:
+                log.info("  Got fresh cf_clearance from warm-up")
+            else:
+                log.info("  Warm-up OK (no explicit cf_clearance — TLS fingerprint passed)")
+            return True
+        log.warning(f"  Warm-up returned HTTP {r.status_code} — Cloudflare may still block")
+    except Exception as e:
+        log.warning(f"  Warm-up request failed: {e}")
+    return False
+
+
 def fetch_all_pages(curl, rotate_after_fails=None):
     os.makedirs(JSON_DIR, exist_ok=True)
-    session = cf_requests.Session(impersonate="chrome")
+    session = cf_requests.Session(impersonate="chrome124")
+
+    # Seed session with application cookies (XSRF, session token).
+    # Exclude cf_clearance — warm_session will get a fresh one via TLS fingerprint.
+    # Do NOT pass cookies= on individual requests after this; let the session jar
+    # manage them so that new cookies (refreshed cf_clearance etc.) are kept.
+    for k, v in curl["cookies"].items():
+        if k != "cf_clearance":
+            session.cookies.set(k, v)
+
+    # Warm the Cloudflare session before any AJAX requests
+    warm_session(session, curl)
+    time.sleep(2)
 
     resume_shape, resume_page = load_checkpoint()
     total_saved = 0
@@ -309,7 +369,6 @@ def fetch_all_pages(curl, rotate_after_fails=None):
                 r = session.get(
                     url,
                     headers=curl["headers"],
-                    cookies=curl["cookies"],
                     timeout=30,
                 )
             except Exception as e:
@@ -317,8 +376,14 @@ def fetch_all_pages(curl, rotate_after_fails=None):
                 time.sleep(3)
                 break
 
-            # 403 = Cloudflare blocked — count consecutive fails then rotate
+            # 403 = Cloudflare blocked
             if r.status_code == 403:
+                # On the very first 403 try a session re-warm before counting it
+                if consecutive_fails == 0:
+                    log.warning(f"  [403] {shape} page {page} — attempting session re-warm")
+                    if warm_session(session, curl):
+                        time.sleep(3)
+                        continue  # retry same page with fresh cookies
                 consecutive_fails += 1
                 log.warning(
                     f"  [403] {shape} page {page} "
@@ -339,7 +404,20 @@ def fetch_all_pages(curl, rotate_after_fails=None):
                 break
 
             consecutive_fails = 0
-            html = r.text
+
+            # Server returns JSON: {"commands": [{"html": "<div...>"}]}
+            html = ""
+            try:
+                rjson = r.json()
+                cmds = rjson.get("commands", [])
+                if cmds:
+                    html = cmds[0].get("html", "")
+            except (ValueError, KeyError):
+                html = r.text  # fallback for plain HTML responses
+
+            if not html:
+                log.info(f"  Page {page:>3}  -> empty response, end of {shape}")
+                break
 
             # Check for products before saving
             soup = BeautifulSoup(html, "lxml")
@@ -350,7 +428,6 @@ def fetch_all_pages(curl, rotate_after_fails=None):
                 log.info(f"  Page {page:>3}  -> no products, end of {shape}")
                 break
 
-            # Save HTML wrapped in same JSON format as your existing gs_pages
             with open(json_path, "w", encoding="utf-8") as jf:
                 json.dump({"commands": [{"html": html}]}, jf)
 
