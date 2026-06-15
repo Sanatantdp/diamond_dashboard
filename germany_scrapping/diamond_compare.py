@@ -15,7 +15,7 @@ log = get_logger("comparator")
 
 # ── Directories ────────────────────────────────────────────────
 DIAMOND_FILES_DIR       = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
-COMPARE_DIR             = os.path.join(os.getcwd(), "compare")
+COMPARE_DIR             = str(Path(__file__).resolve().parent / "compare")
 FILE_STATUS_JSON        = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
 COMPARE_CSV              = os.path.join(COMPARE_DIR, "compare.csv")
 COMPARE_JSON             = os.path.join(COMPARE_DIR, "compare.json")

@@ -35,7 +35,7 @@ log = get_logger("renesim")
 # ── Config ────────────────────────────────────────────────────────────────────
 SCRAPER_NAME = "renesim"
 URL          = "https://py.yorxs.de/live/graphql/"
-CSV_FILE     = "renesim_eur.csv"          # ← no date in filename
+CSV_FILE     = "renesim_diamonds.csv"          # ← no date in filename
 BASE_DIR     = os.getcwd()
 
 PAGE_SIZE  = 20

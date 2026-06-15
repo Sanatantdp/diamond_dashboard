@@ -559,7 +559,7 @@ async def serve_dashboard_uk():
     )
 
 
-@app.get("/dashboard/roa", response_class=HTMLResponse)
+@app.get("/dashboard/aus", response_class=HTMLResponse)
 async def serve_dashboard_roa():
     """AUS/ROA dashboard. The client reads from /api/roa/* (PostgreSQL, USD)."""
     html_path = ROA_STATIC_DIR / "dashboard.html"
@@ -571,7 +571,7 @@ async def serve_dashboard_roa():
     )
 
 
-@app.get("/dashboard/rog", response_class=HTMLResponse)
+@app.get("/dashboard/germany", response_class=HTMLResponse)
 async def serve_dashboard_rog():
     """Germany/ROG dashboard. The client reads from /api/rog/* (PostgreSQL, EUR)."""
     html_path = ROG_STATIC_DIR / "dashboard.html"
