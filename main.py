@@ -38,7 +38,7 @@ UK_COMPARE_DIR = UK_DIR / "compare" / "uk"
 ROA_DIR = BASE_DIR / "roa_scrapping"
 ROA_STATIC_DIR = ROA_DIR / "static"
 
-ROG_DIR = BASE_DIR / "rog_scrapping"
+ROG_DIR = BASE_DIR / "germany_scrapping"
 ROG_STATIC_DIR = ROG_DIR / "static"
 
 SELECT_PAGE = STATIC_DIR / "select.html"
@@ -825,10 +825,10 @@ async def rog_run_compare():
     import sys
 
     compare_script = ROG_DIR / "diamond_compare.py"
-    loader_script  = ROG_DIR / "rog_compare_to_db.py"
+    loader_script  = ROG_DIR / "germany_compare_to_db.py"
 
     if not compare_script.exists():
-        raise HTTPException(status_code=404, detail="diamond_compare.py not found in rog_scrapping/")
+        raise HTTPException(status_code=404, detail="diamond_compare.py not found in germany_scrapping/")
 
     try:
         cmp_result = subprocess.run(
@@ -869,9 +869,9 @@ async def rog_upload_db():
     import subprocess
     import sys
 
-    loader_script = ROG_DIR / "rog_compare_to_db.py"
+    loader_script = ROG_DIR / "germany_compare_to_db.py"
     if not loader_script.exists():
-        raise HTTPException(status_code=404, detail="rog_compare_to_db.py not found")
+        raise HTTPException(status_code=404, detail="germany_compare_to_db.py not found")
 
     try:
         result = subprocess.run(
