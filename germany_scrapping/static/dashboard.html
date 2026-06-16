@@ -423,11 +423,21 @@
         padding: 5px 12px;
         font-size: 0.7rem;
       }
+      .btn-back {
+        background: color-mix(in srgb, var(--accent) 10%, var(--card));
+        color: var(--accent);
+        border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+        margin-left: auto;
+      }
+      .btn-back:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+        border-color: var(--accent);
+      }
       .btn-logout {
         background: color-mix(in srgb, var(--red) 12%, var(--card));
         color: var(--red);
         border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
-        margin-left: auto;
+        margin-left: 0;
       }
       .btn-logout:hover {
         background: color-mix(in srgb, var(--red) 22%, var(--card));
@@ -1577,6 +1587,7 @@
         <div class="loaded-dot"></div>
         <span id="loadedLabel">—</span>
       </div>
+      <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
 

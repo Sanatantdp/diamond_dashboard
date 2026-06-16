@@ -158,7 +158,9 @@
       .btn-ghost { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
       .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
       .btn-sm { padding: 5px 12px; font-size: 0.7rem; }
-      .btn-logout { background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+      .btn-back { background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); margin-left: auto; }
+      .btn-back:hover { background: color-mix(in srgb, var(--accent) 20%, var(--card)); border-color: var(--accent); }
+      .btn-logout { background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); margin-left: 0; }
       .btn-logout:hover { background: color-mix(in srgb, var(--red) 20%, var(--card)); }
       .loaded-indicator { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--green); }
       .loaded-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s ease-in-out infinite; }
@@ -484,6 +486,7 @@
         <div class="loaded-dot"></div>
         <span id="loadedLabel">—</span>
       </div>
+      <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
 

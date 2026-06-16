@@ -474,6 +474,20 @@
         padding: 5px 12px;
         font-size: 0.7rem;
       }
+      .topbar {
+        background: var(--surface); border-bottom: 1px solid var(--border);
+        padding: 10px 40px; display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+      }
+      .btn-back {
+        background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent);
+        border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      }
+      .btn-back:hover { background: color-mix(in srgb, var(--accent) 20%, var(--card)); border-color: var(--accent); }
+      .btn-logout {
+        background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red);
+        border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+      }
+      .btn-logout:hover { background: color-mix(in srgb, var(--red) 22%, var(--card)); border-color: var(--red); }
 
       /* Main */
       .main {
@@ -1096,6 +1110,11 @@
     </div>
 
     <!-- HEADER -->
+    <div class="topbar">
+      <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
+      <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
     <div class="header">
       <div>
         <h1>💎 Diamond Price Dashboard USA</h1>

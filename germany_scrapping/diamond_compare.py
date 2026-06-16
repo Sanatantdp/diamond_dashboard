@@ -17,7 +17,6 @@ log = get_logger("comparator")
 DIAMOND_FILES_DIR       = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 COMPARE_DIR             = str(Path(__file__).resolve().parent / "compare")
 FILE_STATUS_JSON        = os.path.join(DIAMOND_FILES_DIR, "file_status.json")
-COMPARE_CSV              = os.path.join(COMPARE_DIR, "compare.csv")
 COMPARE_JSON             = os.path.join(COMPARE_DIR, "compare.json")
 COMPARE_PARTIAL_JSON     = os.path.join(COMPARE_DIR, "compare_partial.json")
 COMPARE_ALL_JSON         = os.path.join(COMPARE_DIR, "compare_all.json")
@@ -53,7 +52,7 @@ rog_EXTRA_COLS = {
 def load_ROG(csv_path):
     log.debug(f"Loading ROG from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
-    df = df.rename(columns={"certificateNumber": "certificate_number", "finalPriceUsd": "ROG Price Pound"})
+    df = df.rename(columns={"certificateNumber": "certificate_number", "finalPriceEur": "ROG Price Pound"})
     df["certificate_number"] = df["certificate_number"].astype(str).str.strip()
     df["ROG Price Pound"] = pd.to_numeric(df["ROG Price Pound"], errors="coerce")
 
@@ -70,79 +69,6 @@ def load_ROG(csv_path):
     log.info(f"Loaded ROG: {len(df):,} rows | extra cols: {[c for c in keep if c not in ('certificate_number','ROG Price Pound')]}")
     return df[keep]
 
-def generate_vendor_vs_rog_csv(combined: pd.DataFrame, discounts: dict):
-    log.info("=" * 50)
-    log.info("Generating vendor vs ROG CSV files")
- 
-    if "ROG Price Pound" not in combined.columns:
-        log.error("ROG price not found — skipping")
-        return
- 
-    rog_disc     = discounts.get("ROG", 0.70)
-    rog_label    = f"-{round((1 - rog_disc) * 100)}%"
-    rog_disc_col = f"ROG {rog_label} Pound"
- 
-    attr_cols = ["shape", "color", "clarity", "cut", "caratWeight"]
-    attr_cols = [c for c in attr_cols if c in combined.columns]
- 
-    for name, disc in discounts.items():
-        if name == "ROG":
-            continue
- 
-        price_col = f"{name} Price Pound"
-        if price_col not in combined.columns:
-            continue
- 
-        label    = f"-{round((1 - disc) * 100)}%"
-        disc_col = f"{name} {label} Pound"
- 
-        df = combined.copy()
- 
-        # Only matched rows
-        df = df.dropna(subset=[price_col, rog_disc_col])
- 
-        # Keep only unique certificate_number (first occurrence)
-        before = len(df)
-        df = df.drop_duplicates(subset=["certificate_number"], keep="first")
-        dupes = before - len(df)
-        if dupes:
-            log.info(f"  [{name}] Removed {dupes:,} duplicate certificate_number(s) — {len(df):,} unique rows remain")
- 
-        # Difference
-        diff_col = f"{name} vs ROG Pound"
-        df[diff_col] = (
-            pd.to_numeric(df[disc_col], errors="coerce") -
-            pd.to_numeric(df[rog_disc_col], errors="coerce")
-        ).round(0)
- 
-        # Percentage
-        pct_col = f"{name} vs ROG %"
-        df[pct_col] = (
-            (pd.to_numeric(df[disc_col], errors="coerce") -
-             pd.to_numeric(df[rog_disc_col], errors="coerce")) /
-            pd.to_numeric(df[rog_disc_col], errors="coerce") * 100
-        ).round(2)
- 
-        final_cols = (
-            ["certificate_number"] +
-            attr_cols +
-            [
-                "ROG Price Pound",
-                rog_disc_col,
-                price_col,
-                disc_col,
-                diff_col,
-                pct_col,
-            ]
-        )
- 
-        final_cols = [c for c in final_cols if c in df.columns]
- 
-        output_file = os.path.join(COMPARE_DIR, f"{name}_vs_rog.csv")
-        df[final_cols].to_csv(output_file, index=False)
- 
-        log.info(f"✅ {name}: {len(df):,} rows → {output_file}")
- 
 
 # ══════════════════════════════════════════════════════════════
 # STEP 1 — BUILD compare files
@@ -297,7 +223,6 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 rog_vals    = pd.to_numeric(combined[rog_disc_col], errors="coerce").replace(0, float("nan"))
                 novita_vals = pd.to_numeric(combined[novita_disc_col], errors="coerce").replace(0, float("nan"))
                 combined["novita vs ROG Pound"] = (novita_vals - rog_vals).round(0)
-                combined.to_csv(f"novita vs ROG.csv", index=False)
                 log.info(f"Added novita vs ROG Pound  ({combined['novita vs ROG Pound'].notna().sum():,} valid rows)")
 
             # 77diamonds vs ROG $
@@ -308,7 +233,6 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
                 rog_vals  = pd.to_numeric(combined[rog_disc_col], errors="coerce").replace(0, float("nan"))
                 d77_vals  = pd.to_numeric(combined[d77_disc_col], errors="coerce").replace(0, float("nan"))
                 combined["77diamonds vs ROG Pound"] = (d77_vals - rog_vals).round(0)
-                combined.to_csv(f"77diamonds vs ROG.csv", index=False)
                 log.info(f"Added 77diamonds vs ROG Pound  ({combined['77diamonds vs ROG Pound'].notna().sum():,} valid rows)")
 
     def vendor_list(row):
@@ -377,8 +301,6 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         json.dump(partial_records, f, ensure_ascii=False, indent=2)
     with open(COMPARE_ALL_JSON, "w", encoding="utf-8") as f:
         json.dump(all_records, f, ensure_ascii=False, indent=2)
-
-    df_common.drop(columns=["_all_matched", "_some_matched", "_vendor_count"], errors="ignore").to_csv(COMPARE_CSV, index=False)
 
     log.info(f"compare.json ({len(common_records):,}) | compare_partial.json ({len(partial_records):,}) | compare_all.json ({len(all_records):,})")
     return combined, common_records, partial_records, all_records
@@ -502,16 +424,19 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     else:
         combined = result
         common_records = partial_records = all_records = []
-    generate_vendor_vs_rog_csv(combined, discounts)
     if combined is None or (hasattr(combined, "empty") and combined.empty):
-        log.error("compare.csv is empty — aborting.")
+        log.error("compare data is empty — aborting.")
         sys.exit(1)
     # Save status
     _save_diamond_status(combined, loaded, discounts, common_records, partial_records, all_records)
 
     # Upload all JSON files to PostgreSQL (truncate + insert)
     try:
-        import germany_scrapping.germany_compare_to_db as germany_compare_to_db
+        import importlib.util as _ilu
+        _db_path = Path(__file__).resolve().parent / "germany_compare_to_db.py"
+        _spec = _ilu.spec_from_file_location("germany_compare_to_db", _db_path)
+        germany_compare_to_db = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(germany_compare_to_db)
         log.info("=" * 50)
         log.info("UPLOADING ROG JSON FILES TO POSTGRESQL")
         germany_compare_to_db.main()

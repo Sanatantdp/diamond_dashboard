@@ -30,7 +30,7 @@ def get_logger(name: str) -> logging.Logger:
 log = get_logger("rog")
 
 # ── Config ────────────────────────────────────────────────────────────────────
-URL        = "https://py.preciouscarbon.com/roa/graphql"
+URL        = "https://py.preciouscarbon.com/rog/graphql"
 DATE_STR   = datetime.datetime.now().strftime("%Y-%m-%d")
 CSV_FILE   = f"rog_diamonds.csv"
 PAGE_SIZE  = 2000
@@ -95,7 +95,7 @@ GQL_QUERY = """{{
     diamondType:"lab",
     sortBy:"asc",
     orderBy:"price",
-    currencyFlag:"USD",
+    currencyFlag:"EUR",
     pageSize:"{page_size}"
   ) {{
     dataCount
