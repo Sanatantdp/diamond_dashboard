@@ -54,14 +54,11 @@ DELAY_MIN       = 0.2   # was 0.2 — space out requests
 DELAY_MAX       = 0.5   # was 0.5
 RATELIMIT_PAUSE = 60    # was 30 — longer pause on 429/503
 
-renesim_path  = os.path.join(BASE_DIR, "renesim")
 diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 
-for d in (renesim_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
-MAIN_CSV      = os.path.join(renesim_path,  CSV_FILE)
-EXTRA_CSV     = os.path.join(diamond_files, CSV_FILE)
+MAIN_CSV      = os.path.join(diamond_files, CSV_FILE)
 PROGRESS_FILE = os.path.join(diamond_files, "renesim_progress.json")
 
 
@@ -353,7 +350,6 @@ def scrape():
     log.info(f"Timeout  : {TIMEOUT}s")
     log.info(f"Delay    : {DELAY_MIN}–{DELAY_MAX}s per request")
     log.info(f"Output  → {MAIN_CSV}")
-    log.info(f"Mirror  → {EXTRA_CSV}")
 
     # ── Initial status ────────────────────────────────────────
     write_status(SCRAPER_NAME, state="running", message="Starting up…")
@@ -412,13 +408,10 @@ def scrape():
     write_mode  = "a" if file_exists else "w"
     log.info(f"CSV mode: {'APPEND' if write_mode == 'a' else 'NEW'}")
 
-    f_main  = open(MAIN_CSV,  write_mode, newline="", encoding="utf-8")
-    f_extra = open(EXTRA_CSV, write_mode, newline="", encoding="utf-8")
-    writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS, extrasaction="ignore")
-    writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS, extrasaction="ignore")
+    f_main      = open(MAIN_CSV, write_mode, newline="", encoding="utf-8")
+    writer_main = csv.DictWriter(f_main, fieldnames=FIELDS, extrasaction="ignore")
     if write_mode == "w":
         writer_main.writeheader()
-        writer_extra.writeheader()
 
     saved_count = 0
     skip_count  = 0
@@ -480,9 +473,7 @@ def scrape():
 
             if new_rows:
                 writer_main.writerows(new_rows)
-                writer_extra.writerows(new_rows)
                 f_main.flush()
-                f_extra.flush()
 
         with state_lock:
             skip_count  += dup_count_page
@@ -557,7 +548,6 @@ def scrape():
         raise
     finally:
         f_main.close()
-        f_extra.close()
 
     final_saved = total_saved + saved_count
     save_progress(done_pages, final_saved, total_pages, status="done")
@@ -571,7 +561,7 @@ def scrape():
         duplicates=skip_count,
         failed_pages=fail_count,
         message="Scrape complete",
-        extra={"output_csv": MAIN_CSV, "mirror_csv": EXTRA_CSV},
+        extra={"output_csv": MAIN_CSV},
     )
 
     log.info("=" * 55)
@@ -581,7 +571,6 @@ def scrape():
     log.info(f"  Pages failed    : {fail_count:,}")
     log.info(f"  Total in CSV    : {final_saved:,}")
     log.info(f"  CSV    → {MAIN_CSV}")
-    log.info(f"  Mirror → {EXTRA_CSV}")
     log.info("=" * 55)
 
     return {

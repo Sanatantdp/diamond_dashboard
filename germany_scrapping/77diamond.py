@@ -11,11 +11,9 @@ URL              = "https://www.77diamonds.com/api/bff/shop/diamond-list"
 CSV_FILE         = "77diamonds.csv"      # ← no date in filename
 BASE_DIR         = os.getcwd()
 
-diamonds_path    = os.path.join(BASE_DIR, "77diamonds")
 diamond_files    = str(Path(__file__).resolve().parent.parent / "diamond_files" / "germany")
 
-for d in (diamonds_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
 RESULTS_PER_PAGE = 10000
 SLEEP_MIN        = 1
@@ -29,9 +27,8 @@ class VPNRotateNeeded(Exception):
     def __init__(self, fails):
         super().__init__(f"VPN rotate: {fails} consecutive failed pages")
 
-MAIN_CSV      = os.path.join(diamonds_path, CSV_FILE)
-EXTRA_CSV     = os.path.join(diamond_files, CSV_FILE)
-PROGRESS_FILE = os.path.join(diamonds_path, "progress.json")
+MAIN_CSV      = os.path.join(diamond_files, CSV_FILE)
+PROGRESS_FILE = os.path.join(diamond_files, "77diamonds_progress.json")
 
 # ── Headers ───────────────────────────────────────────────────────────────────
 HEADERS = {
@@ -346,15 +343,12 @@ def fetch_77diamonds() -> None:
 
     try:
         with (
-            open(MAIN_CSV,  open_mode, newline="", encoding="utf-8") as f_main,
-            open(EXTRA_CSV, open_mode, newline="", encoding="utf-8") as f_extra,
+            open(MAIN_CSV, open_mode, newline="", encoding="utf-8") as f_main,
         ):
-            writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS)
-            writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS)
+            writer_main = csv.DictWriter(f_main, fieldnames=FIELDS)
 
             if not file_exists:
                 writer_main.writeheader()
-                writer_extra.writeheader()
 
             while True:
                 payload = {
@@ -417,10 +411,8 @@ def fetch_77diamonds() -> None:
 
                 total_pages = max(1, (total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
 
-                new_n, dup_n = save_diamonds(diamonds, writer_main,  existing, page)
-                save_diamonds(diamonds,               writer_extra, existing, page)
+                new_n, dup_n = save_diamonds(diamonds, writer_main, existing, page)
                 f_main.flush()
-                f_extra.flush()
 
                 total_saved += new_n
                 pct          = round(page / total_pages * 100, 1)
@@ -481,11 +473,11 @@ def fetch_77diamonds() -> None:
         diamonds_saved=total_saved,
         failed_pages=fail_streak,
         message="Scrape complete",
-        extra={"output_csv": MAIN_CSV, "mirror_csv": EXTRA_CSV},
+        extra={"output_csv": MAIN_CSV},
     )
 
     mark_progress_done()
-    print(f"\n[{ts()}] Saved to:\n  {MAIN_CSV}\n  {EXTRA_CSV}")
+    print(f"\n[{ts()}] Saved to:\n  {MAIN_CSV}")
 
 
 def run_with_vpn_rotation():

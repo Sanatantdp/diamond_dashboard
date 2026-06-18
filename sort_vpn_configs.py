@@ -75,11 +75,11 @@ ALL_SCRAPERS: list[tuple[str, str, str, Any]] = [
     ("loosegrown",   "usa",   "loosegrown",    test_loosegrown),
     ("abelini",      "uk",    "abelini",        test_abelini),
     ("diamond_heaven","uk",   "diamond_heaven", test_diamond_heaven),
-    ("gs",           "roa",   "gs",             test_gs),
-    ("cullen",       "roa",   "cullen",         test_cullen),
-    ("novita",       "rog",   "novita",         test_novita),
-    ("renesim",      "rog",   "renesim",        test_renesim),
-    ("77diamonds",   "rog",   "77diamonds",     test_77diamonds),
+    ("gs",           "aus",   "gs",             test_gs),
+    ("cullen",       "aus",   "cullen",         test_cullen),
+    ("novita",       "germany",   "novita",         test_novita),
+    ("renesim",      "germany",   "renesim",        test_renesim),
+    ("77diamonds",   "germany",   "77diamonds",     test_77diamonds),
 ]
 
 

@@ -34,27 +34,24 @@ log = logging.getLogger(__name__)
 SCRAPER_NAME   = "diamond_heaven"
 API_URL        = "https://www.diamond-heaven.co.uk/diamonds/index/listt"
 ITEMS_PER_PAGE = 10000
-MAX_RETRIES    = 5
+MAX_RETRIES    = 3
 RETRY_BACKOFF  = 1.5
-SLEEP_MIN      = 1.5
-SLEEP_MAX      = 3.0
+SLEEP_MIN      = 0.5    # was 1.5s — reduced per-page pause
+SLEEP_MAX      = 1.5    # was 3.0s
 CHROME_VERSION = "chrome120"
 
 from pathlib import Path
 _SCRIPT_DIR   = Path(__file__).resolve().parent                          # uk_scrapping/
 _REPO_ROOT    = _SCRIPT_DIR.parent                                       # repo root
 BASE_DIR      = str(_SCRIPT_DIR)
-diamonds_path = os.path.join(BASE_DIR, "diamond_heaven")
 diamond_files = str(_REPO_ROOT / "diamond_files" / "uk")
 backup_dir    = str(_REPO_ROOT / "diamond_files_backup")
 
-for d in (diamonds_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
 CSV_FILE    = "diamond_heaven.csv"
-MAIN_CSV    = os.path.join(diamonds_path, CSV_FILE)
-EXTRA_CSV   = os.path.join(diamond_files, CSV_FILE)
-STATUS_FILE = os.path.join(diamonds_path, "status.json")
+MAIN_CSV    = os.path.join(diamond_files, CSV_FILE)
+STATUS_FILE = os.path.join(diamond_files, "diamond_heaven_status.json")
 
 STALE_DAYS = 2
 
@@ -289,7 +286,7 @@ def backup_stale_files() -> bool:
     Move output files older than STALE_DAYS to diamond_files_backup/.
     Returns True if any file was moved (caller should expect a fresh full scrape).
     """
-    candidates = [MAIN_CSV, EXTRA_CSV, STATUS_FILE]
+    candidates = [MAIN_CSV, STATUS_FILE]
     threshold  = STALE_DAYS * 86400
     now_ts     = time.time()
     moved      = []
@@ -491,14 +488,11 @@ def fetch_diamond_heaven(rotate_after_fails: int | None = None) -> None:
 
     try:
         with (
-            open(MAIN_CSV,  open_mode, newline="", encoding="utf-8") as f_main,
-            open(EXTRA_CSV, open_mode, newline="", encoding="utf-8") as f_extra,
+            open(MAIN_CSV, open_mode, newline="", encoding="utf-8") as f_main,
         ):
-            writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS)
-            writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS)
+            writer_main = csv.DictWriter(f_main, fieldnames=FIELDS)
             if not file_exists:
                 writer_main.writeheader()
-                writer_extra.writeheader()
 
             page              = start_page
             consecutive_fails = 0
@@ -545,9 +539,7 @@ def fetch_diamond_heaven(rotate_after_fails: int | None = None) -> None:
 
                 rows, new_n, dup_n = build_rows(diamonds, existing, page)
                 writer_main.writerows(rows)
-                writer_extra.writerows(rows)
                 f_main.flush()
-                f_extra.flush()
 
                 total_saved += new_n
                 total_dups  += dup_n
@@ -575,8 +567,8 @@ def fetch_diamond_heaven(rotate_after_fails: int | None = None) -> None:
 
     write_status("done", diamonds_saved=total_saved, duplicates=total_dups,
                  message="Completed")
-    log.info("=== Done | %d saved | Main: %s | Mirror: %s ===",
-             total_saved, MAIN_CSV, EXTRA_CSV)
+    log.info("=== Done | %d saved | CSV: %s ===",
+             total_saved, MAIN_CSV)
 
 
 # ── VPN-WRAPPED RUN ───────────────────────────────────────────────────────────

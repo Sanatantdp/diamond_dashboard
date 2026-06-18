@@ -146,6 +146,32 @@ WEEKLY_JOBS: dict[tuple[str, str], list[str]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 TIMEOUT_PER_SCRIPT = 60 * 60 * 3   # 3 hours max per individual script
 SKIP_MISSING       = True           # skip scripts that don't exist (warn, don't abort)
+STALE_CSV_DAYS     = 2             # delete diamond CSVs older than this before pipeline runs
+
+# CSV glob patterns per region (relative to BASE/diamond_files/<subdir>/)
+REGION_CSV_GLOBS: dict[str, tuple[str, list[str]]] = {
+    "usa": ("usa", [
+        "precious_carbon.csv",
+        "brilliance_diamonds.csv",
+        "loosegrowndiamond.csv",
+    ]),
+    "uk": ("uk", [
+        "rouk_diamonds.csv",
+        "diamond_heaven.csv",
+        "abelini.csv",
+    ]),
+    "aus": ("aus", [
+        "roa_*.csv",            # date-stamped filenames
+        "cullen_diamonds.csv",
+        "gs_diamonds.csv",
+    ]),
+    "germany": ("germany", [
+        "rog_diamonds.csv",
+        "77diamonds.csv",
+        "novita_diamonds.csv",
+        "renesim_diamonds.csv",
+    ]),
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -348,6 +374,42 @@ def _write_html() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CSV purge  (runs before every pipeline to delete stale diamond data files)
+# ─────────────────────────────────────────────────────────────────────────────
+def purge_old_csvs(region: str) -> None:
+    """Delete diamond CSV files older than STALE_CSV_DAYS so scrapers start fresh."""
+    entry = REGION_CSV_GLOBS.get(region)
+    if not entry:
+        return
+    subdir, patterns = entry
+    csv_dir = BASE / "diamond_files" / subdir
+    if not csv_dir.exists():
+        log.info(f"[{region.upper()}] CSV dir not found — nothing to purge: {csv_dir}")
+        return
+
+    cutoff  = datetime.now() - timedelta(days=STALE_CSV_DAYS)
+    deleted = 0
+    for pattern in patterns:
+        for f in csv_dir.glob(pattern):
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                age_days = (datetime.now() - mtime).days
+                if mtime < cutoff:
+                    f.unlink()
+                    log.info(f"[{region.upper()}] 🗑  Deleted stale CSV ({age_days}d old): {f.name}")
+                    deleted += 1
+                else:
+                    log.info(f"[{region.upper()}] ✓  CSV is fresh ({age_days}d old): {f.name}")
+            except Exception as exc:
+                log.warning(f"[{region.upper()}] Could not delete {f.name}: {exc}")
+
+    if deleted:
+        log.info(f"[{region.upper()}] Purged {deleted} stale CSV file(s) from {csv_dir}")
+    else:
+        log.info(f"[{region.upper()}] No stale CSVs to purge (all < {STALE_CSV_DAYS}d old)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Script runner
 # ─────────────────────────────────────────────────────────────────────────────
 def run_script(label: str, script: Path) -> bool | None:
@@ -397,6 +459,9 @@ def run_pipeline(region: str) -> bool:
     log.info("=" * 60)
     log.info(f"PIPELINE  [{region.upper()}]  {len(scripts)} scripts")
     log.info("=" * 60)
+
+    # Delete stale CSV files (> 2 days old) before running so scrapers start fresh
+    purge_old_csvs(region)
 
     pipeline_start = datetime.now()
     ok = True

@@ -11,8 +11,43 @@ import statistics
 import sys
 import ctypes
 import threading
+import tempfile
+import shutil
+import glob
 from concurrent.futures import ThreadPoolExecutor
 from logger import get_logger
+
+# ── Windows temp fix — redirect %TEMP% away from any RAMDisk ─────────────────
+# curl_cffi writes TLS/socket temp files to %TEMP%. If %TEMP% points to a
+# RAMDisk (common on Windows), it fills up and causes "insufficient storage".
+# Force a real-disk temp folder before any curl_cffi import side-effects run.
+if sys.platform == "win32":
+    _real_temp = os.path.join(os.environ.get("LOCALAPPDATA", "C:\\Temp"), "curl_tmp")
+    os.makedirs(_real_temp, exist_ok=True)
+    os.environ["TEMP"] = _real_temp
+    os.environ["TMP"]  = _real_temp
+    tempfile.tempdir    = _real_temp
+
+def _cleanup_curl_tmp():
+    """Delete stale curl_cffi temp files from our dedicated Windows temp folder."""
+    try:
+        _tmp = os.environ.get("TEMP", "")
+        if not _tmp or not os.path.isdir(_tmp):
+            return
+        deleted = 0
+        for f in glob.glob(os.path.join(_tmp, "*")):
+            try:
+                if os.path.isfile(f):
+                    os.remove(f)
+                elif os.path.isdir(f):
+                    shutil.rmtree(f, ignore_errors=True)
+                deleted += 1
+            except Exception:
+                pass
+        if deleted:
+            log.debug(f"Cleaned {deleted} stale temp file(s) from {_tmp}")
+    except Exception:
+        pass
 
 log = get_logger("brilliance")
 ua = UserAgent()
@@ -50,15 +85,16 @@ class VPNRotateNeeded(Exception):
         )
 
 SLEEP_MIN       = 0.0          # between normal calls
-SLEEP_MAX       = 1.0
-SLEEP_EMPTY     = 2.0          # when page returns 0 diamonds
-BATCH_SLEEP_MIN = 100         # sleep between every 1000-call batch
-BATCH_SLEEP_MAX = 200
-RETRY_SLEEP     = 20
-PAGE_HARD_TIMEOUT = 90   # seconds — thread-level kill-switch; fires even when curl hangs
-MAX_RETRIES     = 5
+SLEEP_MAX       = 0.5
+SLEEP_EMPTY     = 1.0          # when page returns 0 diamonds
+BATCH_SLEEP_MIN = 30          # sleep between every 1000-call batch
+BATCH_SLEEP_MAX = 60
+RETRY_SLEEP     = 10          # sleep on 403 before retry
+PAGE_HARD_TIMEOUT = 45   # seconds — thread-level kill-switch; fires even when curl hangs
+MAX_RETRIES     = 3
 BATCH_SIZE      = 1000         # calls per batch before report + sleep
-CONCURRENT_PAGES = 3          # pages fetched in parallel → effective time = API_time / N
+CONCURRENT_PAGES = 1          # pages fetched in parallel → effective time = API_time / N
+SESSION_RESET_EVERY = 500     # recreate curl session every N pages (prevents /tmp buildup)
 
 FIELDS = [
     "nid", "shape", "price", "color", "carat", "clarity", "cut", "report",
@@ -322,12 +358,13 @@ def get_writer():
 
 # ── FETCH ONE PAGE ────────────────────────────────────────────────────────────
 def _reset_session():
-    """Recreate this thread's curl_cffi session — clears stale keep-alive connections."""
+    """Recreate this thread's curl_cffi session — clears stale keep-alive connections and temp files."""
     try:
         if hasattr(_thread_local, 'session'):
             _thread_local.session.close()
     except Exception:
         pass
+    _cleanup_curl_tmp()
     _thread_local.session = requests.Session(impersonate="chrome124")
     log.info("Session recreated.")
 
@@ -612,6 +649,11 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
                 pages_chunk = list(range(page, min(page + CONCURRENT_PAGES, batch_end_page + 1)))
                 with ThreadPoolExecutor(max_workers=len(pages_chunk)) as _exec:
                     chunk_results = list(_exec.map(fetch_page, pages_chunk))
+
+                # Periodically recreate session to free curl_cffi /tmp data
+                if page % SESSION_RESET_EVERY == 0:
+                    _reset_session()
+                    log.debug(f"Session recycled at page {page} (every {SESSION_RESET_EVERY} pages)")
 
                 for result, p in zip(chunk_results, pages_chunk):
                     batch_results.append(result)

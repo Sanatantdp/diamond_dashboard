@@ -36,13 +36,13 @@ URL       = "https://www.loosegrowndiamond.com/wp-json/ls/v1/inventory-filter"
 PAGE_SIZE = 5_000
 
 # Back-off knobs (all in seconds)
-RETRY_TOTAL       = 6       # total retry attempts per page
-BACKOFF_BASE      = 15      # first wait  → 15 s
-BACKOFF_CAP       = 180     # maximum wait → 3 min
-JITTER_RANGE      = 5       # ± random seconds added to each wait
-INTER_PAGE_SLEEP  = 1.5     # polite pause between successful pages
+RETRY_TOTAL       = 3       # was 6 — fewer retries means less stalling
+BACKOFF_BASE      = 8       # was 15s — shorter first wait
+BACKOFF_CAP       = 60      # was 180s (3 min) — max backoff capped at 60s
+JITTER_RANGE      = 3       # ± random seconds added to each wait
+INTER_PAGE_SLEEP  = 0.5     # was 1.5s — reduced inter-page pause
 
-REQUEST_TIMEOUT   = (12, 120)   # (connect, read) seconds
+REQUEST_TIMEOUT   = (12, 45)    # was (12, 120) — 2 min read timeout caused long stalls
 
 # File paths
 BASE_DIR    = str(Path(__file__).resolve().parent.parent)

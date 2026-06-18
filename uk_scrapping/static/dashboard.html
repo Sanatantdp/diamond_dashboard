@@ -91,10 +91,28 @@
       .stat-pill .val { color: var(--accent); font-size: 1.15rem; font-weight: 500; display: block; }
       .stat-pill .lbl { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; }
 
-      /* ── Controls ── */
+      /* ── Controls (top-bar, kept for layout) ── */
       .controls {
         padding: 16px 40px; background: var(--surface); border-bottom: 1px solid var(--border);
         display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;
+      }
+      /* ── Inline filter card (inside main) ── */
+      .filter-card {
+        background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+        padding: 14px 18px; margin: 10px 0 18px; display: flex; flex-direction: column; gap: 10px;
+      }
+      .filter-card-title {
+        font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;
+        display: flex; align-items: center; gap: 10px;
+      }
+      .filter-card-title::after {
+        content: ''; flex: 1; height: 1px; background: var(--border);
+      }
+      .filter-card-row {
+        display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;
+      }
+      .filter-card-sep {
+        width: 1px; height: 34px; background: var(--border); margin-bottom: 2px;
       }
       .control-group { display: flex; flex-direction: column; gap: 6px; }
       .control-group label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
@@ -303,23 +321,6 @@
     </div>
 
     <!-- CONTROLS -->
-    <div class="controls">
-      <div class="control-group">
-        <label>ROUK Price Range</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="number" id="priceMin" class="inp" placeholder="Min £" style="width:100px" />
-          <span style="color:var(--muted)">—</span>
-          <input type="number" id="priceMax" class="inp" placeholder="Max £" style="width:100px" />
-          <button class="btn btn-gold btn-sm" onclick="applyPriceFilter()">Apply</button>
-          <button class="btn btn-ghost btn-sm" onclick="clearPriceFilter()">Clear</button>
-        </div>
-      </div>
-      <div class="control-group">
-        <label>Search Certificate</label>
-        <input type="text" id="certSearch" class="inp" placeholder="e.g. 719538774" style="width:180px" oninput="onSearch()" />
-      </div>
-    </div>
-
     <!-- MAIN -->
     <div class="main">
       <!-- STATS -->
@@ -366,6 +367,28 @@
       </div>
       <div class="pct-buckets-grid" id="pctBucketsGrid" style="margin-bottom:12px">
         <div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>
+      </div>
+
+      <!-- PRICE RANGE + CERTIFICATE FILTERS -->
+      <div class="filter-card">
+        <div class="filter-card-title">Filters</div>
+        <div class="filter-card-row">
+          <div class="control-group">
+            <label>ROUK Price Range</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="number" id="priceMin" class="inp" placeholder="Min £" style="width:100px" />
+              <span style="color:var(--muted)">—</span>
+              <input type="number" id="priceMax" class="inp" placeholder="Max £" style="width:100px" />
+              <button class="btn btn-gold btn-sm" onclick="applyPriceFilter()">Apply</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearPriceFilter()">Clear</button>
+            </div>
+          </div>
+          <div class="filter-card-sep"></div>
+          <div class="control-group">
+            <label>Search Certificate</label>
+            <input type="text" id="certSearch" class="inp" placeholder="e.g. 719538774" style="width:200px" oninput="onSearch()" />
+          </div>
+        </div>
       </div>
 
       <div id="bucketCreatedAt" style="font-size:0.7rem;color:var(--muted);text-align:right;margin:0 4px 24px;font-style:italic">

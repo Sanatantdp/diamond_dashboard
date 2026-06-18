@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 SCRAPER_NAME   = "abelini"
 BASE_URL       = "https://www.abelini.com/index.php"
 ITEMS_PER_PAGE = 24                    # server-enforced, do not change
-MAX_RETRIES    = 6
+MAX_RETRIES    = 4      # was 6
 CHROME_VERSION = "chrome131"
 
 # ── Concurrency knobs (env-overridable) ──────────────────────────────────────
@@ -41,13 +41,13 @@ FAST_MODE          = bool(int(os.environ.get("ABELINI_FAST_MODE",     "0")))
 REQUEST_TIMEOUT       = 45
 WORKER_DELAY_MIN      = 0.1
 WORKER_DELAY_MAX      = 0.4
-BACKOFF_429_BASE      = 30.0
-BACKOFF_429_MAX       = 300.0
+BACKOFF_429_BASE      = 15.0   # was 30.0 — shorter first 429 backoff
+BACKOFF_429_MAX       = 90.0   # was 300.0 (5 min) — capped at 90s
 LARGE_SHARD_PAGES     = 200            # if shard claims this many pages, use big pool
-INTER_SHAPE_SLEEP_MIN = 10
-INTER_SHAPE_SLEEP_MAX = 20
-INTER_SHARD_SLEEP_MIN = 2
-INTER_SHARD_SLEEP_MAX = 5
+INTER_SHAPE_SLEEP_MIN = 5      # was 10s — sleep between shapes
+INTER_SHAPE_SLEEP_MAX = 10     # was 20s
+INTER_SHARD_SLEEP_MIN = 1      # was 2s
+INTER_SHARD_SLEEP_MAX = 3      # was 5s
 DUP_PAGE_LIMIT        = 2              # consecutive all-dup pages → bail shard
 STATE_PERSIST_EVERY   = 10             # persist status.json every N shard completions
 MAX_PAGES_PER_SHARD   = 600            # hard safety cap per (shape, carat-band)
@@ -88,17 +88,14 @@ def _build_carat_bands(fast: bool):
 
 CARAT_BANDS = _build_carat_bands(FAST_MODE)
 
-# ── Paths (unchanged from your code) ─────────────────────────────────────────
+# ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR      = str(Path(__file__).resolve().parent)
 diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "uk")
-diamonds_path = os.path.join(BASE_DIR, "abelini")
 
-for d in (diamonds_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
-MAIN_CSV    = os.path.join(diamonds_path, "abelini.csv")
-EXTRA_CSV   = os.path.join(diamond_files, "abelini.csv")
-STATUS_FILE = os.path.join(diamonds_path, "status.json")
+MAIN_CSV    = os.path.join(diamond_files, "abelini.csv")
+STATUS_FILE = os.path.join(diamond_files, "abelini_status.json")
 
 # ── VPN ──────────────────────────────────────────────────────────────────────
 VPN_ROTATE_AFTER_FAILS = 5
@@ -280,25 +277,11 @@ def load_existing_ids() -> set:
     log.info("Loaded %d existing unique certno IDs from previous run", len(ids))
     return ids
 
-def _atomic_flush_to_extra() -> None:
-    tmp_path = EXTRA_CSV + ".tmp"
-    try:
-        shutil.copy2(MAIN_CSV, tmp_path)
-        os.replace(tmp_path, EXTRA_CSV)
-        log.info("💾 Flushed → diamond_files/uk/abelini.csv")
-    except Exception as exc:
-        log.warning("Flush failed: %s", exc)
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
 def _maybe_flush(new_records: int, force: bool = False) -> None:
     global _flush_counter
     with _flush_lock:
         _flush_counter += new_records
         if force or _flush_counter >= FLUSH_EVERY:
-            _atomic_flush_to_extra()
             _flush_counter = 0
 
 # ── Shared dedupe set ────────────────────────────────────────────────────────
@@ -664,9 +647,6 @@ def fetch_abelini(rotate_after_fails: int | None = None) -> None:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         if not file_exists:
             writer.writeheader()
-            if not os.path.exists(EXTRA_CSV):
-                with open(EXTRA_CSV, "w", newline="", encoding="utf-8") as fe:
-                    csv.DictWriter(fe, fieldnames=FIELDS).writeheader()
 
         for idx, shape in enumerate(shapes_to_run):
             if _hard_stop.is_set():
@@ -711,7 +691,6 @@ def fetch_abelini(rotate_after_fails: int | None = None) -> None:
     log.info("   New    : %d", grand_new)
     log.info("   Dup    : %d", grand_dup)
     log.info("   Total  : %d", len(_existing_ids))
-    log.info("   Mirror : %s", EXTRA_CSV)
     log.info("=" * 60)
 
     if _hard_stop.is_set():

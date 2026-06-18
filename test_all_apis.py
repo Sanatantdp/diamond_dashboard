@@ -521,58 +521,67 @@ def test_gs_diamonds() -> dict[str, Any]:
 # ── 7. Novita (ROG / DE) ──────────────────────────────────────────────────────
 def test_novita() -> dict[str, Any]:
     URL = "https://novitadiamonds.de/en/api/product/diamonds"
+    # API accepts application/json (not form-urlencoded)
     headers = {
-        "accept":           "application/json, text/javascript, */*; q=0.01",
-        "accept-language":  "en-GB,en-US;q=0.9,en;q=0.8",
-        "content-type":     "application/x-www-form-urlencoded; charset=UTF-8",
-        "origin":           "https://novitadiamonds.de",
-        "referer":          "https://novitadiamonds.de/en/create/diamanten/buy-lab-grown-diamonds",
-        "sec-ch-ua":        _SEC_CH,
-        "sec-ch-ua-mobile": "?0",
+        "accept":             "application/json, text/javascript, */*; q=0.01",
+        "accept-language":    "en-GB,en-US;q=0.9,en;q=0.8",
+        "content-type":       "application/json",
+        "origin":             "https://novitadiamonds.de",
+        "priority":           "u=1, i",
+        "referer":            "https://novitadiamonds.de/en/create/diamanten/buy-lab-grown-diamonds",
+        "sec-ch-ua":          '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+        "sec-ch-ua-mobile":   "?0",
         "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest":   "empty",
-        "sec-fetch-mode":   "cors",
-        "sec-fetch-site":   "same-origin",
-        "user-agent":       _UA,
-        "x-requested-with": "XMLHttpRequest",
+        "sec-fetch-dest":     "empty",
+        "sec-fetch-mode":     "cors",
+        "sec-fetch-site":     "same-origin",
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/149.0.0.0 Safari/537.36"
+        ),
+        "x-requested-with":   "XMLHttpRequest",
     }
     cookies = {
-        "accept_cookie": "True",
-        "PHPSESSID":     "4rj17estafpb6rhh7n7l0dmm45",
+        "cookie_preferences": (
+            "%7B%22analytics%22%3Atrue%2C%22tag_manager%22%3Atrue%2C"
+            "%22calendly%22%3Atrue%2C%22trustpilot%22%3Atrue%2C%22youtube%22%3Atrue%7D"
+        ),
+        "PHPSESSID": "bkeeq8cbndopeu5sskq68p95v0",
     }
-    form = {
-        "shapes":               '["1","4","3","2","6","5","9","8","7","10","11"]',
-        "color_from":           "1",
-        "color_to":             "16",
-        "cut_from":             "1",
-        "cut_to":               "3",
-        "clarity_from":         "2",
-        "clarity_to":           "8",
-        "polish_from":          "1",
-        "polish_to":            "2",
-        "symmetry_from":        "1",
-        "symmetry_to":          "2",
-        "carat_from":           "1.0",
-        "carat_to":             "1.1",
-        "price_from":           "150",
-        "price_to":             "13500",
-        "location_description": "germany",
-        "certificates":         "[]",
-        "ratio_from":           "1",
-        "ratio_to":             "3",
-        "is_carat_infitinitive": "0",
-        "is_price_infitinitive": "1",
-        "is_ratio_infitinitive": "1",
-        "maxResults":           "32",
-        "page":                 "1",
-        "order_by":             "priceToSellWoLocalTax",
-        "order_type":           "ASC",
-        "preferred_currency":   "EUR",
-        "current_tab":          "available_showroom_tab",
-        "fetch_count":          "true",
+    payload = {
+        "shapes":                ["1", "4", "3", "2", "6", "5", "9", "8", "7", "10", "11"],
+        "color_from":            1,
+        "color_to":              16,
+        "cut_from":              1,
+        "cut_to":                3,
+        "clarity_from":          2,
+        "clarity_to":            8,
+        "polish_from":           1,
+        "polish_to":             2,
+        "symmetry_from":         1,
+        "symmetry_to":           2,
+        "carat_from":            0.3,
+        "carat_to":              20,
+        "price_from":            150,
+        "price_to":              13500,
+        "location_description":  "all",
+        "certificates":          [],
+        "ratio_from":            1,
+        "ratio_to":              3,
+        "is_carat_infitinitive": 1,
+        "is_price_infitinitive": 1,
+        "is_ratio_infitinitive": 1,
+        "maxResults":            32,
+        "page":                  1,
+        "order_by":              "priceToSellWoLocalTax",
+        "order_type":            "ASC",
+        "preferred_currency":    "EUR",
+        "current_tab":           "result_tab",
+        "fetch_count":           False,
         "token": (
-            "c34198f171dddeec91c5d465.VyYkqV-KGQLO0Ljmzf_PgA6DO-mRDVbLeb7WY_KI9Hw"
-            ".NhdJmS-4LzqJqMG-prD77lTsC6zGXiKRMZOGE57PkgkGQFLtPMx9SfiA9Q"
+            "ebaf63ab251c8e4a1c5050bc.14CP1gnK2syhHPXF6Tvg_-Z6nEkDpshgRLLHZDcoZeU"
+            ".hsbfvEKPi4eXRpydiFi2zb896gFV4_4oL-vwAQFhB4Du39-HSqOPoNh2ng"
         ),
     }
     result: dict[str, Any] = {"scraper": "novita", "url": URL}
@@ -580,7 +589,7 @@ def test_novita() -> dict[str, Any]:
     try:
         with _session() as s:
             resp = s.post(URL, headers=headers, cookies=cookies,
-                          data=form, timeout=30)
+                          json=payload, timeout=30)
         result["status_code"] = resp.status_code
         result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 1)
         if not resp.ok:

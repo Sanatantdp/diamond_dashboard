@@ -44,15 +44,12 @@ BATCH_SLEEP_MIN = 120    # 2 min
 BATCH_SLEEP_MAX = 300    # 5 min
 
 base_dir      = str(Path(__file__).resolve().parent)
-rog_path      = os.path.join(base_dir, "roa")
 diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "aus")
 
-for d in (rog_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
-MAIN_CSV          = os.path.join(rog_path,      CSV_FILE)
-EXTRA_CSV         = os.path.join(diamond_files, CSV_FILE)
-PROGRESS_FILE     = os.path.join(diamond_files, "roa_proaress.json")
+MAIN_CSV          = os.path.join(diamond_files, CSV_FILE)
+PROGRESS_FILE     = os.path.join(diamond_files, "roa_progress.json")
 BATCH_REPORT_FILE = os.path.join(diamond_files, "roa_batch_reports.json")
 
 # ── CSRF token — update if it expires ────────────────────────────────────────
@@ -74,7 +71,7 @@ def delete_if_older_than_1_day(file_path: str):
             log.info(f"Deleted old file: {file_path}")
 
 
-for _f in (MAIN_CSV, EXTRA_CSV, PROGRESS_FILE):
+for _f in (MAIN_CSV, PROGRESS_FILE):
     delete_if_older_than_1_day(_f)
 
 
@@ -432,8 +429,8 @@ def print_final_summary(all_reports, grand_wall):
 
 
 # ── Run one batch of 500 pages concurrently ───────────────────────────────────
-def run_batch(pages, session, writer_main, writer_extra,
-              f_main, f_extra, seen_certs,
+def run_batch(pages, session, writer_main,
+              f_main, seen_certs,
               done_pages, total_saved_ref, total_pages, batch_num):
 
     lock = Lock()
@@ -487,9 +484,7 @@ def run_batch(pages, session, writer_main, writer_extra,
 
                 if new_rows:
                     writer_main.writerows(new_rows)
-                    writer_extra.writerows(new_rows)
                     f_main.flush()
-                    f_extra.flush()
                     batch_stats["diamonds_saved"] += len(new_rows)
                     total_saved_ref[0] += len(new_rows)
 
@@ -521,7 +516,6 @@ def scrape():
     log.info(f"Batch size   : {BATCH_SIZE} pages")
     log.info(f"Batch sleep  : {BATCH_SLEEP_MIN//60}–{BATCH_SLEEP_MAX//60} min")
     log.info(f"Output  → {MAIN_CSV}")
-    log.info(f"Mirror  → {EXTRA_CSV}")
 
     session  = make_session()
     progress = load_progress()
@@ -558,13 +552,10 @@ def scrape():
     write_mode  = "a" if file_exists else "w"
     log.info(f"CSV mode: {'APPEND' if write_mode == 'a' else 'NEW'}")
 
-    f_main       = open(MAIN_CSV,  write_mode, newline="", encoding="utf-8")
-    f_extra      = open(EXTRA_CSV, write_mode, newline="", encoding="utf-8")
-    writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS, extrasaction="ignore")
-    writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS, extrasaction="ignore")
+    f_main      = open(MAIN_CSV, write_mode, newline="", encoding="utf-8")
+    writer_main = csv.DictWriter(f_main, fieldnames=FIELDS, extrasaction="ignore")
     if write_mode == "w":
         writer_main.writeheader()
-        writer_extra.writeheader()
 
     all_reports     = []
     grand_start     = time.perf_counter()
@@ -584,9 +575,7 @@ def scrape():
                 pages           = batch_pages,
                 session         = session,
                 writer_main     = writer_main,
-                writer_extra    = writer_extra,
                 f_main          = f_main,
-                f_extra         = f_extra,
                 seen_certs      = seen_certs,
                 done_pages      = done_pages,
                 total_saved_ref = total_saved_ref,
@@ -629,9 +618,8 @@ def scrape():
         log.info("Progress saved — re-run to resume.")
     finally:
         f_main.close()
-        f_extra.close()
         save_progress(done_pages, total_saved_ref[0], total_pages)
-        log.info("CSVs saved & closed")
+        log.info("CSV saved & closed")
 
     grand_wall = time.perf_counter() - grand_start
     print_final_summary(all_reports, grand_wall)
@@ -640,8 +628,7 @@ def scrape():
         json.dump(all_reports, bf, indent=2)
 
     print(f"  📁  Batch report → {BATCH_REPORT_FILE}")
-    print(f"  📁  Main CSV     → {MAIN_CSV}")
-    print(f"  📁  Mirror CSV   → {EXTRA_CSV}\n")
+    print(f"  📁  CSV          → {MAIN_CSV}\n")
     log.info("=" * 55)
 
     return {

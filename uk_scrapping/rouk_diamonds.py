@@ -1,8 +1,16 @@
 from curl_cffi import requests as curl_requests
 import csv, os, time, random, json, math, statistics, logging
-import datetime
+import datetime, sys, glob, shutil, tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+
+# Windows: redirect %TEMP% away from any RAMDisk before curl_cffi uses it
+if sys.platform == "win32":
+    _real_tmp = os.path.join(os.environ.get("LOCALAPPDATA", "C:\\Temp"), "curl_tmp")
+    os.makedirs(_real_tmp, exist_ok=True)
+    os.environ["TEMP"] = _real_tmp
+    os.environ["TMP"]  = _real_tmp
+    tempfile.tempdir    = _real_tmp
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -38,19 +46,16 @@ WORKERS   = 20
 SAVE_EVERY = 100
 
 BATCH_SIZE      = 500    # pages per batch before report + sleep
-BATCH_SLEEP_MIN = 120    # 2 min
-BATCH_SLEEP_MAX = 300    # 5 min
+BATCH_SLEEP_MIN = 30     # was 120s (2 min) — reduced to avoid long gaps
+BATCH_SLEEP_MAX = 60     # was 300s (5 min)
 
 from pathlib import Path
 base_dir      = str(Path(__file__).resolve().parent)                              # uk_scrapping/
 diamond_files = str(Path(__file__).resolve().parent.parent / "diamond_files" / "uk")
-rouk_path     = os.path.join(base_dir, "rouK")
 
-for d in (rouk_path, diamond_files):
-    os.makedirs(d, exist_ok=True)
+os.makedirs(diamond_files, exist_ok=True)
 
-MAIN_CSV          = os.path.join(rouk_path,     CSV_FILE)
-EXTRA_CSV         = os.path.join(diamond_files, CSV_FILE)
+CSV_FILE_PATH     = os.path.join(diamond_files, CSV_FILE)
 PROGRESS_FILE     = os.path.join(diamond_files, "rou_progress.json")
 BATCH_REPORT_FILE = os.path.join(diamond_files, "rou_batch_reports.json")
 
@@ -64,7 +69,7 @@ def delete_if_older_than_1_day(file_path: str):
             log.info(f"Deleted old file: {file_path}")
 
 
-for _f in (MAIN_CSV, EXTRA_CSV, PROGRESS_FILE):
+for _f in (CSV_FILE_PATH, PROGRESS_FILE):
     delete_if_older_than_1_day(_f)
 
 
@@ -392,8 +397,8 @@ def print_final_summary(all_reports, grand_wall):
 
 
 # ── Run one batch of 500 pages concurrently ───────────────────────────────────
-def run_batch(pages, session, writer_main, writer_extra,
-              f_main, f_extra, seen_certs,
+def run_batch(pages, session, writer_main,
+              f_main, seen_certs,
               done_pages, total_saved_ref, total_pages, batch_num):
 
     lock = Lock()
@@ -436,9 +441,7 @@ def run_batch(pages, session, writer_main, writer_extra,
 
                 if new_rows:
                     writer_main.writerows(new_rows)
-                    writer_extra.writerows(new_rows)
                     f_main.flush()
-                    f_extra.flush()
                     batch_stats["diamonds_saved"] += len(new_rows)
                     total_saved_ref[0] += len(new_rows)
 
@@ -469,8 +472,7 @@ def scrape():
     log.info(f"Workers      : {WORKERS}")
     log.info(f"Batch size   : {BATCH_SIZE} pages")
     log.info(f"Batch sleep  : {BATCH_SLEEP_MIN//60}–{BATCH_SLEEP_MAX//60} min")
-    log.info(f"Output  → {MAIN_CSV}")
-    log.info(f"Mirror  → {EXTRA_CSV}")
+    log.info(f"Output  → {CSV_FILE_PATH}")
 
     session  = make_session()
     progress = load_progress()
@@ -479,7 +481,7 @@ def scrape():
     total_saved = progress.get("total_saved", 0)
     total_pages = progress.get("total_pages") or get_total_pages(session)
 
-    seen_certs = load_existing_certs(MAIN_CSV)
+    seen_certs = load_existing_certs(CSV_FILE_PATH)
     remaining  = [p for p in range(1, total_pages + 1) if p not in done_pages]
 
     log.info(f"Pages done     : {len(done_pages):,}")
@@ -505,17 +507,14 @@ def scrape():
     print(f"  {'═'*52}\n")
 
     # ── CSV setup ─────────────────────────────────────────────────────────────
-    file_exists = os.path.exists(MAIN_CSV) and os.path.getsize(MAIN_CSV) > 0
+    file_exists = os.path.exists(CSV_FILE_PATH) and os.path.getsize(CSV_FILE_PATH) > 0
     write_mode  = "a" if file_exists else "w"
     log.info(f"CSV mode: {'APPEND' if write_mode == 'a' else 'NEW'}")
 
-    f_main       = open(MAIN_CSV,  write_mode, newline="", encoding="utf-8")
-    f_extra      = open(EXTRA_CSV, write_mode, newline="", encoding="utf-8")
-    writer_main  = csv.DictWriter(f_main,  fieldnames=FIELDS, extrasaction="ignore")
-    writer_extra = csv.DictWriter(f_extra, fieldnames=FIELDS, extrasaction="ignore")
+    f_main      = open(CSV_FILE_PATH, write_mode, newline="", encoding="utf-8")
+    writer_main = csv.DictWriter(f_main, fieldnames=FIELDS, extrasaction="ignore")
     if write_mode == "w":
         writer_main.writeheader()
-        writer_extra.writeheader()
 
     all_reports     = []
     grand_start     = time.perf_counter()
@@ -535,9 +534,7 @@ def scrape():
                 pages           = batch_pages,
                 session         = session,
                 writer_main     = writer_main,
-                writer_extra    = writer_extra,
                 f_main          = f_main,
-                f_extra         = f_extra,
                 seen_certs      = seen_certs,
                 done_pages      = done_pages,
                 total_saved_ref = total_saved_ref,
@@ -581,9 +578,8 @@ def scrape():
         log.info("Progress saved — re-run to resume.")
     finally:
         f_main.close()
-        f_extra.close()
         save_progress(done_pages, total_saved_ref[0], total_pages)
-        log.info("CSVs saved & closed")
+        log.info("CSV saved & closed")
 
     # ── Grand final summary ───────────────────────────────────────────────────
     grand_wall = time.perf_counter() - grand_start
@@ -593,8 +589,7 @@ def scrape():
         json.dump(all_reports, bf, indent=2)
 
     print(f"  📁  Batch report → {BATCH_REPORT_FILE}")
-    print(f"  📁  Main CSV     → {MAIN_CSV}")
-    print(f"  📁  Mirror CSV   → {EXTRA_CSV}\n")
+    print(f"  📁  CSV          → {CSV_FILE_PATH}\n")
     log.info("=" * 55)
 
     return {
@@ -603,7 +598,7 @@ def scrape():
         "new_rows":     sum(r["diamonds_saved"] for r in all_reports),
         "duplicates":   sum(r["skipped"]        for r in all_reports),
         "failed_pages": sum(r["failed"]         for r in all_reports),
-        "output":       MAIN_CSV,
+        "output":       CSV_FILE_PATH,
         "end_time":     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
