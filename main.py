@@ -515,6 +515,8 @@ def _table_row_count(table: str) -> int:
 # ============================================================================
 # Pages
 # ============================================================================
+
+@app.head("/ping")
 @app.get("/ping")
 def ping():
     return Response(content="OK", status_code=200)
