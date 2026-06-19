@@ -93,7 +93,6 @@ COMPARE_KEY_MAP = {
     "brilliance vs PC USD":    "brilliance_vs_pc_usd",
     "brilliance vs PC %":      "brilliance_vs_pc_pct",
     "PC Price USD":            "pc_price_usd",
-    "PC -30% USD":             "pc_minus_30_usd",
 }
 
 BR_VS_LG_COLUMNS = [

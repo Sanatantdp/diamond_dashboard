@@ -303,7 +303,7 @@ def load_vendors_from_env():
 
     PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
     PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
-    PC_discount = float(get_env("PC_DISCOUNT", "0.70"))
+    PC_discount = float(get_env("PC_DISCOUNT", "0.60"))
     return vendors, PC_csv, PC_discount
 
 
@@ -358,7 +358,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     if "PC" in discounts and "PC Price USD" in combined.columns:
         PC_disc     = discounts["PC"]
         PC_label    = f"-{round((1 - PC_disc) * 100)}%"
-        PC_disc_col = "PC -30% USD"
+        PC_disc_col = f"PC {PC_label} USD"
         if PC_disc_col in combined.columns:
             for name in discounts:
                 if name == "PC":

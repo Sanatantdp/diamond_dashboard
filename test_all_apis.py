@@ -798,10 +798,95 @@ def test_77diamonds() -> dict[str, Any]:
     return result
 
 
+# ── 10. Brilliant Earth (USA) ─────────────────────────────────────────────────
+def test_brilliant_earth() -> dict[str, Any]:
+    from urllib.parse import urlencode
+    BASE = "https://www.brilliantearth.com/api/v1/plp/products/"
+    params = {
+        "display":     50,
+        "page":        1,
+        "currency":    "USD",
+        "product_class": "Lab Created Colorless Diamonds",
+        "cuts":        "Fair,Good,Very Good,Ideal,Super Ideal",
+        "colors":      "J,I,H,G,F,E,D",
+        "clarities":   "SI2,SI1,VS2,VS1,VVS2,VVS1,IF,FL",
+        "polishes":    "Good,Very Good,Excellent",
+        "symmetries":  "Good,Very Good,Excellent",
+        "fluorescences": "Very Strong,Strong,Medium,Faint,None",
+        "min_price":   180,   "max_price":   1396180,
+        "MIN_PRICE":   180,   "MAX_PRICE":   1396180,
+        "min_carat":   0.25,  "max_carat":   70.83,
+        "MIN_CARAT":   0.25,  "MAX_CARAT":   70.83,
+        "min_ratio":   1,     "max_ratio":   2.75,
+        "MIN_RATIO":   1,     "MAX_RATIO":   2.75,
+        "min_table":   45,    "max_table":   85,
+        "MIN_TABLE":   45,    "MAX_TABLE":   85,
+        "min_depth":   0.6,   "max_depth":   83.3,
+        "MIN_DEPTH":   0.6,   "MAX_DEPTH":   83.3,
+        "order_by":    "most_popular",
+        "order_method": "asc",
+    }
+    url = f"{BASE}?{urlencode(params)}"
+    headers = {
+        "accept":             "application/json, text/javascript, */*; q=0.01",
+        "accept-language":    "en-GB,en-US;q=0.9,en;q=0.8",
+        "origin":             "https://www.brilliantearth.com",
+        "referer":            "https://www.brilliantearth.com/loose-diamonds/search/",
+        "sec-ch-ua":          '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+        "sec-ch-ua-mobile":   "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest":     "empty",
+        "sec-fetch-mode":     "cors",
+        "sec-fetch-site":     "same-origin",
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/149.0.0.0 Safari/537.36"
+        ),
+        "x-requested-with":   "XMLHttpRequest",
+    }
+    result: dict[str, Any] = {"scraper": "brilliant-earth", "url": url[:80]}
+    start = time.perf_counter()
+    try:
+        with _session() as s:
+            resp = s.get(url, headers=headers, timeout=30)
+        result["status_code"] = resp.status_code
+        result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 1)
+        if not resp.ok:
+            result["ok"] = False
+            result["error"] = f"HTTP {resp.status_code}"
+            result["body_preview"] = resp.text[:300]
+            return result
+        data = resp.json()
+        diamonds = []
+        for key in ("products", "diamonds", "items", "data", "results"):
+            v = data.get(key) if isinstance(data, dict) else None
+            if isinstance(v, list):
+                diamonds = v
+                result["rows_key"] = key
+                break
+        total = (
+            data.get("total_count") or data.get("totalCount") or
+            data.get("total") or data.get("count") or 0
+        ) if isinstance(data, dict) else 0
+        result["ok"] = len(diamonds) > 0
+        result["total"] = total
+        result["returned"] = len(diamonds)
+        if not diamonds:
+            result["error"] = "Empty products list"
+            result["sample_keys"] = list(data.keys())[:10] if isinstance(data, dict) else None
+    except Exception as exc:
+        result["ok"] = False
+        result["error"] = f"{exc.__class__.__name__}: {exc}"
+        result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 1)
+    return result
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 ALL_TESTS: dict[str, Any] = {
     "brilliance":     test_brilliance,
     "loosegrown":     test_loosegrown,
+    "brilliant-earth": test_brilliant_earth,
     "abelini":        test_abelini,
     "diamond-heaven": test_diamond_heaven,
     "cullen":         test_cullen,
@@ -814,6 +899,7 @@ ALL_TESTS: dict[str, Any] = {
 REGIONS = {
     "brilliance":     "USA",
     "loosegrown":     "USA",
+    "brilliant-earth": "USA",
     "abelini":        "UK",
     "diamond-heaven": "UK",
     "cullen":         "ROA",

@@ -140,7 +140,6 @@ COMPARE_DB_TO_JSON = {
     "brilliance_vs_pc_usd":    "brilliance vs PC USD",
     "brilliance_vs_pc_pct":    "brilliance vs PC %",
     "pc_price_usd":            "PC Price USD",
-    "pc_minus_30_usd":         "PC -30% USD",
 }
 
 BR_VS_LG_DB_TO_JSON = {
@@ -516,6 +515,10 @@ def _table_row_count(table: str) -> int:
 # ============================================================================
 # Pages
 # ============================================================================
+@app.get("/ping")
+def ping():
+    return Response(content="OK", status_code=200)
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
     html_path = STATIC_DIR / "login.html"

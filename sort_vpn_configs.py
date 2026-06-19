@@ -13,10 +13,10 @@ Folder layout created inside vpnbook/:
       uk/
         abelini/          <- configs that pass Abelini API
         diamond_heaven/   <- configs that pass Diamond Heaven API
-      roa/
+      aus/
         gs/               <- configs that pass GS Diamonds API
         cullen/           <- configs that pass Cullen Jewellery API
-      rog/
+      germany/
         novita/           <- configs that pass Novita Diamonds API
         renesim/          <- configs that pass Renesim API
         77diamonds/       <- configs that pass 77 Diamonds API
@@ -72,14 +72,7 @@ from test_all_apis import (  # noqa: E402
 ALL_SCRAPERS: list[tuple[str, str, str, Any]] = [
     # key            region   scraper_dir      test_fn
     ("brilliance",   "usa",   "brilliance",    test_brilliance),
-    ("loosegrown",   "usa",   "loosegrown",    test_loosegrown),
-    ("abelini",      "uk",    "abelini",        test_abelini),
-    ("diamond_heaven","uk",   "diamond_heaven", test_diamond_heaven),
-    ("gs",           "aus",   "gs",             test_gs),
-    ("cullen",       "aus",   "cullen",         test_cullen),
-    ("novita",       "germany",   "novita",         test_novita),
-    ("renesim",      "germany",   "renesim",        test_renesim),
-    ("77diamonds",   "germany",   "77diamonds",     test_77diamonds),
+  
 ]
 
 
