@@ -119,7 +119,11 @@ def load_curl(path):
     raw = re.sub(r'\^%\^', '%', raw)   # ^%^ → %  (encoded URL chars)
     raw = raw.replace('^$', '$')        # ^$ → $
     raw = raw.replace('^&', '&')        # ^& → &  (URL ampersands)
-    raw = raw.replace(r'^\^"', '"')     # ^\^" → " (quoted value inside -H)
+    # Keep embedded quotes distinguishable from the outer -H/-b delimiters
+    # (e.g. _pin_aem's cookie value or sec-ch-ua's brand list both contain
+    # nested quotes) — collapsing straight to '"' makes "[^"]+" stop at the
+    # first embedded quote and silently truncates everything after it.
+    raw = raw.replace(r'^\^"', '\\"')   # ^\^" → \" (escaped quote inside -H/-b value)
     raw = raw.replace('^"', '"')        # ^"  → "  (outer delimiters)
     raw = raw.replace('^^', '^')        # ^^ → ^   (literal caret)
     raw = re.sub(r"\s+", " ", raw).strip()
@@ -130,10 +134,10 @@ def load_curl(path):
     result = {}
 
     # Cookies
-    cookie_m = re.search(rf'-b\s+{Q}([^{q}]+){Q}', raw)
+    cookie_m = re.search(rf'-b\s+{Q}((?:[^{q}\\]|\\.)*){Q}', raw)
     cookies = {}
     if cookie_m:
-        raw_c = cookie_m.group(1)
+        raw_c = cookie_m.group(1).replace('\\"', '"')
         try:
             raw_c = unquote(raw_c)
         except Exception:
@@ -147,8 +151,8 @@ def load_curl(path):
 
     # Headers
     headers = {}
-    for hm in re.finditer(rf'-H\s+{Q}([^{q}]+){Q}', raw):
-        hdr = hm.group(1)
+    for hm in re.finditer(rf'-H\s+{Q}((?:[^{q}\\]|\\.)*){Q}', raw):
+        hdr = hm.group(1).replace('\\"', '"')
         if ":" in hdr:
             k, _, v = hdr.partition(":")
             k = k.strip().lower()
@@ -211,7 +215,7 @@ def parse_html_to_rows(html, shape, existing_certs):
 
     rows = []
     for card in cards:
-        a = card.select_one("a.font-semibold")
+        a = card.select_one("a[href*='/diamonds/product/']")
         if not a:
             continue
 
@@ -243,21 +247,13 @@ def parse_html_to_rows(html, shape, existing_certs):
             "price_aud": "",
         }
 
-        spans = a.find_all("span")
-        if len(spans) >= 1:
-            data["carat"] = spans[0].get_text(strip=True).replace("ct", "").strip()
-        if len(spans) >= 2:
-            cc = spans[1].get_text(strip=True)
-            if "/" in cc:
-                data["color"], data["clarity"] = [x.strip() for x in cc.split("/", 1)]
-        if len(spans) >= 3:
-            data["cut"] = spans[2].get_text(strip=True)
-        if len(spans) >= 4:
-            data["polish"] = spans[3].get_text(strip=True)
-        if len(spans) >= 5:
-            data["symmetry"] = spans[4].get_text(strip=True)
+        # Listing text looks like "0.3 ct D/VS2" — cut/polish/symmetry are no
+        # longer shown on the grid since the site redesign.
+        m = re.match(r'([\d.]+)\s*ct\s*([A-Za-z]+)\s*/\s*(\S+)', a.get_text(strip=True), re.I)
+        if m:
+            data["carat"], data["color"], data["clarity"] = m.group(1), m.group(2), m.group(3)
 
-        price_el = card.select_one(".text-primary-dark")
+        price_el = card.select_one("span.font-bold")
         if price_el:
             data["price_aud"] = (
                 price_el.get_text(strip=True)
@@ -296,12 +292,6 @@ def warm_session(session, curl):
         "upgrade-insecure-requests": "1",
     })
 
-    # Remove any stale cf_clearance from session — let curl_cffi get a fresh one
-    try:
-        session.cookies.delete("cf_clearance")
-    except Exception:
-        pass
-
     try:
         # No cookies= kwarg — the session jar manages cookies automatically
         r = session.get(BASE_URL, headers=warm_headers, timeout=30)
@@ -319,17 +309,16 @@ def warm_session(session, curl):
     return False
 
 
-def fetch_all_pages(curl, rotate_after_fails=None):
-    os.makedirs(JSON_DIR, exist_ok=True)
+def fetch_all_pages(curl, existing_certs, rotate_after_fails=None):
     session = cf_requests.Session(impersonate="chrome124")
 
-    # Seed session with application cookies (XSRF, session token).
-    # Exclude cf_clearance — warm_session will get a fresh one via TLS fingerprint.
+    # Seed session with all cookies from the captured curl (including cf_clearance —
+    # Postman confirms it's valid; curl_cffi's TLS fingerprint alone no longer
+    # passes Cloudflare, so we must reuse the real browser's clearance cookie).
     # Do NOT pass cookies= on individual requests after this; let the session jar
     # manage them so that new cookies (refreshed cf_clearance etc.) are kept.
     for k, v in curl["cookies"].items():
-        if k != "cf_clearance":
-            session.cookies.set(k, v)
+        session.cookies.set(k, v)
 
     # Warm the Cloudflare session before any AJAX requests
     warm_session(session, curl)
@@ -337,108 +326,106 @@ def fetch_all_pages(curl, rotate_after_fails=None):
 
     resume_shape, resume_page = load_checkpoint()
     total_saved = 0
+    total_rows = 0
     consecutive_fails = 0
     reached_resume = (resume_shape is None)  # True = no checkpoint, start normally
 
-    for shape in SHAPES:
-        # Skip shapes before the checkpoint shape
-        if not reached_resume:
-            if shape != resume_shape:
-                log.info(f"[{shape}] skipping (before checkpoint)")
-                continue
-            reached_resume = True
+    csv_f = open(CSV_FILE, "a", newline="", encoding="utf-8")
+    writer = csv.DictWriter(csv_f, fieldnames=FIELDS)
 
-        log.info(f"[{shape}]")
-        page = resume_page if shape == resume_shape else 1
-        resume_page = 1  # reset for subsequent shapes
+    try:
+        for shape in SHAPES:
+            # Skip shapes before the checkpoint shape
+            if not reached_resume:
+                if shape != resume_shape:
+                    log.info(f"[{shape}] skipping (before checkpoint)")
+                    continue
+                reached_resume = True
 
-        while True:
-            params = {**FILTERS, "shape": shape, "page": str(page)}
-            url = BASE_URL + "?" + urlencode(params)
+            log.info(f"[{shape}]")
+            page = resume_page if shape == resume_shape else 1
+            resume_page = 1  # reset for subsequent shapes
 
-            json_filename = f"{shape.lower()}_page{page:03d}.json"
-            json_path = os.path.join(JSON_DIR, json_filename)
+            while True:
+                params = {**FILTERS, "shape": shape, "page": str(page)}
+                url = BASE_URL + "?" + urlencode(params)
 
-            if os.path.exists(json_path):
-                log.info(f"  Page {page:>3}  -> cached, skip")
-                page += 1
+                try:
+                    r = session.get(
+                        url,
+                        headers=curl["headers"],
+                        timeout=30,
+                    )
+                except Exception as e:
+                    log.warning(f"  [ERROR] Page {page}: {e}")
+                    time.sleep(3)
+                    break
+
+                # 403 = Cloudflare blocked
+                if r.status_code == 403:
+                    # On the very first 403 try a session re-warm before counting it
+                    if consecutive_fails == 0:
+                        log.warning(f"  [403] {shape} page {page} — attempting session re-warm")
+                        if warm_session(session, curl):
+                            time.sleep(3)
+                            continue  # retry same page with fresh cookies
+                    consecutive_fails += 1
+                    log.warning(
+                        f"  [403] {shape} page {page} "
+                        f"(consecutive: {consecutive_fails}/{rotate_after_fails or '∞'})"
+                    )
+                    if rotate_after_fails and consecutive_fails >= rotate_after_fails:
+                        raise GSBlockedException(page, consecutive_fails)
+                    time.sleep(5)
+                    continue
+
+                if r.status_code == 404:
+                    log.info(f"  Page {page:>3}  -> 404, no more pages for {shape}")
+                    break
+
+                if r.status_code >= 400:
+                    log.warning(f"  [WARN] HTTP {r.status_code} on page {page}")
+                    time.sleep(2)
+                    break
+
                 consecutive_fails = 0
-                continue
 
-            try:
-                r = session.get(
-                    url,
-                    headers=curl["headers"],
-                    timeout=30,
-                )
-            except Exception as e:
-                log.warning(f"  [ERROR] Page {page}: {e}")
-                time.sleep(3)
-                break
+                # Server returns JSON: {"commands": [{"html": "<div...>"}]}
+                html = ""
+                try:
+                    rjson = r.json()
+                    cmds = rjson.get("commands", [])
+                    if cmds:
+                        html = cmds[0].get("html", "")
+                except (ValueError, KeyError):
+                    html = r.text  # fallback for plain HTML responses
 
-            # 403 = Cloudflare blocked
-            if r.status_code == 403:
-                # On the very first 403 try a session re-warm before counting it
-                if consecutive_fails == 0:
-                    log.warning(f"  [403] {shape} page {page} — attempting session re-warm")
-                    if warm_session(session, curl):
-                        time.sleep(3)
-                        continue  # retry same page with fresh cookies
-                consecutive_fails += 1
-                log.warning(
-                    f"  [403] {shape} page {page} "
-                    f"(consecutive: {consecutive_fails}/{rotate_after_fails or '∞'})"
-                )
-                if rotate_after_fails and consecutive_fails >= rotate_after_fails:
-                    raise GSBlockedException(page, consecutive_fails)
-                time.sleep(5)
-                continue
+                if not html:
+                    log.info(f"  Page {page:>3}  -> empty response, end of {shape}")
+                    break
 
-            if r.status_code == 404:
-                log.info(f"  Page {page:>3}  -> 404, no more pages for {shape}")
-                break
+                # Parse straight from the in-memory HTML — no per-page JSON file
+                # is written to disk, so there's nothing to clean up afterwards.
+                rows, has_products = parse_html_to_rows(html, shape, existing_certs)
 
-            if r.status_code >= 400:
-                log.warning(f"  [WARN] HTTP {r.status_code} on page {page}")
-                time.sleep(2)
-                break
+                if not has_products:
+                    log.info(f"  Page {page:>3}  -> no products, end of {shape}")
+                    break
 
-            consecutive_fails = 0
+                writer.writerows(rows)
+                csv_f.flush()
 
-            # Server returns JSON: {"commands": [{"html": "<div...>"}]}
-            html = ""
-            try:
-                rjson = r.json()
-                cmds = rjson.get("commands", [])
-                if cmds:
-                    html = cmds[0].get("html", "")
-            except (ValueError, KeyError):
-                html = r.text  # fallback for plain HTML responses
-
-            if not html:
-                log.info(f"  Page {page:>3}  -> empty response, end of {shape}")
-                break
-
-            # Check for products before saving
-            soup = BeautifulSoup(html, "lxml")
-            grid = soup.select_one("div.product-list")
-            cards = grid.select("div.bg-white") if grid else []
-
-            if not cards:
-                log.info(f"  Page {page:>3}  -> no products, end of {shape}")
-                break
-
-            with open(json_path, "w", encoding="utf-8") as jf:
-                json.dump({"commands": [{"html": html}]}, jf)
-
-            log.info(f"  Page {page:>3}  -> {len(cards)} cards  -> {json_filename}")
-            total_saved += 1
-            save_checkpoint(shape, page + 1)
-            page += 1
-            time.sleep(SLEEP_SEC)
+                log.info(f"  Page {page:>3}  -> {len(rows)} new rows")
+                total_saved += 1
+                total_rows += len(rows)
+                save_checkpoint(shape, page + 1)
+                page += 1
+                time.sleep(SLEEP_SEC)
+    finally:
+        csv_f.close()
 
     clear_checkpoint()
-    log.info(f"Fetch done. {total_saved} new pages saved.")
+    log.info(f"Fetch done. {total_saved} pages scraped, {total_rows} new rows -> {CSV_FILE}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -539,24 +526,25 @@ def scrape(rotate_after_fails=None):
     print("=" * 60)
     print()
 
-    print("[1/4] Reading curl_gs.txt ...")
+    print("[1/3] Reading curl_gs.txt ...")
     curl = load_curl(CURL_FILE)
     validate_curl(curl)
 
-    print("[2/4] Preparing CSV ...")
+    print("[2/3] Preparing CSV ...")
     ensure_csv()
     existing_certs = load_existing_certs()
     print()
 
-    log.info("[3/4] Fetching pages (shape by shape) ...")
-    fetch_all_pages(curl, rotate_after_fails=rotate_after_fails)
+    # Leftover JSON files from an older version of this script (or a run
+    # interrupted before this per-page flow existed) — fold them into the
+    # CSV first so nothing already fetched gets lost, then clean up.
+    if os.path.isdir(JSON_DIR) and os.listdir(JSON_DIR):
+        log.info("Found leftover page JSON files from a previous run — migrating them into the CSV first ...")
+        parsed_files = parse_all_json(existing_certs)
+        delete_json_files(parsed_files)
 
-    print("[4/4] Parsing JSON -> CSV ...")
-    print()
-    parsed_files = parse_all_json(existing_certs)
-
-    print("      Cleaning up JSON files ...")
-    delete_json_files(parsed_files)
+    log.info("[3/3] Fetching pages -> parsing straight into CSV (shape by shape) ...")
+    fetch_all_pages(curl, existing_certs, rotate_after_fails=rotate_after_fails)
 
     print("=" * 60)
     print(f"  DONE  ->  {CSV_FILE}")

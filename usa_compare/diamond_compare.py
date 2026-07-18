@@ -33,7 +33,35 @@ os.makedirs(COMPARE_DIR, exist_ok=True)
 # DATA LOADERS
 # ══════════════════════════════════════════════════════════════
 
-def load_vendor(csv_path, cert_col, price_col, name):
+# ── Vendor product-page link builders ───────────────────────────
+# Each takes the raw value of a vendor's "link_col" (see vendor_defaults in
+# load_vendors_from_env) and returns the diamond's product-page URL, or None
+# when the source value is missing/unusable.
+
+def _lg_link(sku) -> str | None:
+    sku = str(sku).strip() if pd.notna(sku) else ""
+    if not sku or sku.lower() == "nan":
+        return None
+    return f"https://www.loosegrowndiamond.com/lab-diamonds/?sku={sku}&viewsku={sku}"
+
+
+def _brilliance_link(alias) -> str | None:
+    alias = str(alias).strip() if pd.notna(alias) else ""
+    if not alias or alias.lower() == "nan":
+        return None
+    if not alias.startswith("/"):
+        alias = "/" + alias
+    return f"https://www.brilliance.com{alias}"
+
+
+def _friendly_link(slug) -> str | None:
+    slug = str(slug).strip() if pd.notna(slug) else ""
+    if not slug or slug.lower() == "nan":
+        return None
+    return f"https://friendlydiamonds.com/loose-diamonds/{slug}"
+
+
+def load_vendor(csv_path, cert_col, price_col, name, link_col=None, link_builder=None):
     log.debug(f"Loading vendor '{name}' from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
     def _norm_cert(x):
@@ -48,9 +76,17 @@ def load_vendor(csv_path, cert_col, price_col, name):
             return s
 
     df["certificate_number"] = df[cert_col].apply(_norm_cert)
-    df = df[["certificate_number", price_col]].copy()
+    keep_cols = ["certificate_number", price_col]
+    has_link  = link_col and link_builder and link_col in df.columns
+    if has_link:
+        keep_cols.append(link_col)
+    df = df[keep_cols].copy()
     df = df.rename(columns={price_col: f"{name} Price USD"})
     df[f"{name} Price USD"] = pd.to_numeric(df[f"{name} Price USD"], errors="coerce")
+    if has_link:
+        df[f"{name} Link"] = df[link_col].apply(link_builder)
+        df = df.drop(columns=[link_col])
+        log.info(f"  '{name}': {df[f'{name} Link'].notna().sum():,} rows have a product link")
     log.info(f"Loaded '{name}': {len(df):,} rows")
     return df
 
@@ -166,9 +202,9 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
 
     merged = merged.rename(columns={"certificate_number": "diamond_id"})
 
-    # Add discounted price columns (BR only, skip PC)
+    # Add discounted price columns (skip PC and vendors with no real discount)
     for name, disc in discounts.items():
-        if name == "PC":
+        if name == "PC" or disc >= 1.0:
             continue
         price_col = f"{name} Price USD"
         label     = f"-{round((1 - disc) * 100)}%"
@@ -285,9 +321,14 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 
 def load_vendors_from_env():
+    # NOTE: loose-grown and friendly default to discount "1.0" (no synthetic
+    # markdown) — their scraped price is already the vendor's real listed
+    # price. Brilliance keeps its -30% since that reflects a real discount
+    # code applied at checkout.
     vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "price", "default_disc": "0.70"},
-        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.70"},
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "price", "default_disc": "1.0",  "link_col": "sku",   "link_builder": _lg_link},
+        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.70", "link_col": "alias", "link_builder": _brilliance_link},
+        {"name": "friendly",    "env_csv": "FRIENDLY_CSV",     "env_cert": "FRIENDLY_CERT_COL",     "env_price": "FRIENDLY_PRICE_COL",     "env_disc": "FRIENDLY_DISCOUNT",     "default_csv": "friendlydiamond.csv",     "default_cert": "certificate_no", "default_price": "price", "default_disc": "1.0",  "link_col": "slug",  "link_builder": _friendly_link},
     ]
 
     vendors = []
@@ -299,6 +340,7 @@ def load_vendors_from_env():
         vendors.append({
             "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
             "cert_col": cert_col, "price_col": price_col, "discount": discount,
+            "link_col": v["link_col"], "link_builder": v["link_builder"],
         })
 
     PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
@@ -344,55 +386,51 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     partial_count = combined["_some_matched"].sum()
     log.info(f"  Common (LG+BR+PC): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All PC: {len(combined):,}")
 
-    # ── Discounted price columns (all vendors including LG) ──────
+    # ── Discounted price columns ──────────────────────────────────
+    # A vendor with discount >= 1.0 has no real markdown (e.g. loose-grown,
+    # friendly — their scraped price is already the real listed price), so
+    # skip creating a redundant "-0%" column for it.
     for name, disc in discounts.items():
         price_col = f"{name} Price USD"
-        label     = f"-{round((1 - disc) * 100)}%"
-        disc_col  = f"{name} {label} USD"
-        if price_col in combined.columns:
-            combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
-            combined[disc_col]  = (combined[price_col] * disc).round(0)
+        if price_col not in combined.columns:
+            continue
+        combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
+        if disc < 1.0:
+            label    = f"-{round((1 - disc) * 100)}%"
+            disc_col = f"{name} {label} USD"
+            combined[disc_col] = (combined[price_col] * disc).round(0)
             log.info(f"Added discount col: {disc_col}")
 
-    # ── % diff vs PC ─────────────────────────────────────────────
+    def _vendor_compare_col(name: str) -> str | None:
+        """Column to compare against PC for `name`: its discounted price if
+        a real discount applies, else its raw price."""
+        disc = discounts.get(name, 1.0)
+        if disc < 1.0:
+            label = f"-{round((1 - disc) * 100)}%"
+            col   = f"{name} {label} USD"
+        else:
+            col = f"{name} Price USD"
+        return col if col in combined.columns else None
+
+    # ── $ / % diff vs PC (every non-PC vendor) ────────────────────
     if "PC" in discounts and "PC Price USD" in combined.columns:
         PC_disc     = discounts["PC"]
         PC_label    = f"-{round((1 - PC_disc) * 100)}%"
         PC_disc_col = f"PC {PC_label} USD"
         if PC_disc_col in combined.columns:
+            PC_price = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
             for name in discounts:
                 if name == "PC":
                     continue
-                disc     = discounts[name]
-                label    = f"-{round((1 - disc) * 100)}%"
-                disc_col = f"{name} {label} USD"
-                pct_col  = f"{name} vs PC %"
-                if disc_col not in combined.columns:
+                vendor_col = _vendor_compare_col(name)
+                if vendor_col is None:
                     continue
-                vendor_price = pd.to_numeric(combined[disc_col], errors="coerce").replace(0, float("nan"))
-                PC_price     = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
+                vendor_price = pd.to_numeric(combined[vendor_col], errors="coerce").replace(0, float("nan"))
+                usd_col = f"{name} vs PC USD"
+                pct_col = f"{name} vs PC %"
+                combined[usd_col] = (vendor_price - PC_price).round(0)
                 combined[pct_col] = ((vendor_price - PC_price) / PC_price * 100).round(2)
-                log.info(f"Added % diff: {pct_col}  ({combined[pct_col].notna().sum():,} valid rows)")
-
-            # ── LG vs PC $ — use LG -30% (consistent with Brilliance) ──
-            lg_disc     = discounts.get("loose-grown", 0.70)
-            lg_label    = f"-{round((1 - lg_disc) * 100)}%"
-            lg_disc_col = f"loose-grown {lg_label} USD"
-            if lg_disc_col in combined.columns:
-                pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
-                lg_vals = pd.to_numeric(combined[lg_disc_col], errors="coerce").replace(0, float("nan"))
-                combined["loose-grown vs PC USD"] = (lg_vals - pc_vals).round(0)
-                log.info(f"Added loose-grown vs PC USD (using {lg_disc_col})  ({combined['loose-grown vs PC USD'].notna().sum():,} valid rows)")
-
-            # ── Brilliance vs PC $ ───────────────────────────────────
-            br_disc     = discounts.get("brilliance", 0.70)
-            br_label    = f"-{round((1 - br_disc) * 100)}%"
-            br_disc_col = f"brilliance {br_label} USD"
-            if br_disc_col in combined.columns:
-                pc_vals = pd.to_numeric(combined[PC_disc_col], errors="coerce").replace(0, float("nan"))
-                br_vals = pd.to_numeric(combined[br_disc_col], errors="coerce").replace(0, float("nan"))
-                combined["brilliance vs PC USD"] = (br_vals - pc_vals).round(0)
-                log.info(f"Added brilliance vs PC USD  ({combined['brilliance vs PC USD'].notna().sum():,} valid rows)")
+                log.info(f"Added {usd_col} / {pct_col} (using {vendor_col})  ({combined[pct_col].notna().sum():,} valid rows)")
 
     def vendor_list(row):
         return ", ".join(name for name in loaded.keys() if pd.notna(row.get(f"{name} Price USD")))
@@ -401,19 +439,18 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     # ── Column ordering ──────────────────────────────────────────
     attr_cols = [c for c in list(PC_EXTRA_COLS.values()) if c in combined.columns]
     base_cols = ["certificate_number", "vendors_matched"] + attr_cols
-    VENDOR_ORDER = ["loose-grown", "brilliance", "PC"]
+    VENDOR_ORDER = ["loose-grown", "brilliance", "friendly", "PC"]
     extra_vendors = [n for n in loaded.keys() if n not in VENDOR_ORDER and n != "PC"]
     ordered_vendors = ([n for n in VENDOR_ORDER if n in loaded and n != "PC"] + extra_vendors + (["PC"] if "PC" in loaded else []))
     vendor_cols = []
     for name in ordered_vendors:
-        disc  = discounts.get(name, 0.70)
-        label = f"-{round((1 - disc) * 100)}%"
-        for col in [
-            f"{name} Price USD",
-            f"{name} {label} USD",       # e.g. loose-grown -30% USD ← now included
-            f"{name} vs PC USD",
-            f"{name} vs PC %",
-        ]:
+        disc = discounts.get(name, 1.0)
+        cols = [f"{name} Price USD"]
+        if disc < 1.0:
+            label = f"-{round((1 - disc) * 100)}%"
+            cols.append(f"{name} {label} USD")   # e.g. brilliance -30% USD
+        cols += [f"{name} vs PC USD", f"{name} vs PC %", f"{name} Link"]
+        for col in cols:
             if col in combined.columns:
                 vendor_cols.append(col)
     other_cols = [c for c in combined.columns if c not in base_cols + vendor_cols]
@@ -568,7 +605,10 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     loaded    = {}
     discounts = {}
     for v in vendors:
-        loaded[v["name"]]    = load_vendor(v["csv"], v["cert_col"], v["price_col"], v["name"])
+        loaded[v["name"]]    = load_vendor(
+            v["csv"], v["cert_col"], v["price_col"], v["name"],
+            link_col=v.get("link_col"), link_builder=v.get("link_builder"),
+        )
         discounts[v["name"]] = v.get("discount", default_discount)
     if PC_csv:
         loaded["PC"]    = load_PC(PC_csv)

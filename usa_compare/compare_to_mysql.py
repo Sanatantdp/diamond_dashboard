@@ -55,6 +55,10 @@ BATCH_SIZE = 1000
 
 
 # ── Schema ───────────────────────────────────────────────────────────────────
+# NOTE: loose-grown no longer carries a "-30% USD" discounted column — its
+# scraped price is already the vendor's real listed price (see
+# diamond_compare.py). lg_minus_30_usd is kept in the schema (existing rows
+# may still reference it) but is no longer populated on new imports.
 COMPARE_COLUMNS = [
     ("certificate_number",    "VARCHAR(64)"),
     ("vendors_matched",       "VARCHAR(64)"),
@@ -67,10 +71,16 @@ COMPARE_COLUMNS = [
     ("lg_minus_30_usd",       "DECIMAL(12,2)"),
     ("lg_vs_pc_usd",          "DECIMAL(12,2)"),
     ("lg_vs_pc_pct",          "DECIMAL(8,2)"),
+    ("lg_link",               "TEXT"),
     ("brilliance_price_usd",  "DECIMAL(12,2)"),
     ("brilliance_minus_30_usd", "DECIMAL(12,2)"),
     ("brilliance_vs_pc_usd",  "DECIMAL(12,2)"),
     ("brilliance_vs_pc_pct",  "DECIMAL(8,2)"),
+    ("brilliance_link",       "TEXT"),
+    ("friendly_price_usd",    "DECIMAL(12,2)"),
+    ("friendly_vs_pc_usd",    "DECIMAL(12,2)"),
+    ("friendly_vs_pc_pct",    "DECIMAL(8,2)"),
+    ("friendly_link",         "TEXT"),
     ("pc_price_usd",          "DECIMAL(12,2)"),
     ("pc_minus_30_usd",       "DECIMAL(12,2)"),
 ]
@@ -85,13 +95,18 @@ COMPARE_KEY_MAP = {
     "cut":                     "cut",
     "caratWeight":             "carat_weight",
     "loose-grown Price USD":   "lg_price_usd",
-    "loose-grown -30% USD":    "lg_minus_30_usd",
     "loose-grown vs PC USD":   "lg_vs_pc_usd",
     "loose-grown vs PC %":     "lg_vs_pc_pct",
+    "loose-grown Link":        "lg_link",
     "brilliance Price USD":    "brilliance_price_usd",
     "brilliance -30% USD":     "brilliance_minus_30_usd",
     "brilliance vs PC USD":    "brilliance_vs_pc_usd",
     "brilliance vs PC %":      "brilliance_vs_pc_pct",
+    "brilliance Link":         "brilliance_link",
+    "friendly Price USD":      "friendly_price_usd",
+    "friendly vs PC USD":      "friendly_vs_pc_usd",
+    "friendly vs PC %":        "friendly_vs_pc_pct",
+    "friendly Link":           "friendly_link",
     "PC Price USD":            "pc_price_usd",
 }
 
@@ -130,10 +145,13 @@ STATUS_COLUMNS = [
     ("pc_total",               "INT"),
     ("lg_vendor_total",        "INT"),
     ("brilliance_vendor_total", "INT"),
+    ("friendly_vendor_total",  "INT"),
     ("lg_matched",             "INT"),
     ("lg_match_rate_pct",      "DECIMAL(6,2)"),
     ("brilliance_matched",     "INT"),
     ("brilliance_match_rate_pct", "DECIMAL(6,2)"),
+    ("friendly_matched",       "INT"),
+    ("friendly_match_rate_pct", "DECIMAL(6,2)"),
     ("common_count",           "INT"),
     ("partial_count",          "INT"),
     ("all_pc_count",           "INT"),
@@ -141,6 +159,7 @@ STATUS_COLUMNS = [
     ("pc_file_date",           "DATETIME"),
     ("lg_file_date",           "DATETIME"),
     ("brilliance_file_date",   "DATETIME"),
+    ("friendly_file_date",     "DATETIME"),
 ]
 
 
@@ -169,7 +188,12 @@ def build_create_sql(table: str, columns: list[tuple[str, str]]) -> str:
 
 
 def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
-    """Create table + indexes only if they do not exist yet (no-op on subsequent runs)."""
+    """
+    Create table + indexes only if they do not exist yet (no-op on subsequent
+    runs). Also adds any columns missing from an already-existing table
+    (ADD COLUMN IF NOT EXISTS) so schema changes here reach live tables
+    without a manual migration.
+    """
     cols_sql = ",\n  ".join(f'"{name}" {_to_pg_type(ctype)}' for name, ctype in columns)
     cur.execute(
         f'CREATE TABLE IF NOT EXISTS "{table}" (\n'
@@ -177,6 +201,10 @@ def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]
         f'  {cols_sql}\n'
         f")"
     )
+    for name, ctype in columns:
+        cur.execute(
+            f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{name}" {_to_pg_type(ctype)}'
+        )
     for col in indexes:
         cur.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" ON "{table}" ("{col}")'
@@ -271,16 +299,20 @@ def upload_all_json_files(cur: PgCursor) -> None:
     file_dates   = s.get("file_dates", {}) or {}
     lg_stats     = pc_vs.get("loose-grown", {}) or {}
     br_stats     = pc_vs.get("brilliance", {}) or {}
+    fr_stats     = pc_vs.get("friendly", {}) or {}
 
     status_row = (
         s.get("generated_at"),
         s.get("pc_total"),
         vendor_totals.get("loose-grown"),
         vendor_totals.get("brilliance"),
+        vendor_totals.get("friendly"),
         lg_stats.get("matched"),
         lg_stats.get("match_rate_pct"),
         br_stats.get("matched"),
         br_stats.get("match_rate_pct"),
+        fr_stats.get("matched"),
+        fr_stats.get("match_rate_pct"),
         counts.get("common"),
         counts.get("partial"),
         counts.get("all_pc"),
@@ -288,6 +320,7 @@ def upload_all_json_files(cur: PgCursor) -> None:
         file_dates.get("pc"),
         file_dates.get("loose-grown"),
         file_dates.get("brilliance"),
+        file_dates.get("friendly"),
     )
     insert_rows(cur, "diamond_status", [c[0] for c in STATUS_COLUMNS], [status_row])
 

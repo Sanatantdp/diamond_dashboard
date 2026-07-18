@@ -1,20 +1,20 @@
-curl 'https://www.gsdiamonds.com.au/lab-diamonds?creation_method=Lab-White&max-carat=20.1&min-carat=1.5&shape=Round&max-clarity_numeric=75.5&min-clarity_numeric=0&max-color_numeric=30&min-color_numeric=0&page=2&_=1781332665544' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://www.gsdiamonds.com.au/lab-diamonds' \
-  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
-  -H 'sec-ch-ua-arch: "x86"' \
-  -H 'sec-ch-ua-bitness: "64"' \
-  -H 'sec-ch-ua-full-version: "149.0.7827.103"' \
-  -H 'sec-ch-ua-full-version-list: "Google Chrome";v="149.0.7827.103", "Chromium";v="149.0.7827.103", "Not)A;Brand";v="24.0.0.0"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-model: ""' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'sec-ch-ua-platform-version: "15.0.0"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
-  -H 'x-xsrf-token: eyJpdiI6IkZZSXJUVGJ1d1VsR1VZZFNVRFM0Rnc9PSIsInZhbHVlIjoiWEdiQWxiaDBwcWE4aXFzZzhiWEFNZW1mOFNpUmkrY3kvcDV3UlZWa1p5bjRNVFFXMWpFVDhicHdFa3AzN3o2TEJRZ0JIZHJpZGNQK3NGNzJrZXoyc0RuYk5MZk5iMmlIekVGek4zUStnbHk5OUtYcFYwY3lKUUxMaDNoOG1zcVciLCJtYWMiOiJhZjdmOWZjY2NhZWQ5NWQ5NTUwMDIzYjIyMWUzZjQzNThlMzAyOWM2NTlmZmU5YmQ3ZTEzMmJmMGMwZWIzY2VhIiwidGFnIjoiIn0=' \
-  -b '_tt_enable_cookie=1; _ttp=01KNXHRG7EDCH5X249XEHW9X38_.tt.2; _pin_unauth=dWlkPVkyWm1abUUzWW1JdFlXSXdPUzAwWmpoaExUZzRNMkl0WW1NME5qUXdNV001TXpFNA; hubspotutk=c1900d0d29dc1fc464107691bac62064; _fbp=fb.2.1775886945168.25564380589100187; cookie_consent=necessary%7Cfunctionality%7Canalytics%7Cmarketing%7Cunclassified; _gcl_au=1.1.514167828.1775886946; _ga=GA1.1.1686468113.1775886941; _nicid=02119766-703d-483c-8108-f5dc43edd90a; __hssrc=1; recently_viewed=eyJpdiI6InNCK3VBNEdVZTdwbmdGNis5aFhFZWc9PSIsInZhbHVlIjoiU05SSkZIeWl0SUx0bFBIdFViVnJzeStScWZvbE1Ub1Z2Qjd3YmtMNmt3K1lDMHk2aFphdHF0QTM2QmYyQkdCciIsIm1hYyI6ImUyM2QyNjQ5ZGMzOGY4NTA5YTA4NzAyZWZkYWUxMjcyM2RlY2QzODNiYzQ5ODU5NTRiNDc2NDkyNDEwYjAyNjkiLCJ0YWciOiIifQ%3D%3D; cf_clearance=ReQQDMAo3nZTfawXcuZzsKUnoi8.EbkNU_hr0CwhsDM-1781331843-1.2.1.1-e28d.EegWDXTFFnIk8XXQNVUpMvCN1eko9ahK8P7yVXIs7I0wRwEub3ovA6PiMiTI4OwHT3cXtRssxs6ORw1TJ7AFCYr3KbhKqzNCTjgXQDl3kvRSeM6rBNvEvZgc9umqGpGNMAOuWmfZZRV5lPYIyWWLsNGvH2_K2M.rH456YsRNZYDDA_tYpdkvDM3AYPmRVF6UR2o4VvOwpAQn9Arf58.h6b7IGdDWTCBPsiLs.xi5pqyhXxysaq5T2TSQBZHRUkMgQKF6Az8KswTT_s8ysQFHV9__rQiluyxm9yIobNtTHZZwtbjWRr77Rj8UN8WvQ6AfvDi8Hq2yKDKyoou2V1D2VsA0c27W5Pz4iRPbKU0OT_eeOfcmi_9uT5EmyOECNytsjE1mtNgekCOPjaSAH4fBLcHHOD3DwIe7r90WfQ; _clck=1mzdr9t%5E2%5Eg6v%5E1%5E2292; __hstc=158519724.c1900d0d29dc1fc464107691bac62064.1775886943003.1781256104966.1781331854777.8; XSRF-TOKEN=eyJpdiI6IkZZSXJUVGJ1d1VsR1VZZFNVRFM0Rnc9PSIsInZhbHVlIjoiWEdiQWxiaDBwcWE4aXFzZzhiWEFNZW1mOFNpUmkrY3kvcDV3UlZWa1p5bjRNVFFXMWpFVDhicHdFa3AzN3o2TEJRZ0JIZHJpZGNQK3NGNzJrZXoyc0RuYk5MZk5iMmlIekVGek4zUStnbHk5OUtYcFYwY3lKUUxMaDNoOG1zcVciLCJtYWMiOiJhZjdmOWZjY2NhZWQ5NWQ5NTUwMDIzYjIyMWUzZjQzNThlMzAyOWM2NTlmZmU5YmQ3ZTEzMmJmMGMwZWIzY2VhIiwidGFnIjoiIn0%3D; gsdiamondscomau_session=eyJpdiI6Imhtanc3R2kzT0UycnpiMlh4MXZ6bnc9PSIsInZhbHVlIjoiU3FQbnVsRFlZTXVWZDF0eDJSMFhkejZPa0QwbUFVTzBOV3o0bHVqYlJLaVFHWCtsVjg4aEsyeXFiNkptUUNBQjRrZjBnOWxoeUNXR25QcllTaU1wTUFxbytza3E0b2F5cXlKNHVGck1zK28wQTJtdk14dFFTWlM1Sm9lRVJyOCsiLCJtYWMiOiI3YzhiNmQxYThjMTgyMzNiMTcwNzcxYmM0ODgyMmExNDQxZjRlYWJkNjMyY2Q1YTYwYjMwMzQxZmFkMTNjNzVhIiwidGFnIjoiIn0%3D; _clsk=1xgp6w3%5E1781332656292%5E3%5E1%5Ek.clarity.ms%2Fcollect; __hssc=158519724.2.1781331854777; _ga_PXFGQJ5YWD=GS2.1.s1781331848%24o9%24g1%24t1781332663%24j47%24l0%24h1690625384; ttcsid=1781331852425::id_YDIRoeDpllsJFltdB.8.1781332665523.0::1.794921.803025::813078.3.400.8031::812528.67.7669; ttcsid_COPM6NJC77UADS7P6IHG=1781331852424::8sngg2_aJIuHKBsjk_Lq.8.1781332665523.1'
+curl ^"https://www.gsdiamonds.com.au/lab-diamonds?creation_method=Lab-White^&max-carat=20.1^&min-carat=1.5^&shape=Round^&max-clarity_numeric=62.5^&min-clarity_numeric=0^&max-color_numeric=30^&min-color_numeric=0^&max-cut_numeric=25^&min-cut_numeric=0^&page=2^&_=1783759101313^" ^
+  -H ^"accept: application/json, text/plain, */*^" ^
+  -H ^"accept-language: en-US,en;q=0.9^" ^
+  -b ^"cf_clearance=jhcD6GHkFZ.OZnkvxO_LBF1B6WfBXFsQR67GSw_v714-1783759077-1.2.1.1-a38gKKsDsOpyAfEqafco0jOOow7glyOPjQbhFjHtMwaEZk8WY031X17Flv5q7h.xT3Q4VTNaUkLKb3VjR6QOfRW7w4aUQ4TGqmcQ8blEeD6tkbdWxyy2.Mb3mdDacrHdp.VJi4aRgp54Vbt2TuKkYBIQ6RybE1omfZyI.Ugoe8cBDBQ8C5zL2hDxsH7.vgXZqdQSL3x_uNodO.C5e3.a6BOWI8GrbZbMf6n1ZHS_emSrLDBHkGoLNC8Gcj4a3ctz3_JvlgDwWxRocElokJoLPQ9zn182LU8RVX8EB6.ycfzXXaL8aT8y7M9_62ocR45X.xzNe6WwD5V7f1fM5XJLIs8gAiwlqvLru_teFR7t2wHYFXjxSwmlAwHxySwHzXVl3Wxq19WgVFFjTA0WWM6ABaS3ynhpI5.esyZ0nRtEAFcXVeIFt8k8M.fn8hFWrsptDO03YEWKGaX2YDytGtbE9eJt1YVP9c.lt1wxpiO3reORieUkD1DYrgaf98TnnOFM; _nicid=044570b2-5148-47fe-a444-beb53619ce7e; _gcl_au=1.1.22550837.1783759085; _ga_PXFGQJ5YWD=GS2.1.s1783759092^$o1^$g0^$t1783759092^$j60^$l0^$h1578449037; _ga=GA1.1.1613808252.1783759093; XSRF-TOKEN=eyJpdiI6ImM2eHRhcjZ2V3BLbW54OVl3QmcxUnc9PSIsInZhbHVlIjoiRWFjMVQzR0labWE0VkZ2YjFYU0ppLzF5SWFQOFF0MitwVzhDYjBQTXRwZmFVb1RnM2E5cTg2ZjNZT2pwc0FjM2FPc0xHbHZydFZMakdFOVEvOWJvc1VXL0VzSFBEVklYZ0dlWnFMMkx5RUZicVd3QXEybTdkbHhiRXZBUWFUdW4iLCJtYWMiOiI1Y2I2Yzg0MDM5ZTIzOWJkNjhmZDE4YmE4OTljZTNiNDNlOThiZWMxYzU1ODA1ZTM1ZTE1NDRmZjIzYTMxZmUxIiwidGFnIjoiIn0^%^3D; gsdiamondscomau_session=eyJpdiI6ImREV29ENnVjV2lpQmtRSFBZVmRGWGc9PSIsInZhbHVlIjoiMGd0U2UxWEpyMUVmMHArVG93OEg3R2RXZXo0QS9xbzZ1TGNyZDFrd3R5aHcxV2Mxb0ppUGFVZENxV053STgzMGpnYnZEM3h5b0FEMDR5SjZsNFJGQXBOL0FDN3dqQVhJc3FvSFQ5ajY4UVpROXRaK296TXY1K1Z5akFaWnc1UUciLCJtYWMiOiJjNWZhNjZkNjcyMjQwMWMxMGMzZGQ1ZDc2NmFkYTg2YjI1NWZjOTNiZGRlYmJhNWI4MDk4NzhkMTEzOWEzNDQ0IiwidGFnIjoiIn0^%^3D^" ^
+  -H ^"priority: u=1, i^" ^
+  -H ^"referer: https://www.gsdiamonds.com.au/lab-diamonds^" ^
+  -H ^"sec-ch-ua: ^\^"Not;A=Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"150^\^", ^\^"Google Chrome^\^";v=^\^"150^\^"^" ^
+  -H ^"sec-ch-ua-arch: ^\^"x86^\^"^" ^
+  -H ^"sec-ch-ua-bitness: ^\^"64^\^"^" ^
+  -H ^"sec-ch-ua-full-version: ^\^"150.0.7871.102^\^"^" ^
+  -H ^"sec-ch-ua-full-version-list: ^\^"Not;A=Brand^\^";v=^\^"8.0.0.0^\^", ^\^"Chromium^\^";v=^\^"150.0.7871.102^\^", ^\^"Google Chrome^\^";v=^\^"150.0.7871.102^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-model: ^\^"^\^"^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" ^
+  -H ^"sec-ch-ua-platform-version: ^\^"15.0.0^\^"^" ^
+  -H ^"sec-fetch-dest: empty^" ^
+  -H ^"sec-fetch-mode: cors^" ^
+  -H ^"sec-fetch-site: same-origin^" ^
+  -H ^"user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36^" ^
+  -H ^"x-xsrf-token: eyJpdiI6ImM2eHRhcjZ2V3BLbW54OVl3QmcxUnc9PSIsInZhbHVlIjoiRWFjMVQzR0labWE0VkZ2YjFYU0ppLzF5SWFQOFF0MitwVzhDYjBQTXRwZmFVb1RnM2E5cTg2ZjNZT2pwc0FjM2FPc0xHbHZydFZMakdFOVEvOWJvc1VXL0VzSFBEVklYZ0dlWnFMMkx5RUZicVd3QXEybTdkbHhiRXZBUWFUdW4iLCJtYWMiOiI1Y2I2Yzg0MDM5ZTIzOWJkNjhmZDE4YmE4OTljZTNiNDNlOThiZWMxYzU1ODA1ZTM1ZTE1NDRmZjIzYTMxZmUxIiwidGFnIjoiIn0=^"

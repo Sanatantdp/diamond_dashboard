@@ -11,7 +11,11 @@ from status import write_status
 # ── VPN rotation config ───────────────────────────────────────────────────────
 VPN_ROTATE_AFTER_FAILS = 3       # consecutive failed pages before rotating
 VPN_CONFIG_SUBDIR      = "novita"
-WORKERS                = 5       # concurrent page fetchers; raise to 8-10 if the server allows
+# Server is slow under concurrency (15-20s/req at 5 workers) and starts returning
+# HTTP 405 (soft block) once request volume/rate crosses some threshold. Keep
+# concurrency modest — this is not a fast site to hammer.
+WORKERS         = int(os.environ.get("NOVITA_WORKERS", "3"))
+REQUEST_TIMEOUT = int(os.environ.get("NOVITA_REQUEST_TIMEOUT", "45"))
 
 
 class VPNRotateNeeded(Exception):
@@ -274,6 +278,24 @@ def make_session() -> curl_requests.Session:
     return s
 
 
+# ── Thread-safe session refresh (multiple workers can hit 405 at once —
+#    only one of them should actually pay for a fresh token/cookies) ──────────
+_refresh_lock       = threading.Lock()
+_last_refresh_time  = 0.0
+
+def maybe_refresh_session(cooldown: float = 15.0) -> None:
+    global _last_refresh_time
+    with _refresh_lock:
+        if time.time() - _last_refresh_time < cooldown:
+            return  # another worker refreshed moments ago — reuse it
+        try:
+            refresh_session()
+        except Exception as e:
+            log.warning(f"maybe_refresh_session() failed: {e}")
+        finally:
+            _last_refresh_time = time.time()
+
+
 def load_progress() -> dict:
     if os.path.exists(PROGRESS_FILE):
         try:
@@ -324,23 +346,33 @@ def load_existing_certs(csv_path: str) -> set:
 
 
 def fetch_page(page: int, session: curl_requests.Session) -> tuple:
-    
-    payload = {
-        **BASE_PAYLOAD,
-        "page":  page,
-        "token": _SESSION_TOKEN,  # always live — never hardcoded
-    }
-
     for attempt in range(1, 5):
+        # re-read the live token/cookies each attempt — another worker may have
+        # refreshed them since this page started retrying
+        payload = {
+            **BASE_PAYLOAD,
+            "page":  page,
+            "token": _SESSION_TOKEN,  # always live — never hardcoded
+        }
         try:
             resp = session.post(
                 API_URL,
                 headers=API_HEADERS,
                 cookies=_SESSION_COOKIES,
                 data=json.dumps(payload),
-                timeout=30,
+                timeout=REQUEST_TIMEOUT,
                 verify=False,
             )
+
+            if resp.status_code == 405:
+                # Server-side soft block (WAF/rate-limit) — same token/cookies
+                # won't recover on their own. Refresh and retry.
+                log.warning(f"[page {page}] 405 — session looks blocked, "
+                            f"refreshing session/token (attempt {attempt}/4)")
+                time.sleep(random.uniform(5, 10))
+                maybe_refresh_session()
+                continue
+
             resp.raise_for_status()
             diamonds = resp.json().get("response", {}).get("items", [])
             time.sleep(random.uniform(1.0, 2.0))
@@ -373,7 +405,7 @@ def get_total_pages(session: curl_requests.Session) -> int:
                 headers=API_HEADERS,
                 cookies=_SESSION_COOKIES,
                 data=json.dumps(payload),
-                timeout=30,
+                timeout=REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
             body  = resp.json().get("response", {})
@@ -709,9 +741,30 @@ def run_with_vpn_rotation():
     )
 
 
+def run_forever_with_recovery(max_consecutive_crashes: int = 10):
+    """
+    Same-IP alternative to VPN rotation: scrape() checkpoints progress after
+    every page (novita_progress.json), so a VPNRotateNeeded (repeated 405s
+    the in-page refresh couldn't clear) doesn't need a new exit IP — just a
+    cool-down + fresh session, then resume from where it left off.
+    """
+    crashes = 0
+    while True:
+        try:
+            return scrape()
+        except VPNRotateNeeded as e:
+            crashes += 1
+            if crashes > max_consecutive_crashes:
+                log.error(f"Gave up after {crashes} consecutive blocks — aborting.")
+                raise
+            cooldown = min(60 * crashes, 300)
+            log.warning(f"Blocked ({e}) — cooling down {cooldown}s then resuming (attempt {crashes}/{max_consecutive_crashes})")
+            time.sleep(cooldown)
+        except KeyboardInterrupt:
+            log.warning("Interrupted by user — stopping.")
+            return
+
+
 if __name__ == "__main__":
-    import sys
-    if "--no-vpn" in sys.argv:
-        scrape()
-    else:
-        run_with_vpn_rotation()
+    run_forever_with_recovery()
+    # run_with_vpn_rotation()   → rotate exit IP via OpenVPN configs (needs admin)

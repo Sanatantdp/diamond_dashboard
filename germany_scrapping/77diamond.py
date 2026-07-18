@@ -567,10 +567,10 @@ def run_with_vpn_rotation():
 if __name__ == "__main__":
     import sys
     try:
-        if "--no-vpn" in sys.argv:
-            fetch_77diamonds()
-        else:
-            run_with_vpn_rotation()
+        # if "--no-vpn" in sys.argv:
+        fetch_77diamonds()
+    #     else:
+    #         run_with_vpn_rotation()
     except KeyboardInterrupt:
         print(f"\n[{ts()}] Ctrl+C — stopping.")
         try:

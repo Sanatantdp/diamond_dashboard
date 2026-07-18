@@ -682,13 +682,14 @@ def run_with_vpn_rotation():
 
 if __name__ == "__main__":
     import sys
-    try:
-        if "--no-vpn" in sys.argv:
-            scrape()
-        else:
-            run_with_vpn_rotation()
-    except KeyboardInterrupt:
-        log.warning("Ctrl+C — stopped.")
-    except Exception as e:
-        log.error("Fatal error: %s", e)
-        raise
+    scrape()
+    # try:
+    #     if "--no-vpn" in sys.argv:
+    #         scrape()
+    #     else:
+    #         run_with_vpn_rotation()
+    # except KeyboardInterrupt:
+    #     log.warning("Ctrl+C — stopped.")
+    # except Exception as e:
+    #     log.error("Fatal error: %s", e)
+    #     raise

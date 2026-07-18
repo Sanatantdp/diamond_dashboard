@@ -132,13 +132,18 @@ COMPARE_DB_TO_JSON = {
     "cut":                     "cut",
     "carat_weight":            "caratWeight",
     "lg_price_usd":            "loose-grown Price USD",
-    "lg_minus_30_usd":         "loose-grown -30% USD",
     "lg_vs_pc_usd":            "loose-grown vs PC USD",
     "lg_vs_pc_pct":            "loose-grown vs PC %",
+    "lg_link":                 "loose-grown Link",
     "brilliance_price_usd":    "brilliance Price USD",
     "brilliance_minus_30_usd": "brilliance -30% USD",
     "brilliance_vs_pc_usd":    "brilliance vs PC USD",
     "brilliance_vs_pc_pct":    "brilliance vs PC %",
+    "brilliance_link":         "brilliance Link",
+    "friendly_price_usd":      "friendly Price USD",
+    "friendly_vs_pc_usd":      "friendly vs PC USD",
+    "friendly_vs_pc_pct":      "friendly vs PC %",
+    "friendly_link":           "friendly Link",
     "pc_price_usd":            "PC Price USD",
 }
 
@@ -157,17 +162,25 @@ BR_VS_LG_DB_TO_JSON = {
     "br_minus_30_vs_lg_pct":   "BR -30% vs LG %",
 }
 
-# vendor key -> { price_col, minus30_col, pct_col }
+# vendor key -> { price_col, minus30_col, pct_col }. "minus30_col" is the
+# column used for $-bucketing; it points at the discounted price where a real
+# discount applies, or back at the raw price column for vendors with none
+# (lg, friendly — see diamond_compare.py).
 VENDOR_COLS = {
     "lg": {
         "price_col":   "lg_price_usd",
-        "minus30_col": "lg_minus_30_usd",
+        "minus30_col": "lg_price_usd",
         "pct_col":     "lg_vs_pc_pct",
     },
     "br": {
         "price_col":   "brilliance_price_usd",
         "minus30_col": "brilliance_minus_30_usd",
         "pct_col":     "brilliance_vs_pc_pct",
+    },
+    "fr": {
+        "price_col":   "friendly_price_usd",
+        "minus30_col": "friendly_price_usd",
+        "pct_col":     "friendly_vs_pc_pct",
     },
     # luvansh isn't in DB yet; included so client doesn't break on missing key
     "lu": {
@@ -413,7 +426,7 @@ def _compute_aggregates(table: str, params: dict) -> dict:
 
     select_exprs: list[str] = ['COUNT(*) AS total_rows']
     active_vendors: list[str] = []
-    for vk in ("lg", "br"):  # luvansh has no DB columns yet
+    for vk in ("lg", "br", "fr"):  # luvansh has no DB columns yet
         out = _aggregate_sql_for_vendor(vk)
         if out is None:
             continue
@@ -477,6 +490,7 @@ def _fetch_status() -> dict | None:
         "vendor_totals": {
             "loose-grown": r["lg_vendor_total"],
             "brilliance":  r["brilliance_vendor_total"],
+            "friendly":    r.get("friendly_vendor_total"),
         },
         "pc_vs_vendors": {
             "loose-grown": {
@@ -486,6 +500,10 @@ def _fetch_status() -> dict | None:
             "brilliance": {
                 "matched":        r["brilliance_matched"],
                 "match_rate_pct": _jsonify_value(r["brilliance_match_rate_pct"]),
+            },
+            "friendly": {
+                "matched":        r.get("friendly_matched"),
+                "match_rate_pct": _jsonify_value(r.get("friendly_match_rate_pct")),
             },
         },
         "dataset_counts": {
@@ -498,6 +516,7 @@ def _fetch_status() -> dict | None:
             "pc":          _jsonify_value(r.get("pc_file_date")),
             "loose-grown": _jsonify_value(r.get("lg_file_date")),
             "brilliance":  _jsonify_value(r.get("brilliance_file_date")),
+            "friendly":    _jsonify_value(r.get("friendly_file_date")),
         },
     }
 
@@ -1011,14 +1030,15 @@ _FILE_DATE_VENDOR_MAP = {
     "PC":          "pc",
     "loose-grown": "loose-grown",
     "brilliance":  "brilliance",
+    "friendly":    "friendly",
 }
 
 
 def _read_file_dates() -> dict:
     """Return {pc: 'YYYY-MM-DD HH:MM:SS' | None, 'loose-grown': ..., 'brilliance': ...,
-    checked_at: ... | None} from diamond_files/file_status.json. Returns all-None on
-    missing/invalid file so the dashboard can still render."""
-    out: dict = {"pc": None, "loose-grown": None, "brilliance": None, "checked_at": None}
+    'friendly': ..., checked_at: ... | None} from diamond_files/file_status.json.
+    Returns all-None on missing/invalid file so the dashboard can still render."""
+    out: dict = {"pc": None, "loose-grown": None, "brilliance": None, "friendly": None, "checked_at": None}
     if not FILE_STATUS_JSON.exists():
         return out
     try:

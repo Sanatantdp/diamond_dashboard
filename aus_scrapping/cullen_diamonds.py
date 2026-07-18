@@ -147,6 +147,19 @@ def clear_checkpoint():
         os.remove(CHECKPOINT_FILE)
         tprint("Checkpoint cleared.")
 
+def reset_if_stale():
+    """If the CSV is older than CHECKPOINT_MAX_DAYS, delete all data files and restart from 0."""
+    if not os.path.exists(CSV_FILE):
+        return
+    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(CSV_FILE))
+    age = (datetime.datetime.now() - mtime).days
+    if age >= CHECKPOINT_MAX_DAYS:
+        tprint(f"CSV is {age} day(s) old — deleting all files and restarting from 0.")
+        for path in [CSV_FILE, CHECKPOINT_FILE, API_LOG_FILE]:
+            if os.path.exists(path):
+                os.remove(path)
+                tprint(f"  Deleted: {os.path.basename(path)}")
+
 # ── Helpers ───────────────────────────────────────────────────────
 def wait_for_cpu():
     while psutil.cpu_percent(interval=0.1) > CPU_LIMIT:
@@ -200,8 +213,12 @@ def build_row(d):
 def load_existing_ids():
     if not os.path.exists(CSV_FILE):
         return set()
-    with open(CSV_FILE, "r", encoding="utf-8") as f:
-        return {row["id"] for row in csv.DictReader(f)}
+    try:
+        df = pd.read_csv(CSV_FILE, dtype=str, usecols=["id"], on_bad_lines="warn")
+    except Exception as e:
+        tprint(f"Could not load existing ids: {e}")
+        return set()
+    return set(df["id"].dropna().astype(str))
 
 # ── Certificate processing ────────────────────────────────────────
 _CERT_SCAN_CHUNK = 300
@@ -266,6 +283,7 @@ def _ids_missing_cert() -> list:
         return []
 
 def fetch_all_diamonds():
+    reset_if_stale()
     existing_ids     = load_existing_ids()
     file_exists      = os.path.exists(CSV_FILE)
     page, start      = load_checkpoint()

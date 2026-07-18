@@ -9,9 +9,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.parse import urlencode
 
-from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -24,7 +22,7 @@ log = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────────────────────
 SCRAPER_NAME   = "abelini"
-BASE_URL       = "https://www.abelini.com/index.php"
+BASE_URL       = "https://www.abelini.com/api/diamond-search"
 ITEMS_PER_PAGE = 24                    # server-enforced, do not change
 MAX_RETRIES    = 4      # was 6
 CHROME_VERSION = "chrome131"
@@ -124,12 +122,11 @@ def pick_ua() -> str: return random.choice(USER_AGENTS)
 
 def make_headers() -> dict:
     return {
-        "accept":             "application/json, text/javascript, */*; q=0.01",
+        "accept":             "*/*",
         "accept-language":    "en-GB,en-US;q=0.9,en;q=0.8",
-        "content-type":       "application/x-www-form-urlencoded; charset=UTF-8",
+        "content-type":       "text/plain;charset=UTF-8",
         "origin":             "https://www.abelini.com",
-        "referer":            "https://www.abelini.com/",
-        "x-requested-with":   "XMLHttpRequest",
+        "referer":            "https://www.abelini.com/choose-diamond",
         "user-agent":         pick_ua(),
         "sec-ch-ua":          '"Google Chrome";v="131", "Chromium";v="131", "Not-A.Brand";v="99"',
         "sec-ch-ua-mobile":   "?0",
@@ -137,28 +134,29 @@ def make_headers() -> dict:
         "sec-fetch-site":     "same-origin",
         "sec-fetch-mode":     "cors",
         "sec-fetch-dest":     "empty",
-        "cache-control":      "no-cache",
-        "pragma":             "no-cache",
     }
 
 # ── Base params (carat range is now per-shard, supplied at call time) ────────
 BASE_PARAMS = {
-    "route":           "extension/opencart/product/option|diamondListing",
     "stone_type":      "LBG",
     "product_id":      "1240",
+    "order":           "asc",
+    "search_code":     "",
     "category_id":     "1",
     "limit":           str(ITEMS_PER_PAGE),
     "stone_price_min": "100",
-    "stone_price_max": "5000000",
-    # required by server to avoid PHP TypeError on tax_class_id
-    "markup":          "0",
-    "discount":        "0",
+    "stone_price_max": "500000",
+    "markup":          "25",
+    "discount":        "22",
 }
 
 FIELDS = [
-    "certno", "cert_no_clean", "lab", "stone_type",
-    "shape", "caratweight", "color", "clarity", "cut",
-    "price", "certurl",
+    "stone_price_id", "rapnet_id", "stone_type", "stone_name",
+    "shape", "shape_icon", "weight", "weight_display",
+    "color", "clarity", "lab", "cut", "polish", "intensity",
+    "symmetry", "fluorescence", "meas",
+    "cert_no", "cert_no_clean", "depth", "table",
+    "cert_url", "image_url", "video_url", "carat_price", "classname",
     "status", "page_no",
 ]
 
@@ -264,17 +262,40 @@ def save_status(done_shapes, done_shards, shard_progress, force=False):
                 "updated_at":     time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, f, indent=2)
 
+def migrate_schema_if_needed() -> None:
+    """
+    The API moved from HTML-scraped fields (certno, caratweight, price, certurl...)
+    to the JSON /api/diamond-search fields (cert_no, weight, carat_price...).
+    If a CSV from the old schema is on disk, appending new-schema rows to it would
+    corrupt the file. Archive the stale CSV + status.json instead, so a fresh,
+    full re-scrape populates the new schema cleanly.
+    """
+    if not os.path.exists(MAIN_CSV):
+        return
+    with open(MAIN_CSV, encoding="utf-8") as f:
+        header = f.readline().strip()
+    if header == ",".join(FIELDS):
+        return
+    stamp         = time.strftime("%Y%m%d_%H%M%S")
+    archived_csv  = MAIN_CSV.replace(".csv", f"_old_schema_{stamp}.csv")
+    shutil.move(MAIN_CSV, archived_csv)
+    log.warning("CSV schema changed — archived old file to %s", archived_csv)
+    if os.path.exists(STATUS_FILE):
+        archived_status = STATUS_FILE.replace(".json", f"_old_schema_{stamp}.json")
+        shutil.move(STATUS_FILE, archived_status)
+        log.warning("Archived stale status.json to %s — full re-scrape will run", archived_status)
+
 def load_existing_ids() -> set:
     """Set of cert_no_clean values already in MAIN_CSV. Used for cross-run dedup."""
     ids: set = set()
     if os.path.exists(MAIN_CSV):
         with open(MAIN_CSV, encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                raw = row.get("cert_no_clean") or row.get("certno") or ""
+                raw = row.get("cert_no_clean") or row.get("cert_no") or ""
                 v   = strip_lg(str(raw).strip()) if raw else ""
                 if v:
                     ids.add(v)
-    log.info("Loaded %d existing unique certno IDs from previous run", len(ids))
+    log.info("Loaded %d existing unique cert_no IDs from previous run", len(ids))
     return ids
 
 def _maybe_flush(new_records: int, force: bool = False) -> None:
@@ -296,32 +317,39 @@ def _is_dup_and_register(key: str) -> bool:
         return False
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PARSING (BeautifulSoup, same as your old code)
+# PARSING (JSON stones array from /api/diamond-search)
 # ══════════════════════════════════════════════════════════════════════════════
-def parse_diamonds(html: str) -> list:
-    soup     = BeautifulSoup(html, "html.parser")
+def parse_diamonds(stones: list) -> list:
     diamonds = []
-    for tr in soup.select("tr.diamond-data-row"):
-        attrs = tr.attrs
-        price = ""
-        for tag in tr.select("div.pricedata"):
-            txt = tag.get_text(strip=True)
-            if txt and "£" in txt:
-                price = re.sub(r"[^\d.]", "", txt)
-                break
-        raw_certno = attrs.get("certno") or ""
+    for s in stones:
+        raw_cert_no = str(s.get("cert_no") or "")
         diamonds.append({
-            "certno":        raw_certno,
-            "cert_no_clean": strip_lg(raw_certno),
-            "lab":           attrs.get("lab"),
-            "stone_type":    attrs.get("stone_type"),
-            "shape":         attrs.get("shape"),
-            "caratweight":   attrs.get("caratweight"),
-            "color":         attrs.get("color"),
-            "clarity":       attrs.get("clarity"),
-            "cut":           attrs.get("cut"),
-            "price":         price,
-            "certurl":       attrs.get("certurl"),
+            "stone_price_id": s.get("stone_price_id", ""),
+            "rapnet_id":      s.get("rapnet_id", ""),
+            "stone_type":     s.get("stone_type", ""),
+            "stone_name":     s.get("stone_name", ""),
+            "shape":          s.get("shape", ""),
+            "shape_icon":     s.get("shape_icon", ""),
+            "weight":         s.get("weight", ""),
+            "weight_display": s.get("weight_display", ""),
+            "color":          s.get("color", ""),
+            "clarity":        s.get("clarity", ""),
+            "lab":            s.get("lab", ""),
+            "cut":            s.get("cut", ""),
+            "polish":         s.get("polish", ""),
+            "intensity":      s.get("intensity", ""),
+            "symmetry":       s.get("symmetry", ""),
+            "fluorescence":   s.get("fluorescence", ""),
+            "meas":           s.get("meas", ""),
+            "cert_no":        raw_cert_no,
+            "cert_no_clean":  strip_lg(raw_cert_no.strip()),
+            "depth":          s.get("depth", ""),
+            "table":          s.get("table", ""),
+            "cert_url":       s.get("cert_url", ""),
+            "image_url":      s.get("image_url", ""),
+            "video_url":      s.get("video_url", ""),
+            "carat_price":    s.get("carat_price", ""),
+            "classname":      s.get("classname", ""),
         })
     return diamonds
 
@@ -334,8 +362,7 @@ def _get_session() -> cffi_requests.Session:
     if not hasattr(_tl, "session"):
         _tl.session = cffi_requests.Session(impersonate=CHROME_VERSION)
         try:
-            h = {**make_headers(), "x-requested-with": ""}
-            _tl.session.get("https://www.abelini.com/", headers=h, timeout=20)
+            _tl.session.get("https://www.abelini.com/choose-diamond", headers=make_headers(), timeout=20)
             time.sleep(random.uniform(0.5, 1.2))
         except Exception as exc:
             log.debug("Warm-up failed (non-fatal): %s", exc)
@@ -356,14 +383,14 @@ def fetch_page(shape: str, c_min: float, c_max: float, page: int) -> tuple:
     if _hard_stop.is_set():
         return page, [], 0
 
-    params = {
+    payload = {
         **BASE_PARAMS,
         "stone_shape":     shape,
         "stone_carat_min": f"{c_min:.2f}",
         "stone_carat_max": f"{c_max:.2f}",
         "page":            str(page),
     }
-    url             = f"{BASE_URL}?{urlencode(params)}"
+    body            = json.dumps(payload)
     consecutive_429 = 0
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -377,7 +404,7 @@ def fetch_page(shape: str, c_min: float, c_max: float, page: int) -> tuple:
         _http_semaphore.acquire()
         try:
             session = _get_session()
-            resp    = session.get(url, headers=make_headers(), timeout=REQUEST_TIMEOUT)
+            resp    = session.post(BASE_URL, headers=make_headers(), data=body, timeout=REQUEST_TIMEOUT)
 
             if resp.status_code == 429:
                 consecutive_429 += 1
@@ -400,13 +427,14 @@ def fetch_page(shape: str, c_min: float, c_max: float, page: int) -> tuple:
             resp.raise_for_status()
             consecutive_429 = 0
 
-            data = resp.json()
-            html = data.get("listing", "")
-            if not html:
+            payload_resp = resp.json()
+            inner        = payload_resp.get("data", {}) or {}
+            stones       = inner.get("stones") or []
+            if not stones:
                 return page, [], 0
 
-            diamonds = parse_diamonds(html)
-            total    = int(str(data.get("stone_total", "0")).replace(",", "") or "0")
+            diamonds = parse_diamonds(stones)
+            total    = int(inner.get("stone_total") or 0)
             return page, diamonds, total
 
         except (ValueError, KeyError) as exc:
@@ -466,7 +494,7 @@ def scrape_shard(shape: str, c_min: float, c_max: float,
         batch_new = 0
         page_dups = 0
         for d in diamonds:
-            raw_certno = str(d.get("cert_no_clean") or d.get("certno") or "")
+            raw_certno = str(d.get("cert_no_clean") or d.get("cert_no") or "")
             key        = strip_lg(raw_certno.strip())
             is_dup     = _is_dup_and_register(key) if key else True
             row    = {f: d.get(f, "") for f in FIELDS[:-2]}
@@ -606,6 +634,7 @@ def fetch_abelini(rotate_after_fails: int | None = None) -> None:
     global _existing_ids
 
     _hard_stop.clear()
+    migrate_schema_if_needed()
 
     raw_status     = load_status()
     done_shapes    = list(raw_status["done_shapes"])

@@ -842,6 +842,27 @@
         color: var(--muted);
         font-size: 0.7rem;
       }
+      .cert-links {
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 6px;
+      }
+      .cert-link {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 0.58rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-decoration: none !important;
+        border: 1px solid color-mix(in srgb, var(--vcolor, var(--accent)) 40%, transparent);
+        color: var(--vcolor, var(--accent));
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 10%, transparent);
+        transition: background 0.12s;
+      }
+      .cert-link:hover {
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 25%, transparent);
+      }
       .attr {
         color: var(--text);
         font-size: 0.72rem;
@@ -1131,8 +1152,8 @@
       <div>
         <h1>💎 Diamond Price Dashboard USA</h1>
         <p>
-          loose-grown · brilliance · luvansh · PC — price &amp; % range buckets
-          · click to filter
+          loose-grown · brilliance · friendly · luvansh · PC — price &amp; %
+          range buckets · click to filter
         </p>
       </div>
       <div class="stats-row">
@@ -1322,13 +1343,15 @@
               <th onclick="sortTable('pc_price_usd')">PC Price</th>
               <th>PC -40%</th>
               <th onclick="sortTable('lg_price_usd')">LG Price</th>
-              <th onclick="sortTable('lg_minus_30_usd')">LG -30%</th>
               <th onclick="sortTable('brilliance_price_usd')">Brilliance Price</th>
               <th onclick="sortTable('brilliance_minus_30_usd')">Brilliance -30%</th>
+              <th onclick="sortTable('friendly_price_usd')">Friendly Price</th>
               <th onclick="sortTable('lg_vs_pc_usd')">LG vs PC $</th>
               <th onclick="sortTable('lg_vs_pc_pct')">LG vs PC %</th>
               <th onclick="sortTable('brilliance_vs_pc_usd')">Brilliance vs PC $</th>
               <th onclick="sortTable('brilliance_vs_pc_pct')">Brilliance vs PC %</th>
+              <th onclick="sortTable('friendly_vs_pc_usd')">Friendly vs PC $</th>
+              <th onclick="sortTable('friendly_vs_pc_pct')">Friendly vs PC %</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -1398,7 +1421,8 @@
           label: "Loose-Grown",
           color: "#3ecf8e",
           priceCol: "loose-grown Price USD",
-          bucketPriceCol: "loose-grown -30% USD",
+          bucketPriceCol: "loose-grown Price USD",   // no discount — raw price is the bucketing ref
+          linkCol: "loose-grown Link",
           pctPattern: /loose/i,
         },
         {
@@ -1407,7 +1431,17 @@
           color: "#60a5fa",
           priceCol: "brilliance Price USD",
           bucketPriceCol: "brilliance -30% USD",
+          linkCol: "brilliance Link",
           pctPattern: /brilliance/i,
+        },
+        {
+          key: "fr",
+          label: "Friendly",
+          color: "#f472b6",
+          priceCol: "friendly Price USD",
+          bucketPriceCol: "friendly Price USD",       // no discount — raw price is the bucketing ref
+          linkCol: "friendly Link",
+          pctPattern: /friendly/i,
         },
         {
           key: "lu",
@@ -1835,6 +1869,9 @@
       }
 
       // TABLE
+      function escAttr(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      }
       function fmtPct(v) {
         return v === null || v === undefined ? "—" : Number(v).toFixed(2) + "%";
       }
@@ -1868,23 +1905,50 @@
         currentPage = Math.min(currentPage, tp);
         if (!pageRows.length) {
           document.getElementById("tableBody").innerHTML =
-            `<tr><td colspan="16"><div class="empty-state"><div class="icon">💎</div>${datasetTotal ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+            `<tr><td colspan="18"><div class="empty-state"><div class="icon">💎</div>${datasetTotal ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
           document.getElementById("pagination").innerHTML = "";
           return;
         }
         const lgVD = VENDOR_DEFS[0],
-          brVD = VENDOR_DEFS[1];
+          brVD = VENDOR_DEFS[1],
+          frVD = VENDOR_DEFS[2];
+        // Small badges next to the certificate number — one per vendor that has
+        // a product-page link for this row, opening the listing in a new tab.
+        // PC has no stored link column — its product URL is built straight
+        // from the certificate number (same "?diamondId=cert_no" scheme).
+        const LINK_BADGE_VENDORS = [
+          { tag: "LG", color: lgVD.color, label: lgVD.label, url: (r) => (lgVD.linkCol ? r[lgVD.linkCol] : null) },
+          { tag: "BR", color: brVD.color, label: brVD.label, url: (r) => (brVD.linkCol ? r[brVD.linkCol] : null) },
+          { tag: "FR", color: frVD.color, label: frVD.label, url: (r) => (frVD.linkCol ? r[frVD.linkCol] : null) },
+          {
+            tag: "PC",
+            color: "#e879f9",
+            label: "Precious Carbon",
+            url: (r) =>
+              r["certificate_number"]
+                ? `https://preciouscarbon.com/collections/lab-diamonds/diamonds?diamondId=${r["certificate_number"]}`
+                : null,
+          },
+        ];
+        const certLinks = (r) =>
+          LINK_BADGE_VENDORS.map(({ tag, color, label, url }) => {
+            const href = url(r);
+            return href
+              ? `<a class="cert-link" style="--vcolor:${color}" href="${escAttr(href)}" target="_blank" rel="noopener noreferrer" title="View on ${label}">${tag}</a>`
+              : "";
+          }).join("");
         document.getElementById("tableBody").innerHTML = pageRows
           .map((r) => {
             const lgP = getPct(r, lgVD),
-              brP = getPct(r, brVD);
+              brP = getPct(r, brVD),
+              frP = getPct(r, frVD);
             const sh = r["shape"] || r["Shape"] || "—",
               co = r["color"] || r["Color"] || "—",
               cl = r["clarity"] || r["Clarity"] || "—",
               cu = r["cut"] || r["Cut"] || "—",
               ca = r["caratWeight"] || r["Carat"] || "—";
             const pcCls =
-              (lgP !== null && lgP < 0) || (brP !== null && brP < 0)
+              (lgP !== null && lgP < 0) || (brP !== null && brP < 0) || (frP !== null && frP < 0)
                 ? "price pc-cheaper"
                 : "price";
             const caD = ca === "" || ca === "nan" || ca === "Na" ? "—" : ca;
@@ -1896,20 +1960,25 @@
               r["brilliance vs PC USD"] != null
                 ? Number(r["brilliance vs PC USD"])
                 : null;
+            const frD =
+              r["friendly vs PC USD"] != null
+                ? Number(r["friendly vs PC USD"])
+                : null;
             const fmtDiff = (v) =>
               v === null ? "—" : (v >= 0 ? "+" : "") + fmtUSD(v);
             const diffCls = (v) =>
               v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
             return `<tr>
-            <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
+            <td class="cert">${String(r["certificate_number"] ?? "—")}<span class="cert-links">${certLinks(r)}</span></td>
             <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
             <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"] != null ? r["PC Price USD"] * 0.60 : null)}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
-            <td class="price">${fmtUSD(r["loose-grown -30% USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
+            <td class="price">${fmtUSD(r["friendly Price USD"])}</td>
             <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
             <td class="${diffCls(brD)}">${fmtDiff(brD)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td>
+            <td class="${diffCls(frD)}">${fmtDiff(frD)}</td><td class="${pctClass(frP)}">${fmtPct(frP)}</td>
           </tr>`;
           })
           .join("");
@@ -2265,6 +2334,7 @@
             `PC: ${fdLabel(fileDates.pc)}`,
             `Loose-Grown: ${fdLabel(fileDates["loose-grown"])}`,
             `Brilliance: ${fdLabel(fileDates.brilliance)}`,
+            `Friendly: ${fdLabel(fileDates.friendly)}`,
           ];
           bucketCreatedEl.textContent = "Source files · " + parts.join("  ·  ");
         }
@@ -2275,6 +2345,7 @@
         const COLORS = {
           "loose-grown": "#3ecf8e",
           brilliance: "#60a5fa",
+          friendly: "#f472b6",
           luvansh: "#c9a84c",
           PC: "#e879f9",
         };

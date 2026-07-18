@@ -695,17 +695,17 @@ def run_with_vpn_rotation() -> None:
 if __name__ == "__main__":
     # Entry points (scheduling is handled externally by scheduler.py):
     #   run_with_vpn_rotation()           → one-shot VPN-wrapped scrape with mid-run rotation
-    #   loose_grown_diamonds_scrappe()    → pure scrape, no VPN (your real IP)
+    loose_grown_diamonds_scrappe()    #→ pure scrape, no VPN (your real IP)
     #
     # Note: VPN-using entries require Administrator/root (OpenVPN needs TAP/TUN).
-    import sys as _sys
-    try:
-        run_with_vpn_rotation()
-    except KeyboardInterrupt:
-        log.warning("Ctrl+C pressed — stopping scraper and tearing down any VPN tunnel.")
-        try:
-            from vpn_rotator import kill_openvpn_processes
-            kill_openvpn_processes()
-        except Exception as _exc:
-            log.warning(f"VPN cleanup failed: {_exc}")
-        _sys.exit(130)
+    # import sys as _sys
+    # try:
+    #     run_with_vpn_rotation()
+    # except KeyboardInterrupt:
+    #     log.warning("Ctrl+C pressed — stopping scraper and tearing down any VPN tunnel.")
+        # try:
+        #     from vpn_rotator import kill_openvpn_processes
+        #     kill_openvpn_processes()
+        # except Exception as _exc:
+        #     log.warning(f"VPN cleanup failed: {_exc}")
+        # _sys.exit(130)
