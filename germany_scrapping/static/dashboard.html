@@ -1037,6 +1037,27 @@
         color: var(--muted);
         font-size: 0.7rem;
       }
+      .cert-links {
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 6px;
+      }
+      .cert-link {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 0.58rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-decoration: none !important;
+        border: 1px solid color-mix(in srgb, var(--vcolor, var(--accent)) 40%, transparent);
+        color: var(--vcolor, var(--accent));
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 10%, transparent);
+        transition: background 0.12s;
+      }
+      .cert-link:hover {
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 25%, transparent);
+      }
       .attr {
         color: var(--text);
         font-size: 0.72rem;
@@ -2732,6 +2753,35 @@
               ? "pct-neg"
               : "pct-zero";
       }
+      function escAttr(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      }
+      // Small badges next to the certificate number — one per vendor that has
+      // a product-page link for this row, opening the listing in a new tab.
+      // Novita/Renesim links are built server-side (diamond_compare.py) from
+      // each vendor's own internal diamond ID and stored as "{name} Link".
+      // ROG has no stored link column — its product URL is built straight
+      // from the certificate number (same "?diamondId=cert_no" scheme).
+      const LINK_BADGE_VENDORS = [
+        { tag: "NV", color: "#3ecf8e", label: "Novita", url: (r) => r["novita Link"] || null },
+        { tag: "RS", color: "#a78bfa", label: "Renesim", url: (r) => r["renesim Link"] || null },
+        {
+          tag: "ROG",
+          color: "#f59e0b",
+          label: "Rings of Germany",
+          url: (r) =>
+            r["certificate_number"]
+              ? `https://ringsofgermany.com/collections/lab-diamonds/diamonds?diamondId=${r["certificate_number"]}`
+              : null,
+        },
+      ];
+      const certLinks = (r) =>
+        LINK_BADGE_VENDORS.map(({ tag, color, label, url }) => {
+          const href = url(r);
+          return href
+            ? `<a class="cert-link" style="--vcolor:${color}" href="${escAttr(href)}" target="_blank" rel="noopener noreferrer" title="View on ${label}">${tag}</a>`
+            : "";
+        }).join("");
 
       function renderTable(data) {
         document.querySelectorAll(".table-wrap thead th").forEach(th => {
@@ -2792,7 +2842,7 @@
             const diffCls = (v) =>
               v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
             return `<tr>
-          <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
+          <td class="cert">${String(r["certificate_number"] ?? "—")}<span class="cert-links">${certLinks(r)}</span></td>
           <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
           <td class="${rogCls}">${fmtEUR(r["ROG Price EUR"])}</td>
           <td class="${rogCls}">${fmtEUR(r["ROG -30% EUR"])}</td>

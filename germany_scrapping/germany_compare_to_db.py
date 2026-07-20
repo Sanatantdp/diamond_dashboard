@@ -79,6 +79,8 @@ ROG_COMPARE_COLUMNS = [
     ("d77_minus_30_eur",    "DECIMAL(12,2)"),
     ("d77_vs_rog_eur",      "DECIMAL(12,2)"),
     ("d77_vs_rog_pct",      "DECIMAL(8,2)"),
+    ("renesim_link",        "TEXT"),
+    ("novita_link",         "TEXT"),
 ]
 
 # JSON key (as written by diamond_compare.py) → DB column name.
@@ -105,6 +107,8 @@ ROG_COMPARE_KEY_MAP = {
     "77diamonds -30% Pound":    "d77_minus_30_eur",
     "77diamonds vs ROG Pound":  "d77_vs_rog_eur",
     "77diamonds vs ROG %":      "d77_vs_rog_pct",
+    "renesim Link":             "renesim_link",
+    "novita Link":              "novita_link",
 }
 
 ROG_STATUS_COLUMNS = [
@@ -146,6 +150,13 @@ def ensure_table(cur: PgCursor, table: str, columns: list[tuple[str, str]],
         f'  {cols_sql}\n'
         f")"
     )
+    # Table may already exist from a previous run with fewer columns —
+    # add any new ones so older deployments pick them up automatically.
+    for name, ctype in columns:
+        cur.execute(
+            f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS '
+            f'"{name}" {_to_pg_type(ctype)}'
+        )
     for col in indexes:
         cur.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" '

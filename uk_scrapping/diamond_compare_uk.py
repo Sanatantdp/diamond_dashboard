@@ -233,15 +233,28 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     price_cols = [f"{name} Price Pound" for name in loaded.keys() if f"{name} Price Pound" in combined.columns]
     combined["_vendor_count"] = combined[price_cols].notna().sum(axis=1)
 
-    # All vendors must be present for a "common" match
+    # A vendor only counts toward "common" if it actually has at least one
+    # match against the ROUK master list this run. Without this, a vendor
+    # stuck at 0 matches (e.g. a cert-number format mismatch) would
+    # permanently zero out "common" for every other vendor too. This makes
+    # the requirement self-healing: if that vendor starts matching again on
+    # a later run, it's automatically required again.
     CORE_VENDORS = ["diamond-heavon", "abelini", "ROUK"]
-    core_present = [n for n in CORE_VENDORS if f"{n} Price Pound" in combined.columns]
+    core_present = []
+    for n in CORE_VENDORS:
+        col = f"{n} Price Pound"
+        if col not in combined.columns:
+            continue
+        if n == "ROUK" or combined[col].notna().sum() > 0:
+            core_present.append(n)
+        else:
+            log.warning(f"  '{n}': 0 matches vs ROUK this run — excluded from 'common' requirement")
     combined["_all_matched"]  = combined[[f"{n} Price Pound" for n in core_present]].notna().all(axis=1) if core_present else combined["_vendor_count"] >= 2
     combined["_some_matched"] = combined["_vendor_count"] >= 2
 
     common_count  = combined["_all_matched"].sum()
     partial_count = combined["_some_matched"].sum()
-    log.info(f"  Common (diamond-heavon+abelini+ROUK): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROUK: {len(combined):,}")
+    log.info(f"  Common ({'+'.join(core_present)}): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROUK: {len(combined):,}")
 
     # Discounted price columns
     for name, disc in discounts.items():

@@ -634,6 +634,8 @@ ROG_DB_TO_JSON = {
     "d77_minus_30_eur":    "77diamonds -30% EUR",
     "d77_vs_rog_eur":      "77diamonds vs ROG EUR",
     "d77_vs_rog_pct":      "77diamonds vs ROG %",
+    "renesim_link":        "renesim Link",
+    "novita_link":         "novita Link",
 }
 
 ROG_FILENAME_TO_TABLE = {
