@@ -269,7 +269,7 @@ FIELDS = [
     "certificate", "cert_no_clean", "lab",
     "shape", "carat", "colour", "clarity", "cut",
     "price", "price_formatted",
-    "cert_url", "available", "type",
+    "cert_url", "available", "type", "internal_stock_id",
     "status", "page_no",
 ]
 
@@ -278,6 +278,31 @@ def strip_lg(value: str) -> str:
     if value and re.match(r'^[Ll][Gg]', value):
         return value[2:]
     return value or ""
+
+# ── Schema migration ──────────────────────────────────────────────────────────
+
+def migrate_schema_if_needed() -> None:
+    """
+    Added "internal_stock_id" to FIELDS — needed to build Diamond Heaven's own
+    product-page link (its stock_id isn't derivable from the certificate
+    number). Appending new-schema rows to an old-schema CSV would misalign
+    columns, so archive the stale file instead and let a fresh scrape
+    repopulate it with the new schema.
+    """
+    if not os.path.exists(MAIN_CSV):
+        return
+    with open(MAIN_CSV, encoding="utf-8") as f:
+        header = f.readline().strip()
+    if header == ",".join(FIELDS):
+        return
+    stamp        = time.strftime("%Y%m%d_%H%M%S")
+    archived_csv = MAIN_CSV.replace(".csv", f"_old_schema_{stamp}.csv")
+    shutil.move(MAIN_CSV, archived_csv)
+    log.warning("CSV schema changed — archived old file to %s", archived_csv)
+    if os.path.exists(STATUS_FILE):
+        archived_status = STATUS_FILE.replace(".json", f"_old_schema_{stamp}.json")
+        shutil.move(STATUS_FILE, archived_status)
+        log.warning("Archived stale status.json to %s — full re-scrape will run", archived_status)
 
 # ── Stale-file backup ─────────────────────────────────────────────────────────
 
@@ -361,6 +386,7 @@ def flatten(d: dict) -> dict:
         "cert_url":        d.get("cert_url") or d.get("certificate_url"),
         "available":       d.get("available") or d.get("in_stock"),
         "type":            d.get("type") or d.get("diamond_type"),
+        "internal_stock_id": d.get("internal_stock_id"),
     }
 
 # ── Row builder ───────────────────────────────────────────────────────────────
@@ -442,6 +468,7 @@ def fetch_diamond_heaven(rotate_after_fails: int | None = None) -> None:
     if rotate_after_fails:
         log.info("VPN rotate-on-fail threshold: %d consecutive blocked page(s)", rotate_after_fails)
 
+    migrate_schema_if_needed()
     backup_stale_files()
 
     existing    = load_existing_ids(MAIN_CSV)

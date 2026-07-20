@@ -238,6 +238,17 @@
       tbody tr:hover { background: var(--surface); }
       tbody td { padding: 9px 14px; white-space: nowrap; }
       .cert { color: var(--muted); font-size: 0.7rem; }
+      .cert-links { display: inline-flex; gap: 4px; margin-left: 6px; }
+      .cert-link {
+        display: inline-block; padding: 1px 5px; border-radius: 3px;
+        font-size: 0.58rem; font-weight: 600; letter-spacing: 0.02em;
+        text-decoration: none !important;
+        border: 1px solid color-mix(in srgb, var(--vcolor, var(--accent)) 40%, transparent);
+        color: var(--vcolor, var(--accent));
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 10%, transparent);
+        transition: background 0.12s;
+      }
+      .cert-link:hover { background: color-mix(in srgb, var(--vcolor, var(--accent)) 25%, transparent); }
       .attr { color: var(--text); font-size: 0.72rem; text-transform: capitalize; }
       .price { color: var(--text); text-decoration: none !important; }
       .pct-pos { color: var(--green); }
@@ -894,6 +905,44 @@
       }
       function pctClass(v) { return v === null || v === undefined ? "pct-zero" : v > 0 ? "pct-pos" : v < 0 ? "pct-neg" : "pct-zero"; }
 
+      function escAttr(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      }
+      // Small badges next to the certificate number — one per vendor that has
+      // a product-page link for this row, opening the listing in a new tab.
+      // Abelini/ROUK product URLs are built straight from the certificate
+      // number (Abelini keeps the "LG" prefix, ROUK's diamondId does not).
+      // Diamond Heaven keys its product page off its own internal stock ID
+      // (NOT the certificate number), so that link is built server-side
+      // (diamond_compare_uk.py) from diamond-heavon.py's "internal_stock_id"
+      // column and stored as "diamond-heavon Link".
+      const LINK_BADGE_VENDORS = [
+        {
+          tag: "AB", color: VENDOR_DEFS[0].color, label: "Abelini",
+          url: (r) => {
+            const cert = String(r["certificate_number"] ?? "").trim();
+            if (!cert) return null;
+            const clean = cert.replace(/^lg/i, "");
+            return `https://www.abelini.com/information/diamond-details?cert_no=LG${clean}`;
+          },
+        },
+        { tag: "DH", color: VENDOR_DEFS[1].color, label: "Diamond Heaven", url: (r) => r["diamond-heavon Link"] || null },
+        {
+          tag: "RK", color: "#f59e0b", label: "Rings of UK",
+          url: (r) =>
+            r["certificate_number"]
+              ? `https://ringsofuk.com/collections/lab-diamonds/diamonds?diamondId=${r["certificate_number"]}`
+              : null,
+        },
+      ];
+      const certLinks = (r) =>
+        LINK_BADGE_VENDORS.map(({ tag, color, label, url }) => {
+          const href = url(r);
+          return href
+            ? `<a class="cert-link" style="--vcolor:${color}" href="${escAttr(href)}" target="_blank" rel="noopener noreferrer" title="View on ${label}">${tag}</a>`
+            : "";
+        }).join("");
+
       function renderTable() {
         document.querySelectorAll(".table-wrap thead th").forEach(th => {
           th.classList.remove("sort-asc", "sort-desc");
@@ -930,7 +979,7 @@
           const diffCls = v => v === null ? "pct-zero" : v < 0 ? "pct-neg" : "pct-pos";
 
           return `<tr>
-            <td class="cert">${String(r["certificate_number"] ?? "—")}</td>
+            <td class="cert">${String(r["certificate_number"] ?? "—")}<span class="cert-links">${certLinks(r)}</span></td>
             <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
             <td class="${roukCls}">${fmtGBP(r["ROUK Price Pound"])}</td>
             <td class="${roukCls}">${fmtGBP(r["ROUK -30% Pound"])}</td>

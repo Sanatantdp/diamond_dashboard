@@ -16,10 +16,12 @@ from the site's own AJAX calls because it genuinely is one.
 
 Shares abelini.py's output CSV (diamond_files/uk/abelini.csv) and dedup logic,
 so this can be run interchangeably with abelini.py — same schema, same
-cert_no-based dedup. Does NOT share abelini.py's status.json shard-resume
-state (that's curl_cffi-run-specific); instead every run walks all shapes and
-carat bands again, relying on the CSV dedup set + dup-streak bail to skip
-already-scraped shards cheaply (matches gs_diamond_v2.py's convention).
+cert_no-based dedup. Keeps its OWN shard-resume state in
+abelini_v2_status.json (separate from abelini.py's abelini_status.json,
+since the two scrapers can be run interchangeably and shouldn't clobber
+each other's progress): done_shapes/done_shards skip whatever already
+finished, and shard_progress resumes an in-progress carat band from its
+last completed page instead of restarting that band from page 1.
 
 Usage:
     python abelini_v2.py             # visible browser window (default — confirmed
@@ -32,6 +34,7 @@ Usage:
 
 import argparse
 import csv
+import json
 import logging
 import os
 import random
@@ -63,6 +66,37 @@ log = logging.getLogger("abelini_v2")
 
 API_URL     = "https://www.abelini.com/api/diamond-search"
 WARMUP_URL  = "https://www.abelini.com/choose-diamond"
+
+# ── Shard-resume state (own status file — see module docstring) ─────────────
+STATUS_FILE = os.path.join(os.path.dirname(MAIN_CSV), "abelini_v2_status.json")
+
+def _shard_key(shape: str, c_min: float, c_max: float) -> str:
+    """Stable string key for status.json (JSON can't have tuple keys)."""
+    return f"{shape}|{c_min:.2f}|{c_max:.2f}"
+
+def load_status() -> dict:
+    if not os.path.exists(STATUS_FILE):
+        return {"done_shapes": [], "done_shards": [], "shard_progress": {}}
+    try:
+        with open(STATUS_FILE) as f:
+            data = json.load(f)
+    except Exception:
+        return {"done_shapes": [], "done_shards": [], "shard_progress": {}}
+    return {
+        "done_shapes":    list(data.get("done_shapes", [])),
+        "done_shards":    list(data.get("done_shards", [])),
+        "shard_progress": dict(data.get("shard_progress", {})),
+    }
+
+def save_status(done_shapes, done_shards, shard_progress) -> None:
+    with open(STATUS_FILE, "w") as f:
+        json.dump({
+            "scraper":        "abelini_v2",
+            "done_shapes":    done_shapes,
+            "done_shards":    done_shards,
+            "shard_progress": shard_progress,
+            "updated_at":     time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }, f, indent=2)
 
 # undetected_chromedriver otherwise grabs the newest chromedriver release,
 # which can outrun the locally installed Chrome (e.g. driver 151 vs. browser
@@ -137,6 +171,17 @@ def scrape(headless: bool) -> None:
     migrate_schema_if_needed()
     existing_ids = load_existing_ids()
 
+    raw_status     = load_status()
+    done_shapes    = raw_status["done_shapes"]
+    done_shards    = raw_status["done_shards"]
+    shard_progress = raw_status["shard_progress"]
+
+    shapes_to_run = [s for s in ALL_SHAPES if s not in done_shapes]
+    log.info("Shapes to run: %d / %d  (done: %s)", len(shapes_to_run), len(ALL_SHAPES), done_shapes or "none")
+    if not shapes_to_run:
+        log.info("All shapes already complete. Delete %s to re-run.", STATUS_FILE)
+        return
+
     driver = make_driver(headless)
     grand_new = grand_dup = 0
 
@@ -153,91 +198,123 @@ def scrape(headless: bool) -> None:
             if not file_exists:
                 writer.writeheader()
 
-            for shape in ALL_SHAPES:
+            for shape in shapes_to_run:
                 log.info("-" * 60)
                 log.info("[%s] starting shape — %d carat bands", shape, len(CARAT_BANDS))
                 shape_new = shape_dup = 0
 
                 for c_min, c_max in CARAT_BANDS:
-                    dup_streak = 0
-                    page = 1
+                    sk = _shard_key(shape, c_min, c_max)
+                    if sk in done_shards:
+                        log.info("[%s %.2f-%.2f] already done (resume) — skipping", shape, c_min, c_max)
+                        continue
 
-                    while page <= MAX_PAGES_PER_SHARD:
-                        payload = {
-                            **BASE_PARAMS,
-                            "stone_shape":     shape,
-                            "stone_carat_min": f"{c_min:.2f}",
-                            "stone_carat_max": f"{c_max:.2f}",
-                            "page":            str(page),
-                        }
-                        result = browser_fetch(driver, payload)
+                    start_page = shard_progress.get(sk, 0) + 1
+                    if start_page > 1:
+                        log.info("[%s %.2f-%.2f] resuming from page %d", shape, c_min, c_max, start_page)
 
-                        if "error" in result:
-                            log.warning("[%s %.2f-%.2f] p%d fetch error: %s",
-                                        shape, c_min, c_max, page, result["error"])
-                            break
+                    try:
+                        dup_streak   = 0
+                        page         = start_page
+                        shard_done   = True   # flips False on a transient/unresolved error — retry same page next run
 
-                        status = result.get("status")
-                        if status == 403:
-                            log.warning("[%s %.2f-%.2f] p%d 403 — reloading to refresh session",
-                                        shape, c_min, c_max, page)
-                            driver.get(WARMUP_URL)
-                            wait_for_cloudflare(driver)
-                            time.sleep(2)
+                        while page <= MAX_PAGES_PER_SHARD:
+                            payload = {
+                                **BASE_PARAMS,
+                                "stone_shape":     shape,
+                                "stone_carat_min": f"{c_min:.2f}",
+                                "stone_carat_max": f"{c_max:.2f}",
+                                "page":            str(page),
+                            }
                             result = browser_fetch(driver, payload)
-                            if result.get("status") == 403:
-                                log.error("[%s %.2f-%.2f] p%d still 403 after reload — bailing shard",
-                                          shape, c_min, c_max, page)
+
+                            if "error" in result:
+                                log.warning("[%s %.2f-%.2f] p%d fetch error: %s — will retry from here next run",
+                                            shape, c_min, c_max, page, result["error"])
+                                shard_done = False
                                 break
-                        elif status and status != 200:
-                            log.warning("[%s %.2f-%.2f] p%d HTTP %d — end of shard",
-                                        shape, c_min, c_max, page, status)
-                            break
 
-                        payload_resp = result.get("data") or {}
-                        inner  = payload_resp.get("data", {}) or {}
-                        stones = inner.get("stones") or []
-                        if not stones:
-                            log.info("[%s %.2f-%.2f] p%d empty — end of shard", shape, c_min, c_max, page)
-                            break
+                            status = result.get("status")
+                            if status == 403:
+                                log.warning("[%s %.2f-%.2f] p%d 403 — reloading to refresh session",
+                                            shape, c_min, c_max, page)
+                                driver.get(WARMUP_URL)
+                                wait_for_cloudflare(driver)
+                                time.sleep(2)
+                                result = browser_fetch(driver, payload)
+                                if result.get("status") == 403:
+                                    log.error("[%s %.2f-%.2f] p%d still 403 after reload — will retry from here next run",
+                                              shape, c_min, c_max, page)
+                                    shard_done = False
+                                    break
+                            elif status and status != 200:
+                                log.warning("[%s %.2f-%.2f] p%d HTTP %d — end of shard",
+                                            shape, c_min, c_max, page, status)
+                                break
 
-                        diamonds  = parse_diamonds(stones)
-                        rows      = []
-                        batch_new = 0
-                        page_dups = 0
-                        for d in diamonds:
-                            raw_certno = str(d.get("cert_no_clean") or d.get("cert_no") or "")
-                            key        = strip_lg(raw_certno.strip())
-                            is_dup     = key in existing_ids if key else True
-                            if key:
-                                existing_ids.add(key)
-                            row = {fld: d.get(fld, "") for fld in FIELDS[:-2]}
-                            row["status"]  = "duplicate" if is_dup else "new"
-                            row["page_no"] = page
-                            rows.append(row)
-                            if is_dup:
-                                page_dups += 1
-                            else:
-                                batch_new += 1
+                            payload_resp = result.get("data") or {}
+                            inner  = payload_resp.get("data", {}) or {}
+                            stones = inner.get("stones") or []
+                            if not stones:
+                                log.info("[%s %.2f-%.2f] p%d empty — end of shard", shape, c_min, c_max, page)
+                                break
 
-                        writer.writerows(rows)
-                        f.flush()
-                        shape_new += batch_new
-                        shape_dup += page_dups
+                            diamonds  = parse_diamonds(stones)
+                            rows      = []
+                            batch_new = 0
+                            page_dups = 0
+                            for d in diamonds:
+                                raw_certno = str(d.get("cert_no_clean") or d.get("cert_no") or "")
+                                key        = strip_lg(raw_certno.strip())
+                                is_dup     = key in existing_ids if key else True
+                                if key:
+                                    existing_ids.add(key)
+                                row = {fld: d.get(fld, "") for fld in FIELDS[:-2]}
+                                row["status"]  = "duplicate" if is_dup else "new"
+                                row["page_no"] = page
+                                rows.append(row)
+                                if is_dup:
+                                    page_dups += 1
+                                else:
+                                    batch_new += 1
 
-                        dup_streak = dup_streak + 1 if (batch_new == 0 and page_dups > 0) else 0
-                        log.info("[%s %.2f-%.2f] p%d -> %d new, %d dup (streak=%d)",
-                                 shape, c_min, c_max, page, batch_new, page_dups, dup_streak)
+                            writer.writerows(rows)
+                            f.flush()
+                            shape_new += batch_new
+                            shape_dup += page_dups
 
-                        if dup_streak >= DUP_PAGE_LIMIT:
-                            log.info("[%s %.2f-%.2f] dup-streak %d -> bail shard at p%d",
-                                     shape, c_min, c_max, dup_streak, page)
-                            break
+                            shard_progress[sk] = page
+                            save_status(done_shapes, done_shards, shard_progress)
 
-                        page += 1
-                        time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+                            dup_streak = dup_streak + 1 if (batch_new == 0 and page_dups > 0) else 0
+                            log.info("[%s %.2f-%.2f] p%d -> %d new, %d dup (streak=%d)",
+                                     shape, c_min, c_max, page, batch_new, page_dups, dup_streak)
 
-                log.info("[%s] shape done — new=%d dup=%d", shape, shape_new, shape_dup)
+                            if dup_streak >= DUP_PAGE_LIMIT:
+                                log.info("[%s %.2f-%.2f] dup-streak %d -> bail shard at p%d",
+                                         shape, c_min, c_max, dup_streak, page)
+                                break
+
+                            page += 1
+                            time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+
+                        if shard_done:
+                            if sk not in done_shards:
+                                done_shards.append(sk)
+                            save_status(done_shapes, done_shards, shard_progress)
+                            log.info("[%s %.2f-%.2f] shard done", shape, c_min, c_max)
+                    except Exception as exc:
+                        log.error("[%s %.2f-%.2f] shard crashed: %s — will retry from last saved page next run",
+                                  shape, c_min, c_max, exc)
+
+                expected_shards = {_shard_key(shape, cm, cx) for cm, cx in CARAT_BANDS}
+                if expected_shards.issubset(set(done_shards)):
+                    if shape not in done_shapes:
+                        done_shapes.append(shape)
+                    save_status(done_shapes, done_shards, shard_progress)
+                    log.info("[%s] ✅ SHAPE COMPLETE — new=%d dup=%d", shape, shape_new, shape_dup)
+                else:
+                    log.info("[%s] shape incomplete this run — new=%d dup=%d", shape, shape_new, shape_dup)
                 grand_new += shape_new
                 grand_dup += shape_dup
 

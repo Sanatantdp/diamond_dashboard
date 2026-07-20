@@ -31,13 +31,39 @@ os.makedirs(COMPARE_DIR, exist_ok=True)
 # DATA LOADERS
 # ══════════════════════════════════════════════════════════════
 
-def load_vendor(csv_path, cert_col, price_col, name):
+# ── Vendor product-page link builders ───────────────────────────
+# Each takes the raw value of a vendor's "link_col" (see vendor_defaults in
+# load_vendors_from_env) and returns the diamond's product-page URL, or None
+# when the source value is missing/unusable. Diamond Heaven keys its product
+# page off its own internal stock ID, NOT the GIA/IGI certificate number, so
+# this ID has to be carried through separately from certificate_number (the
+# join key).
+
+def _diamond_heavon_link(stock_id) -> str | None:
+    stock_id = str(stock_id).strip() if pd.notna(stock_id) else ""
+    if not stock_id or stock_id.lower() == "nan":
+        return None
+    return (
+        f"https://www.diamond-heaven.co.uk/build-your-ring/by-stone"
+        f"?diamond_type=labgrown&stock_id={stock_id}"
+    )
+
+
+def load_vendor(csv_path, cert_col, price_col, name, link_col=None, link_builder=None):
     log.debug(f"Loading vendor '{name}' from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
     df["certificate_number"] = df[cert_col].astype(str).str.strip()
-    df = df[["certificate_number", price_col]].copy()
+    keep_cols = ["certificate_number", price_col]
+    has_link  = link_col and link_builder and link_col in df.columns
+    if has_link:
+        keep_cols.append(link_col)
+    df = df[keep_cols].copy()
     df = df.rename(columns={price_col: f"{name} Price Pound"})
     df[f"{name} Price Pound"] = pd.to_numeric(df[f"{name} Price Pound"], errors="coerce")
+    if has_link:
+        df[f"{name} Link"] = df[link_col].apply(link_builder)
+        df = df.drop(columns=[link_col])
+        log.info(f"  '{name}': {df[f'{name} Link'].notna().sum():,} rows have a product link")
     log.info(f"Loaded '{name}': {len(df):,} rows")
     return df
 
@@ -184,8 +210,8 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 def load_vendors_from_env():
     vendor_defaults = [
-        {"name": "diamond-heavon", "env_csv": "DIAMOND_HEAVON_CSV",  "env_cert": "DIAMOND_HEAVON_CERT_COL",  "env_price": "DIAMOND_HEAVON_PRICE_COL",  "env_disc": "DIAMOND_HEAVON_DISCOUNT",  "default_csv": "diamond_heaven.csv",    "default_cert": "cert_no_clean",          "default_price": "price", "default_disc": "0.70"},
-        {"name": "abelini",        "env_csv": "ABELINI_CSV",          "env_cert": "ABELINI_CERT_COL",         "env_price": "ABELINI_PRICE_COL",         "env_disc": "ABELINI_DISCOUNT",         "default_csv": "abelini.csv",             "default_cert": "certno",       "default_price": "price", "default_disc": "0.70"},
+        {"name": "diamond-heavon", "env_csv": "DIAMOND_HEAVON_CSV",  "env_cert": "DIAMOND_HEAVON_CERT_COL",  "env_price": "DIAMOND_HEAVON_PRICE_COL",  "env_disc": "DIAMOND_HEAVON_DISCOUNT",  "default_csv": "diamond_heaven.csv",    "default_cert": "cert_no_clean",          "default_price": "price", "default_disc": "0.70", "link_col": "internal_stock_id", "link_builder": _diamond_heavon_link},
+        {"name": "abelini",        "env_csv": "ABELINI_CSV",          "env_cert": "ABELINI_CERT_COL",         "env_price": "ABELINI_PRICE_COL",         "env_disc": "ABELINI_DISCOUNT",         "default_csv": "abelini.csv",             "default_cert": "cert_no_clean", "default_price": "carat_price", "default_disc": "0.70", "link_col": None, "link_builder": None},
     ]
 
     vendors = []
@@ -197,6 +223,7 @@ def load_vendors_from_env():
         vendors.append({
             "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
             "cert_col": cert_col, "price_col": price_col, "discount": discount,
+            "link_col": v["link_col"], "link_builder": v["link_builder"],
         })
 
     rouk_csv_name = get_env("rouk_CSV", "rouk_diamonds.csv")
@@ -482,7 +509,10 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     loaded    = {}
     discounts = {}
     for v in vendors:
-        loaded[v["name"]]    = load_vendor(v["csv"], v["cert_col"], v["price_col"], v["name"])
+        loaded[v["name"]]    = load_vendor(
+            v["csv"], v["cert_col"], v["price_col"], v["name"],
+            link_col=v.get("link_col"), link_builder=v.get("link_builder"),
+        )
         discounts[v["name"]] = v.get("discount", default_discount)
     if PC_csv:
         loaded["ROUK"]    = load_ROUK(PC_csv)
