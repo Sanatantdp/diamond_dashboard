@@ -114,7 +114,7 @@ BASE_PAYLOAD = {
     "symmetry_from":         1,
     "symmetry_to":           2,
     "carat_from":            0.5,
-    "carat_to":              15,
+    "carat_to":              10,
     "price_from":            150,
     "price_to":              13500,
     "location_description":  "all",

@@ -72,8 +72,8 @@ SHAPES = [
 
 FILTERS = {
     "creation_method":     "Lab-White",
-    "min-carat":           "0.3",
-    "max-carat":           "20.1",
+    "min-carat":           "0.5",
+    "max-carat":           "10",
     "min-clarity_numeric": "0",
     "max-clarity_numeric": "75.5",
     "min-color_numeric":   "0",

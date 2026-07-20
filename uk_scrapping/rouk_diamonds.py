@@ -102,7 +102,7 @@ GQL_QUERY = """
         shapes:"",
         color:"d,e,f,g,h,i,j,k",
         colorflag:"",
-        carat:"1.5,10",
+        carat:"0.5,10",
         clarity:"fl,if,vvs1,vvs2,vs1,vs2,si1",
         symmetry:"excellent,very-good,good",
         polish:"excellent,very-good,good",

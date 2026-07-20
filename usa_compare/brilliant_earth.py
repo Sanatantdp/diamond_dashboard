@@ -71,7 +71,7 @@ BASE_PARAMS = {
     "hearts_and_arrows_diamonds": "",
     "min_price":  180,       "max_price":  1396180,
     "MIN_PRICE":  180,       "MAX_PRICE":  1396180,
-    "min_carat":  2,      "max_carat":  10,
+    "min_carat":  0.5,      "max_carat":  10,
     "MIN_CARAT":  0.5,      "MAX_CARAT":  10,
     "order_by":   "carat",
     "order_method": "asc",

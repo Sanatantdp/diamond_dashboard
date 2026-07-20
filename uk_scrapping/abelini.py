@@ -71,10 +71,10 @@ def _build_carat_bands(fast: bool):
         while v < 3.00 - 1e-9:
             bands.append((round(v, 2), round(v + 0.25, 2))); v += 0.25
     else:
-        # Full range matching your old 0.20-10.00 coverage
-        v = 0.20
+        # Full range: 0.50-10.00 coverage
+        v = 0.50
         while v < 1.00 - 1e-9:
-            bands.append((round(v, 2), round(v + 0.20, 2))); v += 0.20
+            bands.append((round(v, 2), round(v + 0.25, 2))); v += 0.25
         v = 1.00
         while v < 3.00 - 1e-9:
             bands.append((round(v, 2), round(v + 0.20, 2))); v += 0.20

@@ -106,7 +106,7 @@ GQL_QUERY = """{{
     shapes:"",
     color:"",
     colorflag:"",
-    carat:"1, 10",
+    carat:"0.5, 10",
     clarity:"",
     symmetry:"",
     polish:"",

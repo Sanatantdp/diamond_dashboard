@@ -13,7 +13,7 @@ click==8.3.1
 colorama==0.4.6
 cryptography==46.0.7
 cssselect==1.4.0
-curl_cffi==0.14.0
+curl_cffi==0.15.0
 DataRecorder==3.6.2
 distro==1.9.0
 docopt==0.6.2

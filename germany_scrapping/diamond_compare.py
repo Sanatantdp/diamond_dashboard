@@ -30,13 +30,54 @@ os.makedirs(COMPARE_DIR, exist_ok=True)
 # DATA LOADERS
 # ══════════════════════════════════════════════════════════════
 
-def load_vendor(csv_path, cert_col, price_col, name):
+# ── Vendor product-page link builders ───────────────────────────
+# Each takes the raw value of a vendor's "link_col" (see vendor_defaults in
+# load_vendors_from_env) and returns the diamond's product-page URL, or None
+# when the source value is missing/unusable. Novita and Renesim key their
+# product pages off an internal diamond ID, NOT the GIA/IGI certificate
+# number, so this ID has to be carried through separately from
+# certificate_number (the join key).
+
+def _novita_link(diamond_id) -> str | None:
+    diamond_id = str(diamond_id).strip() if pd.notna(diamond_id) else ""
+    if not diamond_id or diamond_id.lower() == "nan":
+        return None
+    try:
+        diamond_id = str(int(float(diamond_id)))
+    except (ValueError, OverflowError):
+        pass
+    return (
+        f"https://novitadiamonds.de/en/diamanten/{diamond_id}/lab-grown-diamonds"
+        f"?current-screen=screen-diamond-detail&diamond-selection={diamond_id}"
+    )
+
+
+def _renesim_link(diamond_id) -> str | None:
+    diamond_id = str(diamond_id).strip() if pd.notna(diamond_id) else ""
+    if not diamond_id or diamond_id.lower() == "nan":
+        return None
+    try:
+        diamond_id = str(int(float(diamond_id)))
+    except (ValueError, OverflowError):
+        pass
+    return f"https://www.renesim.com/en/pages/diamond-details?diamond_id={diamond_id}"
+
+
+def load_vendor(csv_path, cert_col, price_col, name, link_col=None, link_builder=None):
     log.debug(f"Loading vendor '{name}' from {csv_path}")
     df = pd.read_csv(csv_path, low_memory=False, on_bad_lines="skip")
     df["certificate_number"] = df[cert_col].astype(str).str.strip()
-    df = df[["certificate_number", price_col]].copy()
+    keep_cols = ["certificate_number", price_col]
+    has_link  = link_col and link_builder and link_col in df.columns
+    if has_link:
+        keep_cols.append(link_col)
+    df = df[keep_cols].copy()
     df = df.rename(columns={price_col: f"{name} Price Pound"})
     df[f"{name} Price Pound"] = pd.to_numeric(df[f"{name} Price Pound"], errors="coerce")
+    if has_link:
+        df[f"{name} Link"] = df[link_col].apply(link_builder)
+        df = df.drop(columns=[link_col])
+        log.info(f"  '{name}': {df[f'{name} Link'].notna().sum():,} rows have a product link")
     log.info(f"Loaded '{name}': {len(df):,} rows")
     return df
 
@@ -118,9 +159,9 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
 
 def load_vendors_from_env():
     vendor_defaults = [
-        {"name": "renesim",      "env_csv": "RENESIM_CSV",      "env_cert": "RENESIM_CERT_COL",      "env_price": "RENESIM_PRICE_COL",      "env_disc": "RENESIM_DISCOUNT",      "default_csv": "renesim_diamonds.csv",    "default_cert": "certificateNumber",          "default_price": "finalPriceEurTax", "default_disc": "1"},
-        {"name": "novita",       "env_csv": "NOVITA_CSV",        "env_cert": "NOVITA_CERT_COL",        "env_price": "NOVITA_PRICE_COL",        "env_disc": "NOVITA_DISCOUNT",        "default_csv": "novita_diamonds.csv", "default_cert": "certificate_number", "default_price": "price", "default_disc": "1"},
-        {"name": "77diamonds",   "env_csv": "77DIAMONDS_CSV",    "env_cert": "77DIAMONDS_CERT_COL",    "env_price": "77DIAMONDS_PRICE_COL",    "env_disc": "77DIAMONDS_DISCOUNT",    "default_csv": "77diamonds.csv", "default_cert": "CertificateNumber", "default_price": "FinalSalePrice", "default_disc": "0.70"},
+        {"name": "renesim",      "env_csv": "RENESIM_CSV",      "env_cert": "RENESIM_CERT_COL",      "env_price": "RENESIM_PRICE_COL",      "env_disc": "RENESIM_DISCOUNT",      "default_csv": "renesim_diamonds.csv",    "default_cert": "certificateNumber",          "default_price": "finalPriceEurTax", "default_disc": "1", "link_col": "diamondId", "link_builder": _renesim_link},
+        {"name": "novita",       "env_csv": "NOVITA_CSV",        "env_cert": "NOVITA_CERT_COL",        "env_price": "NOVITA_PRICE_COL",        "env_disc": "NOVITA_DISCOUNT",        "default_csv": "novita_diamonds.csv", "default_cert": "certificate_number", "default_price": "price", "default_disc": "1", "link_col": "id", "link_builder": _novita_link},
+        {"name": "77diamonds",   "env_csv": "77DIAMONDS_CSV",    "env_cert": "77DIAMONDS_CERT_COL",    "env_price": "77DIAMONDS_PRICE_COL",    "env_disc": "77DIAMONDS_DISCOUNT",    "default_csv": "77diamonds.csv", "default_cert": "CertificateNumber", "default_price": "FinalSalePrice", "default_disc": "0.70", "link_col": None, "link_builder": None},
     ]
 
     vendors = []
@@ -132,6 +173,7 @@ def load_vendors_from_env():
         vendors.append({
             "name": v["name"], "csv": os.path.join(DIAMOND_FILES_DIR, csv_name),
             "cert_col": cert_col, "price_col": price_col, "discount": discount,
+            "link_col": v["link_col"], "link_builder": v["link_builder"],
         })
 
     rog_csv_name = get_env("ROG_CSV", "rog_diamonds.csv")
@@ -168,15 +210,28 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     price_cols = [f"{name} Price Pound" for name in loaded.keys() if f"{name} Price Pound" in combined.columns]
     combined["_vendor_count"] = combined[price_cols].notna().sum(axis=1)
 
-    # All three vendors must be present for a "common" match
+    # A vendor only counts toward "common" if it actually has at least one
+    # match against the ROG master list this run. Without this, a vendor
+    # stuck at 0 matches (e.g. a cert-number format mismatch) would
+    # permanently zero out "common" for every other vendor too. This makes
+    # the requirement self-healing: if that vendor starts matching again on
+    # a later run, it's automatically required again.
     CORE_VENDORS = ["renesim", "novita", "77diamonds", "ROG"]
-    core_present = [n for n in CORE_VENDORS if f"{n} Price Pound" in combined.columns]
+    core_present = []
+    for n in CORE_VENDORS:
+        col = f"{n} Price Pound"
+        if col not in combined.columns:
+            continue
+        if n == "ROG" or combined[col].notna().sum() > 0:
+            core_present.append(n)
+        else:
+            log.warning(f"  '{n}': 0 matches vs ROG this run — excluded from 'common' requirement")
     combined["_all_matched"]  = combined[[f"{n} Price Pound" for n in core_present]].notna().all(axis=1) if core_present else combined["_vendor_count"] >= 2
     combined["_some_matched"] = combined["_vendor_count"] >= 2
 
     common_count  = combined["_all_matched"].sum()
     partial_count = combined["_some_matched"].sum()
-    log.info(f"  Common (renesim+novita+77diamonds+ROG): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROG: {len(combined):,}")
+    log.info(f"  Common ({'+'.join(core_present)}): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROG: {len(combined):,}")
 
     # Discounted price columns
     for name, disc in discounts.items():
@@ -258,6 +313,7 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
             f"{name} {label} Pound",
             f"{name} vs ROG Pound",
             f"{name} vs ROG %",
+            f"{name} Link",
         ]:
             if col in combined.columns:
                 vendor_cols.append(col)
@@ -411,7 +467,10 @@ def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount
     loaded    = {}
     discounts = {}
     for v in vendors:
-        loaded[v["name"]]    = load_vendor(v["csv"], v["cert_col"], v["price_col"], v["name"])
+        loaded[v["name"]]    = load_vendor(
+            v["csv"], v["cert_col"], v["price_col"], v["name"],
+            link_col=v.get("link_col"), link_builder=v.get("link_builder"),
+        )
         discounts[v["name"]] = v.get("discount", default_discount)
     if PC_csv:
         loaded["ROG"]    = load_ROG(PC_csv)
