@@ -426,32 +426,6 @@
         background: color-mix(in srgb, var(--red) 22%, var(--card));
         border-color: var(--red);
       }
-      .loaded-indicator {
-        font-size: 0.7rem;
-        color: var(--green);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .loaded-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--green);
-        animation: pulse 2s ease-in-out infinite;
-      }
-      @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-          transform: scale(1);
-        }
-        50% {
-          opacity: 0.5;
-          transform: scale(0.8);
-        }
-      }
-
       /* ── HEADER ── */
       .header {
         padding: 28px 40px 22px;
@@ -1562,15 +1536,7 @@
           style="font-size: 0.68rem; color: var(--muted)"
         ></span>
       </div>
-      <div
-        class="loaded-indicator"
-        id="loadedIndicator"
-        style="display: none; margin-left: auto"
-      >
-        <div class="loaded-dot"></div>
-        <span id="loadedLabel">—</span>
-      </div>
-      <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
+      <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'" style="margin-left: auto">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
 
@@ -1868,11 +1834,6 @@
         ov.classList.add("hidden");
         setTimeout(() => (ov.style.display = "none"), 450);
       }
-      function markLoaded(label) {
-        document.getElementById("loadedLabel").textContent = label;
-        document.getElementById("loadedIndicator").style.display = "flex";
-      }
-
       // ── API ───────────────────────────────────────────────────────
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
@@ -1924,13 +1885,13 @@
         showLoading("Loading " + filename + "…");
         try {
           const data = await api("GET", `/data/${filename}`);
-          ingestData(data, filename);
+          ingestData(data);
         } catch (e) {
           hideLoading();
           toast("Failed to load: " + e.message, "error");
         }
       }
-      function ingestData(json, label = "") {
+      function ingestData(json) {
         if (!Array.isArray(json)) {
           hideLoading();
           toast("Expected a JSON array", "error");
@@ -1950,7 +1911,6 @@
         document.getElementById("certSearch").value = "";
         render();
         hideLoading();
-        markLoaded(label + "  (" + json.length.toLocaleString() + " rows)");
         toast(`Loaded ${json.length.toLocaleString()} records`, "success");
       }
 
@@ -3031,7 +2991,7 @@
             loadVendorCommonCards();
             showLoading("Reloading compare.json…");
             const data = await api("GET", "/compare");
-            ingestData(data, "compare.json");
+            ingestData(data);
             document.getElementById("fileSelect").value = "compare.json";
             loadPartialData();
             OVERLAP_DATA = [];
@@ -3141,7 +3101,7 @@
           if (health.default_dataset) {
             showLoading("Loading compare.json…");
             const data = await api("GET", "/compare");
-            ingestData(data, "compare.json");
+            ingestData(data);
             document.getElementById("fileSelect").value = "compare.json";
             loadPartialData();
           } else {
