@@ -45,7 +45,7 @@ def _diamond_heavon_link(stock_id) -> str | None:
         return None
     return (
         f"https://www.diamond-heaven.co.uk/build-your-ring/by-stone"
-        f"?diamond_type=labgrown&stock_id={stock_id}"
+        f"?diamond_type=labgrown&stock_id={stock_id}&utm_campaign=share_button"
     )
 
 

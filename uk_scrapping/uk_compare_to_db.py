@@ -73,6 +73,7 @@ UK_COMPARE_COLUMNS = [
     ("ab_vs_rouk_pct",      "DECIMAL(8,2)"),
     ("rouk_price_gbp",      "DECIMAL(12,2)"),
     ("rouk_minus_30_gbp",   "DECIMAL(12,2)"),
+    ("dh_link",             "VARCHAR(512)"),
 ]
 
 # Map JSON key (as written by diamond_compare_uk.py) -> DB column name.
@@ -94,6 +95,7 @@ UK_COMPARE_KEY_MAP = {
     "abelini vs ROUK %":             "ab_vs_rouk_pct",
     "ROUK Price Pound":              "rouk_price_gbp",
     "ROUK -30% Pound":               "rouk_minus_30_gbp",
+    "diamond-heavon Link":           "dh_link",
 }
 
 UK_STATUS_COLUMNS = [
@@ -136,7 +138,8 @@ def build_create_sql(table: str, columns: list[tuple[str, str]]) -> str:
 
 
 def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]], indexes: list[str]) -> None:
-    """Create table + indexes only if they do not exist yet (no-op on subsequent runs)."""
+    """Create table + indexes if missing, and add any newly-introduced columns
+    to a table that already exists from a prior run of this script."""
     cols_sql = ",\n  ".join(f'"{name}" {_to_pg_type(ctype)}' for name, ctype in columns)
     cur.execute(
         f'CREATE TABLE IF NOT EXISTS "{table}" (\n'
@@ -144,6 +147,10 @@ def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]
         f'  {cols_sql}\n'
         f")"
     )
+    for name, ctype in columns:
+        cur.execute(
+            f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{name}" {_to_pg_type(ctype)}'
+        )
     for col in indexes:
         cur.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" ON "{table}" ("{col}")'
