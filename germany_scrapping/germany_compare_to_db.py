@@ -126,6 +126,7 @@ ROG_STATUS_COLUMNS = [
     ("common_count",            "INT"),
     ("partial_count",           "INT"),
     ("all_rog_count",           "INT"),
+    ("file_dates",              "TEXT"),
 ]
 
 
@@ -198,7 +199,7 @@ def insert_rows(cur: PgCursor, table: str, db_cols: list[str],
         rows,
         page_size=BATCH_SIZE,
     )
-    print(f'    {len(rows):>8,} rows → "{table}"')
+    print(f'    {len(rows):>8,} rows -> "{table}"')
     return len(rows)
 
 
@@ -262,6 +263,7 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
         dataset.get("common"),
         dataset.get("partial"),
         dataset.get("all_ROG") or dataset.get("all_rog"),
+        json.dumps(s.get("file_dates") or {}),
     )
     status_cols = [c[0] for c in ROG_STATUS_COLUMNS]
     counts["rog_diamond_status"] = insert_rows(

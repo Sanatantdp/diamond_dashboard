@@ -60,7 +60,7 @@ def _renesim_link(diamond_id) -> str | None:
         diamond_id = str(int(float(diamond_id)))
     except (ValueError, OverflowError):
         pass
-    return f"https://www.renesim.com/en/pages/diamond-details?diamond_id={diamond_id}"
+    return f"https://www.renesim.com/pages/diamant-einzelheiten?diamond_id={diamond_id}&diamond_type=lab-white"
 
 
 def load_vendor(csv_path, cert_col, price_col, name, link_col=None, link_builder=None):
@@ -115,6 +115,23 @@ def load_ROG(csv_path):
 # STEP 1 — BUILD compare files
 # ══════════════════════════════════════════════════════════════
 
+def _collect_vendor_file_dates() -> dict:
+    """Last-modified timestamps for each vendor source CSV. Returns
+    {rog, renesim, novita, 77diamonds} -> 'YYYY-MM-DD HH:MM:SS' (or None if missing)."""
+    vendors, PC_csv, _pc_disc = load_vendors_from_env()
+    paths = {"rog": PC_csv}
+    for v in vendors:
+        paths[v["name"]] = v["csv"]
+    out: dict = {}
+    for key, path in paths.items():
+        if path and os.path.exists(path):
+            mtime = os.path.getmtime(path)
+            out[key] = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            out[key] = None
+    return out
+
+
 def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
                          common_records: list, partial_records: list, all_records: list,
                         ):
@@ -151,6 +168,7 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             "partial":    len(partial_records),
             "all_ROG":     len(all_records),
         },
+        "file_dates": _collect_vendor_file_dates(),
     }
 
     with open(DIAMOND_STATUS_JSON, "w", encoding="utf-8") as f:

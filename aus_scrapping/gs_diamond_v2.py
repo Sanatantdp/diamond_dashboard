@@ -45,12 +45,16 @@ SHAPES = [
 
 FILTERS = {
     "creation_method":     "Lab-White",
-    "min-carat":           "0.5",
-    "max-carat":           "10",
+    "min-carat":           "0.51",
+    "max-carat":           "20.1",
     "min-clarity_numeric": "0",
-    "max-clarity_numeric": "75.5",
+    "max-clarity_numeric": "62.5",
     "min-color_numeric":   "0",
     "max-color_numeric":   "30",
+    "min-cut_numeric":     "0",
+    "max-cut_numeric":     "25",
+    "min-price_AUD_AU":    "1",
+    "max-price_AUD_AU":    "3695348",
 }
 
 FIELDS = [

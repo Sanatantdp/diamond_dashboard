@@ -166,6 +166,23 @@ def generate_vendor_vs_rouk_csv(combined: pd.DataFrame, discounts: dict):
 # STEP 1 — BUILD compare files
 # ══════════════════════════════════════════════════════════════
 
+def _collect_vendor_file_dates() -> dict:
+    """Last-modified timestamps for each vendor source CSV. Returns
+    {rouk, diamond-heavon, abelini} -> 'YYYY-MM-DD HH:MM:SS' (or None if missing)."""
+    vendors, PC_csv, _pc_disc = load_vendors_from_env()
+    paths = {"rouk": PC_csv}
+    for v in vendors:
+        paths[v["name"]] = v["csv"]
+    out: dict = {}
+    for key, path in paths.items():
+        if path and os.path.exists(path):
+            mtime = os.path.getmtime(path)
+            out[key] = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            out[key] = None
+    return out
+
+
 def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
                          common_records: list, partial_records: list, all_records: list,
                         ):
@@ -202,6 +219,7 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             "partial":    len(partial_records),
             "all_ROUK":     len(all_records),
         },
+        "file_dates": _collect_vendor_file_dates(),
     }
 
     with open(DIAMOND_STATUS_JSON, "w", encoding="utf-8") as f:

@@ -2905,12 +2905,6 @@
       }
 
       // ── STATS ──────────────────────────────────────────────────────
-      function randomStatDate() {
-        const h = String(Math.floor(Math.random() * 24)).padStart(2, "0");
-        const m = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-        const s = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-        return `18-07-2026 ${h}:${m}:${s}`;
-      }
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
@@ -2935,6 +2929,8 @@
           vendors = s.ROG_vs_vendors || {},
           datasets = s.dataset_counts || {},
           vTotals = s.vendor_totals || {};
+        const fileDates = s.file_dates || {};
+        const fdLabel = (d) => (d ? d : "—");
         const COLORS = {
           novita: "#3ecf8e",
           "77diamonds": "#60a5fa",
@@ -2942,7 +2938,7 @@
           ROG: "#e879f9",
         };
         let html = `<div class="stats-card" style="--card-color:#e879f9">
-        <div class="stats-card-title">💠 ROG (Master List)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${randomStatDate()}</span></div>
+        <div class="stats-card-title">💠 ROG (Master List)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates.rog)}</span></div>
         <div class="stats-card-value">${rogTotal.toLocaleString()}</div>
         <div class="stats-card-sub">Total diamonds in ROG master list</div>
         <div class="stats-row-grid" style="margin-top:10px">
@@ -2959,7 +2955,7 @@
             ? Math.min((matched / rogTotal) * 100, 100).toFixed(1)
             : 0;
           html += `<div class="stats-card" style="--card-color:${color}">
-          <div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${randomStatDate()}</span></div>
+          <div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates[name])}</span></div>
           <div class="stats-card-value">${vTotal.toLocaleString()}</div>
           <div class="stats-card-sub">Total in vendor CSV</div>
           <div class="stats-row-grid" style="margin-top:12px">

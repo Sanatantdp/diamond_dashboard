@@ -2200,12 +2200,6 @@
           panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> to generate statistics</div></div>`;
         }
       }
-      function randomStatDate() {
-        const h = String(Math.floor(Math.random() * 24)).padStart(2, "0");
-        const m = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-        const sec = String(Math.floor(Math.random() * 60)).padStart(2, "0");
-        return `18-07-2026 ${h}:${m}:${sec}`;
-      }
       function renderStats(s) {
         const panel = document.getElementById("statsPanel");
         if (!s) {
@@ -2218,8 +2212,6 @@
           : "";
         const fileDates = s.file_dates || {};
         const fdLabel = (d) => (d ? d : "—");
-        const fdRow = (label, color, dateStr) =>
-          `<div class="stats-row-item"><span class="label">📅 ${label} file</span><span class="val" style="color:${color};font-size:.7rem">${fdLabel(dateStr)}</span></div>`;
         const bucketCreatedEl = document.getElementById("bucketCreatedAt");
         if (bucketCreatedEl) {
           const parts = [
@@ -2241,7 +2233,7 @@
           luvansh: "#c9a84c",
           PC: "#e879f9",
         };
-        let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 PC (Precious Carbon)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${randomStatDate()}</span></div><div class="stats-card-value">${pcTotal.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div>${fdRow("Created", "#e879f9", fileDates.pc)}</div></div>`;
+        let html = `<div class="stats-card" style="--card-color:#e879f9"><div class="stats-card-title">💠 PC (Precious Carbon)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates.pc)}</span></div><div class="stats-card-value">${pcTotal.toLocaleString()}</div><div class="stats-card-sub">Total diamonds in master list</div><div class="stats-row-grid" style="margin-top:10px"><div class="stats-row-item"><span class="label">Common (LG+BR+PC)</span><span class="val" style="color:#e879f9">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-row-item"><span class="label">Partial (2+ vendors)</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div></div></div>`;
         for (const [name, v] of Object.entries(vendors)) {
           const color = COLORS[name] || "var(--accent2)",
             matched = v.matched || 0,
@@ -2251,7 +2243,7 @@
             barW = pcTotal
               ? Math.min((matched / pcTotal) * 100, 100).toFixed(1)
               : 0;
-          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${randomStatDate()}</span></div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div>${fdRow("Created", color, fileDates[name])}</div></div>`;
+          html += `<div class="stats-card" style="--card-color:${color}"><div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates[name])}</span></div><div class="stats-card-value">${vTotal.toLocaleString()}</div><div class="stats-card-sub">Total in vendor CSV</div><div class="stats-row-grid" style="margin-top:12px"><div class="stats-row-item"><span class="label">✓ Matched in PC</span><span class="val" style="color:${color}">${matched.toLocaleString()} <span class="badge-pct" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color}">${rate}%</span></span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${barW}%;background:${color}"></div></div><div class="stats-row-item"><span class="label">✗ Not in PC</span><span class="val" style="color:var(--red)">${notInPC.toLocaleString()}</span></div></div></div>`;
         }
         html += `<div class="stats-card" style="--card-color:var(--accent)"><div class="stats-card-title">📊 Dataset Sizes</div><div class="stats-row-grid" style="margin-top:8px"><div class="stats-row-item"><span class="label">⬡ Common</span><span class="val" style="color:var(--accent)">${(datasets.common || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.common || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:var(--accent)"></div></div><div class="stats-row-item"><span class="label">◑ Partial</span><span class="val" style="color:#60a5fa">${(datasets.partial || 0).toLocaleString()}</span></div><div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${pcTotal ? (((datasets.partial || 0) / pcTotal) * 100).toFixed(1) : 0}%;background:#60a5fa"></div></div><div class="stats-row-item"><span class="label">◉ All PC certs</span><span class="val" style="color:var(--muted)">${(datasets.all_pc || 0).toLocaleString()}</span></div></div></div>`;
         panel.innerHTML = html;

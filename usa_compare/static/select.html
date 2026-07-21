@@ -164,6 +164,22 @@
         font-size: 13px;
         line-height: 1.6;
       }
+      .last-run {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .last-run .lbl {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 10px;
+        margin-right: 6px;
+      }
+      .last-run .val {
+        color: var(--accent);
+      }
       .footer {
         margin-top: 38px;
         display: flex;
@@ -204,21 +220,25 @@
           <div class="flag">🇺🇸</div>
           <h2>USA</h2>
           <p>PriceScope baseline vs Loose-Grown &amp; Brilliance. Prices in USD ($).</p>
+          <div class="last-run" id="lastRun-usa"><span class="lbl">Last compare</span><span class="val">loading…</span></div>
         </a>
         <a class="card" href="/dashboard/uk">
           <div class="flag">🇬🇧</div>
           <h2>UK</h2>
           <p>ROUK baseline vs diamond-heavon &amp; abelini. Prices in GBP (£).</p>
+          <div class="last-run" id="lastRun-uk"><span class="lbl">Last compare</span><span class="val">loading…</span></div>
         </a>
         <a class="card" href="/dashboard/aus">
           <div class="flag">🇦🇺</div>
           <h2>AUS</h2>
           <p>ROA baseline vs Cullen &amp; GS Diamonds. Prices in USD ($).</p>
+          <div class="last-run" id="lastRun-aus"><span class="lbl">Last compare</span><span class="val">loading…</span></div>
         </a>
         <a class="card" href="/dashboard/germany">
           <div class="flag">🇩🇪</div>
           <h2>Germany</h2>
           <p>ROG baseline vs novita, 77 Diamonds &amp; Renesim. Prices in EUR (€).</p>
+          <div class="last-run" id="lastRun-germany"><span class="lbl">Last compare</span><span class="val">loading…</span></div>
         </a>
       </div>
 
@@ -237,6 +257,32 @@
         sessionStorage.removeItem("diamond_token");
         window.location.href = "/";
       });
+
+      // Show each country's last compare/pipeline run time (from its
+      // diamond_status table, generated_at) on the region-select cards.
+      const STATUS_ENDPOINTS = {
+        usa: "/api/status",
+        uk: "/api/uk/status",
+        aus: "/api/roa/status",
+        germany: "/api/rog/status",
+      };
+      async function loadLastRun(key, path) {
+        const val = document.querySelector(`#lastRun-${key} .val`);
+        if (!val) return;
+        try {
+          const res = await fetch(path, {
+            headers: { Authorization: "Bearer " + AUTH_TOKEN },
+          });
+          if (!res.ok) throw new Error("no data");
+          const data = await res.json();
+          val.textContent = data.generated_at || "—";
+        } catch (e) {
+          val.textContent = "no run yet";
+        }
+      }
+      Object.entries(STATUS_ENDPOINTS).forEach(([key, path]) =>
+        loadLastRun(key, path),
+      );
     </script>
   </body>
 </html>

@@ -110,6 +110,7 @@ UK_STATUS_COLUMNS = [
     ("common_count",        "INT"),
     ("partial_count",       "INT"),
     ("all_rouk_count",      "INT"),
+    ("file_dates",          "TEXT"),
 ]
 
 
@@ -245,6 +246,7 @@ def upload_all_uk_json_files(cur: PgCursor) -> None:
         counts.get("common"),
         counts.get("partial"),
         counts.get("all_ROUK"),
+        json.dumps(s.get("file_dates") or {}),
     )
     insert_rows(cur, "uk_diamond_status", [c[0] for c in UK_STATUS_COLUMNS], [status_row])
 

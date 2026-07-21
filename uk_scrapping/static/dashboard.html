@@ -994,6 +994,8 @@
         const roukTotal = s.rouk_total || 0;
         const vendors   = s.rouk_vs_vendors || {};
         const datasets  = s.dataset_counts  || {};
+        const fileDates = s.file_dates || {};
+        const fdLabel   = (d) => (d ? d : "—");
 
         const COLORS = {
           "abelini":        "#3ecf8e",
@@ -1002,7 +1004,7 @@
         };
 
         let html = `<div class="stats-card" style="--card-color:#e879f9">
-          <div class="stats-card-title">💠 ROUK (Ring of Utmost Knowledge)</div>
+          <div class="stats-card-title">💠 ROUK (Ring of Utmost Knowledge)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates.rouk)}</span></div>
           <div class="stats-card-value">${roukTotal.toLocaleString()}</div>
           <div class="stats-card-sub">Total diamonds in master list</div>
           <div class="stats-row-grid" style="margin-top:10px">
@@ -1019,7 +1021,7 @@
           const rate     = v.match_rate_pct || 0;
           const barW     = roukTotal ? Math.min((matched / roukTotal) * 100, 100).toFixed(1) : 0;
           html += `<div class="stats-card" style="--card-color:${color}">
-            <div class="stats-card-title" style="color:${color}">${name}</div>
+            <div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates[name])}</span></div>
             <div class="stats-card-value">${vTotal.toLocaleString()}</div>
             <div class="stats-card-sub">Total in vendor CSV</div>
             <div class="stats-row-grid" style="margin-top:12px">

@@ -713,6 +713,7 @@ def _fetch_rog_status() -> dict | None:
             "partial": r["partial_count"],
             "all_rog": r["all_rog_count"],
         },
+        "file_dates": json.loads(r["file_dates"]) if r.get("file_dates") else {},
     }
 
 
@@ -1267,6 +1268,7 @@ def _fetch_uk_status() -> dict | None:
             "partial":  r["partial_count"],
             "all_ROUK": r["all_rouk_count"],
         },
+        "file_dates": json.loads(r["file_dates"]) if r.get("file_dates") else {},
     }
 
 
