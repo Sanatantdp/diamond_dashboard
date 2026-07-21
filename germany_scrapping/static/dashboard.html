@@ -1909,11 +1909,11 @@
           data.files.forEach((f) => {
             const o = document.createElement("option");
             o.value = f.filename;
-            o.textContent = `${f.filename}  (${f.size_kb} KB · ${f.last_modified})`;
+            o.textContent = `${f.filename}  (${(f.rows || 0).toLocaleString()} rows)`;
             sel.appendChild(o);
           });
           if (prev) sel.value = prev;
-          toast(`${data.count} file(s) found in compare/`, "info");
+          toast(`${data.count} file(s) found`, "info");
         } catch (e) {
           toast("Could not load file list: " + e.message, "error");
         }
