@@ -375,23 +375,6 @@
       #fileSelect option {
         background: var(--card);
       }
-      .upload-zone {
-        border: 1px dashed var(--border);
-        border-radius: 6px;
-        padding: 6px 12px;
-        cursor: pointer;
-        font-size: 0.75rem;
-        color: var(--muted);
-        transition: all 0.2s;
-        white-space: nowrap;
-      }
-      .upload-zone:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      #csvFileInput {
-        display: none;
-      }
       .btn {
         border: none;
         padding: 7px 16px;
@@ -1566,39 +1549,6 @@
       </div>
       <span class="sep">|</span>
       <div class="topbar-section">
-        <label>Upload File</label>
-        <div
-          class="upload-zone"
-          onclick="document.getElementById('csvFileInput').click()"
-        >
-          ⬆ Choose CSV or JSON
-        </div>
-        <input
-          type="file"
-          id="csvFileInput"
-          accept=".csv,.json"
-          onchange="uploadAndConvert(event)"
-        />
-        <span style="font-size: 0.65rem; color: var(--muted)"
-          >(.csv or .json)</span
-        >
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Convert existing CSV</label>
-        <input
-          type="text"
-          id="csvNameInput"
-          class="inp"
-          placeholder="filename.csv"
-          style="width: 200px"
-        />
-        <button class="btn btn-gold btn-sm" onclick="convertByName()">
-          Convert
-        </button>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
         <label>Pipeline</label>
         <button
           class="btn btn-gold btn-sm"
@@ -1629,8 +1579,7 @@
       <div>
         <h1>💎 Diamond Price Dashboard</h1>
         <p>
-          novita · 77 diamonds · renesim · ROG — parallel % buckets per vendor ·
-          click to filter
+          novita · 77 diamonds · renesim · ROG
         </p>
       </div>
       <div class="stats-row">
@@ -1979,52 +1928,6 @@
         } catch (e) {
           hideLoading();
           toast("Failed to load: " + e.message, "error");
-        }
-      }
-      async function uploadAndConvert(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const isJSON = file.name.toLowerCase().endsWith(".json");
-        showLoading(
-          (isJSON ? "Uploading JSON " : "Uploading & converting ") +
-            file.name +
-            "…",
-        );
-        const form = new FormData();
-        form.append("file", file);
-        try {
-          const r = await api("POST", "/upload", form, true);
-          toast(
-            `[${isJSON ? "JSON" : "CSV→JSON"}] ${file.name} → ${r.file}  (${r.rows.toLocaleString()} rows)`,
-            "success",
-          );
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Upload failed: " + e.message, "error");
-        }
-        event.target.value = "";
-      }
-      async function convertByName() {
-        const name = document.getElementById("csvNameInput").value.trim();
-        if (!name) {
-          toast("Enter a CSV filename first", "error");
-          return;
-        }
-        showLoading("Converting " + name + "…");
-        const form = new FormData();
-        form.append("csv_filename", name);
-        try {
-          const r = await api("POST", "/convert", form, true);
-          toast(r.message + ` (${r.rows.toLocaleString()} rows)`, "success");
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Convert failed: " + e.message, "error");
         }
       }
       function ingestData(json, label = "") {

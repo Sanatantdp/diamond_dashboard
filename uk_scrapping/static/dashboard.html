@@ -923,7 +923,9 @@
             const cert = String(r["certificate_number"] ?? "").trim();
             if (!cert) return null;
             const clean = cert.replace(/^lg/i, "");
-            return `https://www.abelini.com/information/diamond-details?cert_no=LG${clean}`;
+            const carat = Number(r["caratWeight"] ?? r["Carat"]);
+            const caratParam = Number.isFinite(carat) ? `&carat_weight=${carat.toFixed(2)}` : "";
+            return `https://www.abelini.com/information/diamond-details?cert_no=LG${clean}&stone_type=LBG${caratParam}&tax=9`;
           },
         },
         { tag: "DH", color: VENDOR_DEFS[1].color, label: "Diamond Heaven", url: (r) => r["diamond-heavon Link"] || null },
