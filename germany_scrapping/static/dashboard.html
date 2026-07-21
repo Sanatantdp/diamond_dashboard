@@ -368,13 +368,6 @@
       .inp::placeholder {
         color: var(--muted);
       }
-      #fileSelect {
-        min-width: 220px;
-        cursor: pointer;
-      }
-      #fileSelect option {
-        background: var(--card);
-      }
       .btn {
         border: none;
         padding: 7px 16px;
@@ -1512,30 +1505,6 @@
 
     <!-- ══ TOPBAR ════════════════════════════════════════════════ -->
     <div class="topbar">
-      <div class="topbar-section">
-        <label>Dataset</label>
-        <select id="fileSelect" class="inp" onchange="loadSelectedFile()">
-          <option value="">— select a file —</option>
-        </select>
-        <button class="btn btn-gold btn-sm" onclick="refreshFileList()">
-          ↻ Refresh
-        </button>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Pipeline</label>
-        <button
-          class="btn btn-gold btn-sm"
-          onclick="runComparePipeline()"
-          id="runCompareBtn"
-        >
-          ⚙ Run Compare
-        </button>
-        <span
-          id="runCompareStatus"
-          style="font-size: 0.68rem; color: var(--muted)"
-        ></span>
-      </div>
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'" style="margin-left: auto">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
@@ -1860,37 +1829,6 @@
         return res.json();
       }
 
-      // ── FILE MANAGEMENT ───────────────────────────────────────────
-      async function refreshFileList() {
-        try {
-          const data = await api("GET", "/files");
-          const sel = document.getElementById("fileSelect");
-          const prev = sel.value;
-          sel.innerHTML = `<option value="">— select a file —</option>`;
-          data.files.forEach((f) => {
-            const o = document.createElement("option");
-            o.value = f.filename;
-            o.textContent = `${f.filename}  (${(f.rows || 0).toLocaleString()} rows)`;
-            sel.appendChild(o);
-          });
-          if (prev) sel.value = prev;
-          toast(`${data.count} file(s) found`, "info");
-        } catch (e) {
-          toast("Could not load file list: " + e.message, "error");
-        }
-      }
-      async function loadSelectedFile() {
-        const filename = document.getElementById("fileSelect").value;
-        if (!filename) return;
-        showLoading("Loading " + filename + "…");
-        try {
-          const data = await api("GET", `/data/${filename}`);
-          ingestData(data);
-        } catch (e) {
-          hideLoading();
-          toast("Failed to load: " + e.message, "error");
-        }
-      }
       function ingestData(json) {
         if (!Array.isArray(json)) {
           hideLoading();
@@ -2966,50 +2904,6 @@
         renderModalTable();
       }
 
-      // ── PIPELINE ───────────────────────────────────────────────────
-      async function runComparePipeline() {
-        const btn = document.getElementById("runCompareBtn"),
-          st = document.getElementById("runCompareStatus");
-        btn.disabled = true;
-        btn.textContent = "⏳ Running…";
-        st.textContent = "Building compare files…";
-        st.style.color = "var(--accent)";
-        try {
-          const r = await api("POST", "/run-compare");
-          if (r.status === "ok") {
-            st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`;
-            st.style.color = "var(--green)";
-            toast(
-              `Compare pipeline complete — ${r.rows.toLocaleString()} records`,
-              "success",
-              5000,
-            );
-            await refreshFileList();
-            loadStats();
-            // Reload vendor common cards (pipeline regenerates them)
-            VC_CACHE = {};
-            loadVendorCommonCards();
-            showLoading("Reloading compare.json…");
-            const data = await api("GET", "/compare");
-            ingestData(data);
-            document.getElementById("fileSelect").value = "compare.json";
-            loadPartialData();
-            OVERLAP_DATA = [];
-          } else {
-            st.textContent = `✗ Error (code ${r.returncode})`;
-            st.style.color = "var(--red)";
-            toast("Pipeline error — check server logs", "error", 6000);
-          }
-        } catch (e) {
-          st.textContent = "✗ Failed";
-          st.style.color = "var(--red)";
-          toast("Pipeline failed: " + e.message, "error");
-        } finally {
-          btn.disabled = false;
-          btn.textContent = "⚙ Run Compare";
-        }
-      }
-
       // ── STATS ──────────────────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
@@ -3095,22 +2989,16 @@
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/health");
-          await refreshFileList();
           loadStats();
           loadVendorCommonCards();
           if (health.default_dataset) {
             showLoading("Loading compare.json…");
             const data = await api("GET", "/compare");
             ingestData(data);
-            document.getElementById("fileSelect").value = "compare.json";
             loadPartialData();
           } else {
             hideLoading();
-            toast(
-              "No compare.json found — run pipeline or upload a CSV/JSON",
-              "info",
-              6000,
-            );
+            toast("No compare.json found on the server", "info", 6000);
           }
         } catch (e) {
           hideLoading();
