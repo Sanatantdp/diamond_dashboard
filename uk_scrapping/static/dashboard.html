@@ -60,12 +60,6 @@
       .topbar-section { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
       .topbar label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
       .sep { color: var(--border); }
-      .loaded-indicator { font-size: 0.7rem; color: var(--green); display: flex; align-items: center; gap: 6px; }
-      .loaded-dot {
-        width: 7px; height: 7px; border-radius: 50%; background: var(--green);
-        animation: pulse 2s ease-in-out infinite;
-      }
-      @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
       .btn-back {
         background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent);
         border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); margin-left: auto;
@@ -298,23 +292,6 @@
 
     <!-- TOPBAR -->
     <div class="topbar">
-      <div class="topbar-section">
-        <label>Dataset</label>
-        <select id="fileSelect" class="inp" style="min-width:220px;cursor:pointer" onchange="loadSelectedFile()">
-          <option value="">— select a file —</option>
-        </select>
-        <button class="btn btn-gold btn-sm" onclick="refreshFileList()">↻ Refresh</button>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Pipeline</label>
-        <button class="btn btn-gold btn-sm" onclick="runComparePipeline()" id="runCompareBtn">⚙ Run Compare</button>
-        <span id="runCompareStatus" style="font-size:0.68rem;color:var(--muted)"></span>
-      </div>
-      <div class="loaded-indicator" id="loadedIndicator" style="display:none;margin-left:auto">
-        <div class="loaded-dot"></div>
-        <span id="loadedLabel">—</span>
-      </div>
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
@@ -522,11 +499,6 @@
         ov.classList.add("hidden");
         setTimeout(() => (ov.style.display = "none"), 450);
       }
-      function markLoaded(label) {
-        document.getElementById("loadedLabel").textContent = label;
-        document.getElementById("loadedIndicator").style.display = "flex";
-      }
-
       // ── API ──────────────────────────────────────────────────────
       async function api(method, path, body = null) {
         const opts = { method, headers: {} };
@@ -544,28 +516,7 @@
         return res.json();
       }
 
-      // ── File list ────────────────────────────────────────────────
-      async function refreshFileList() {
-        try {
-          const data = await api("GET", "/api/uk/files");
-          const sel = document.getElementById("fileSelect");
-          const prev = sel.value;
-          sel.innerHTML = `<option value="">— select a file —</option>`;
-          (data.files || []).forEach(f => {
-            const o = document.createElement("option");
-            o.value = f.filename;
-            o.textContent = `${f.filename}  (${(f.rows || 0).toLocaleString()} rows)`;
-            sel.appendChild(o);
-          });
-          sel.value = prev || currentDataset;
-        } catch (e) {
-          console.error("[refreshFileList]", e.message);
-        }
-      }
-
-      async function loadSelectedFile() {
-        const filename = document.getElementById("fileSelect").value;
-        if (!filename) return;
+      async function loadSelectedFile(filename = "compare.json") {
         currentDataset = filename;
         resetFilters();
         showLoading("Loading " + filename + "…");
@@ -584,7 +535,6 @@
           }
 
           hideLoading();
-          markLoaded(filename + "  (" + ALL_DATA.length.toLocaleString() + " rows)");
           toast(`Loaded ${ALL_DATA.length.toLocaleString()} records`, "success");
           document.getElementById("totalCount").textContent = ALL_DATA.length.toLocaleString();
           render();
@@ -1024,34 +974,6 @@
         renderTable();
       }
 
-      // ── Pipeline ─────────────────────────────────────────────────
-      async function runComparePipeline() {
-        const btn = document.getElementById("runCompareBtn");
-        const st  = document.getElementById("runCompareStatus");
-        if (btn) { btn.disabled = true; btn.textContent = "⏳ Running…"; }
-        if (st)  { st.textContent = "Building…"; st.style.color = "var(--accent)"; }
-        try {
-          const r = await api("POST", "/api/uk/run-compare");
-          if (r.status === "ok") {
-            const rows = Number(r.rows || 0);
-            if (st) { st.textContent = `✓ Done — ${rows.toLocaleString()} rows`; st.style.color = "var(--green)"; }
-            toast(`UK pipeline complete — ${rows.toLocaleString()} records`, "success", 5000);
-            await refreshFileList();
-            loadStats();
-            document.getElementById("fileSelect").value = "compare.json";
-            await loadSelectedFile();
-          } else {
-            if (st) { st.textContent = "✗ Error"; st.style.color = "var(--red)"; }
-            toast("Pipeline error: " + (r.stderr || "unknown"), "error", 6000);
-          }
-        } catch (e) {
-          if (st) { st.textContent = "✗ Failed"; st.style.color = "var(--red)"; }
-          toast("Pipeline failed: " + e.message, "error");
-        } finally {
-          if (btn) { btn.disabled = false; btn.textContent = "⚙ Run Compare"; }
-        }
-      }
-
       // ── Stats ─────────────────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
@@ -1127,15 +1049,11 @@
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/api/uk/health");
-          await refreshFileList();
           loadStats();
 
           if (health.default_dataset) {
-            currentDataset = "compare.json";
-            const sel = document.getElementById("fileSelect");
-            if (sel) sel.value = "compare.json";
             showLoading("Loading UK data…");
-            await loadSelectedFile();
+            await loadSelectedFile("compare.json");
 
             const bucketCreatedEl = document.getElementById("bucketCreatedAt");
             if (bucketCreatedEl) bucketCreatedEl.textContent = "Source: ROUK · abelini · diamond-heavon";

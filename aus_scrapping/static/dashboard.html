@@ -144,14 +144,6 @@
       }
       .inp:focus { border-color: var(--accent); }
       .inp::placeholder { color: var(--muted); }
-      #fileSelect { min-width: 220px; cursor: pointer; }
-      #fileSelect option { background: var(--card); }
-      .upload-zone {
-        border: 1px dashed var(--border); border-radius: 6px; padding: 6px 12px;
-        cursor: pointer; font-size: 0.75rem; color: var(--muted); transition: all 0.2s; white-space: nowrap;
-      }
-      .upload-zone:hover { border-color: var(--accent); color: var(--accent); }
-      #csvFileInput { display: none; }
       .btn { border: none; padding: 7px 16px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
       .btn-gold { background: var(--accent); color: var(--bg); }
       .btn-gold:hover { opacity: 0.85; }
@@ -162,10 +154,6 @@
       .btn-back:hover { background: color-mix(in srgb, var(--accent) 20%, var(--card)); border-color: var(--accent); }
       .btn-logout { background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); margin-left: 0; }
       .btn-logout:hover { background: color-mix(in srgb, var(--red) 20%, var(--card)); }
-      .loaded-indicator { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--green); }
-      .loaded-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s ease-in-out infinite; }
-      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-
       /* ── HEADER ── */
       .header {
         padding: 28px 40px 20px; background: var(--surface);
@@ -468,36 +456,6 @@
 
     <!-- ══ TOPBAR ════════════════════════════════════════════════ -->
     <div class="topbar">
-      <div class="topbar-section">
-        <label>Dataset</label>
-        <select id="fileSelect" class="inp" onchange="loadSelectedFile()">
-          <option value="">— select a file —</option>
-        </select>
-        <button class="btn btn-gold btn-sm" onclick="refreshFileList()">↻ Refresh</button>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Upload File</label>
-        <div class="upload-zone" onclick="document.getElementById('csvFileInput').click()">⬆ Choose CSV or JSON</div>
-        <input type="file" id="csvFileInput" accept=".csv,.json" onchange="uploadAndConvert(event)" />
-        <span style="font-size:0.65rem;color:var(--muted)">(.csv or .json)</span>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Convert existing CSV</label>
-        <input type="text" id="csvNameInput" class="inp" placeholder="filename.csv" style="width:200px" />
-        <button class="btn btn-gold btn-sm" onclick="convertByName()">Convert</button>
-      </div>
-      <span class="sep">|</span>
-      <div class="topbar-section">
-        <label>Pipeline</label>
-        <button class="btn btn-gold btn-sm" onclick="runComparePipeline()" id="runCompareBtn">⚙ Run Compare</button>
-        <span id="runCompareStatus" style="font-size:0.68rem;color:var(--muted)"></span>
-      </div>
-      <div class="loaded-indicator" id="loadedIndicator" style="display:none;margin-left:auto">
-        <div class="loaded-dot"></div>
-        <span id="loadedLabel">—</span>
-      </div>
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
@@ -726,11 +684,6 @@
         ov.classList.add("hidden");
         setTimeout(() => (ov.style.display = "none"), 450);
       }
-      function markLoaded(label) {
-        document.getElementById("loadedLabel").textContent = label;
-        document.getElementById("loadedIndicator").style.display = "flex";
-      }
-
       // ── API ───────────────────────────────────────────────────────
       async function api(method, path, body = null, isForm = false) {
         const opts = { method, headers: {} };
@@ -753,74 +706,7 @@
         return res.json();
       }
 
-      // ── FILE MANAGEMENT ───────────────────────────────────────────
-      async function refreshFileList() {
-        try {
-          const data = await api("GET", "/api/roa/files");
-          const sel = document.getElementById("fileSelect");
-          const prev = sel.value;
-          sel.innerHTML = `<option value="">— select a file —</option>`;
-          data.files.forEach((f) => {
-            const o = document.createElement("option");
-            o.value = f.filename;
-            o.textContent = `${f.filename}  (${f.size_kb} KB · ${f.last_modified})`;
-            sel.appendChild(o);
-          });
-          if (prev) sel.value = prev;
-          toast(`${data.count} file(s) found in compare/`, "info");
-        } catch (e) {
-          toast("Could not load file list: " + e.message, "error");
-        }
-      }
-      async function loadSelectedFile() {
-        const filename = document.getElementById("fileSelect").value;
-        if (!filename) return;
-        showLoading("Loading " + filename + "…");
-        try {
-          const data = await api("GET", `/api/data/${filename}`);
-          ingestData(data, filename);
-        } catch (e) {
-          hideLoading();
-          toast("Failed to load: " + e.message, "error");
-        }
-      }
-      async function uploadAndConvert(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const isJSON = file.name.toLowerCase().endsWith(".json");
-        showLoading((isJSON ? "Uploading JSON " : "Uploading & converting ") + file.name + "…");
-        const form = new FormData();
-        form.append("file", file);
-        try {
-          const r = await api("POST", "/api/roa/upload", form, true);
-          toast(`[${isJSON ? "JSON" : "CSV→JSON"}] ${file.name} → ${r.file}  (${r.rows.toLocaleString()} rows)`, "success");
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Upload failed: " + e.message, "error");
-        }
-        event.target.value = "";
-      }
-      async function convertByName() {
-        const name = document.getElementById("csvNameInput").value.trim();
-        if (!name) { toast("Enter a CSV filename first", "error"); return; }
-        showLoading("Converting " + name + "…");
-        const form = new FormData();
-        form.append("csv_filename", name);
-        try {
-          const r = await api("POST", "/api/roa/convert", form, true);
-          toast(r.message + ` (${r.rows.toLocaleString()} rows)`, "success");
-          await refreshFileList();
-          document.getElementById("fileSelect").value = r.file;
-          await loadSelectedFile();
-        } catch (e) {
-          hideLoading();
-          toast("Convert failed: " + e.message, "error");
-        }
-      }
-      function ingestData(json, label = "") {
+      function ingestData(json) {
         if (!Array.isArray(json)) { hideLoading(); toast("Expected a JSON array", "error"); return; }
         _RAW_DATA = json;
         ALL_DATA = [...json];
@@ -835,7 +721,6 @@
         document.getElementById("certSearch").value = "";
         render();
         hideLoading();
-        markLoaded(label + "  (" + json.length.toLocaleString() + " rows)");
         toast(`Loaded ${json.length.toLocaleString()} records`, "success");
       }
 
@@ -1405,38 +1290,6 @@
       }
       function overlapGoPage(p) { overlapPage = p; renderModalTable(); }
 
-      // ── PIPELINE ───────────────────────────────────────────────────
-      async function runComparePipeline() {
-        const btn = document.getElementById("runCompareBtn"), st = document.getElementById("runCompareStatus");
-        btn.disabled = true; btn.textContent = "⏳ Running…";
-        st.textContent = "Building compare files…"; st.style.color = "var(--accent)";
-        try {
-          const r = await api("POST", "/api/roa/run-compare");
-          if (r.status === "ok") {
-            st.textContent = `✓ Done — ${r.rows.toLocaleString()} rows`; st.style.color = "var(--green)";
-            toast(`Compare pipeline complete — ${r.rows.toLocaleString()} records`, "success", 5000);
-            await refreshFileList();
-            loadStats();
-            VC_CACHE = {};
-            loadVendorCommonCards();
-            showLoading("Reloading compare.json…");
-            const data = await api("GET", "/api/roa/compare");
-            ingestData(data, "compare.json");
-            document.getElementById("fileSelect").value = "compare.json";
-            loadPartialData();
-            OVERLAP_DATA = [];
-          } else {
-            st.textContent = `✗ Error (code ${r.returncode})`; st.style.color = "var(--red)";
-            toast("Pipeline error — check server logs", "error", 6000);
-          }
-        } catch (e) {
-          st.textContent = "✗ Failed"; st.style.color = "var(--red)";
-          toast("Pipeline failed: " + e.message, "error");
-        } finally {
-          btn.disabled = false; btn.textContent = "⚙ Run Compare";
-        }
-      }
-
       // ── STATS ──────────────────────────────────────────────────────
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
@@ -1504,18 +1357,16 @@
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/api/roa/health");
-          await refreshFileList();
           loadStats();
           loadVendorCommonCards();
           if (health.default_dataset) {
             showLoading("Loading compare.json…");
             const data = await api("GET", "/api/roa/compare");
-            ingestData(data, "compare.json");
-            document.getElementById("fileSelect").value = "compare.json";
+            ingestData(data);
             loadPartialData();
           } else {
             hideLoading();
-            toast("No compare.json found — run pipeline or upload a CSV/JSON", "info", 6000);
+            toast("No compare.json found on the server", "info", 6000);
           }
         } catch (e) {
           hideLoading();
