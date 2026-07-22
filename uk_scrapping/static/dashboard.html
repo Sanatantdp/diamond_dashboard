@@ -421,25 +421,35 @@
     </div>
 
     <script>
-      const API_BASE = "";
+      const API_BASE = "/api/uk";
       let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
       if (!AUTH_TOKEN) window.location.href = "/";
       function logout() { sessionStorage.removeItem("diamond_token"); window.location.href = "/"; }
 
       // ── STATE ────────────────────────────────────────────────────
-      const PAGE_SIZE = 20;
-      let ALL_DATA = [], PARTIAL_DATA = [], filteredData = [];
-      let currentDataset = "compare.json";
+      // All rows/aggregates come from the server — we only ever hold the
+      // current page + bucket aggregates in memory (never a full dataset).
+      const PAGE_SIZE = 25;
+      let pageRows = [], pageTotal = 0;
+      let datasetTotal = 0;   // unfiltered total of compare.json (uk_compare_common)
+      let partialTotal = 0;   // unfiltered total of compare_partial.json
+      let aggregates = null;        // bucket aggregates for compare.json
+      let partialAggregates = null; // bucket aggregates for compare_partial.json
       let currentPage = 1;
       let priceMin = null, priceMax = null;
       let commonOnly = false;
+      // Single shared filter object for BOTH the top (price-bucket-paired) and
+      // bottom (independent) % cards — matches the markup, which wires the
+      // SAME clearBucketFilter() handler to both "Filtered" tags. `src`
+      // ("partial" | "common") tracks which section set it.
       let activeBucketFilter = null;
       let activePriceBucket = null;
       let selectedPriceVendorKey = null;
       let selectedVendorKey = null;
       let certSearch = "";
-      let tableMode = "all";
+      let tableMode = "all"; // legacy, kept so setTableMode handler doesn't break
       let sortCol = null, sortDir = "asc";
+      let renderToken = 0; // guards against stale, out-of-order fetches
 
       const BUCKETS = [
         { label: "< 0%",      min: -Infinity, max: 0,        color: "#3ecf8e" },
@@ -462,9 +472,35 @@
       ];
 
       const VENDOR_DEFS = [
-        { key: "abelini",       label: "Abelini",        color: "#3ecf8e", priceCol: "abelini Price Pound",       pctPattern: /abelini vs ROUK %/i,       diffCol: "abelini vs ROUK Pound" },
+        { key: "abelini",        label: "Abelini",        color: "#3ecf8e", priceCol: "abelini Price Pound",        pctPattern: /abelini vs ROUK %/i,        diffCol: "abelini vs ROUK Pound" },
         { key: "diamond-heavon", label: "Diamond-Heavon", color: "#60a5fa", priceCol: "diamond-heavon Price Pound", pctPattern: /diamond-heavon vs ROUK %/i, diffCol: "diamond-heavon vs ROUK Pound" },
       ];
+
+      // Display column label (as used in row JSON + sortTable() onclick attrs
+      // in the static markup) -> actual DB column name the /data endpoints
+      // sort on. Needed because sortTable() is called from static <th> tags
+      // with the display label, but the server's ORDER BY needs the real
+      // column (see UK_DB_TO_JSON in main.py).
+      const SORT_COL_MAP = {
+        "certificate_number":            "certificate_number",
+        "vendors_matched":               "vendors_matched",
+        "shape":                         "shape",
+        "color":                         "color",
+        "clarity":                       "clarity",
+        "cut":                           "cut",
+        "caratWeight":                   "carat_weight",
+        "diamond-heavon Price Pound":    "dh_price_gbp",
+        "diamond-heavon -30% Pound":     "dh_minus_30_gbp",
+        "diamond-heavon vs ROUK Pound":  "dh_vs_rouk_gbp",
+        "diamond-heavon vs ROUK %":      "dh_vs_rouk_pct",
+        "abelini Price Pound":           "ab_price_gbp",
+        "abelini -30% Pound":            "ab_minus_30_gbp",
+        "abelini vs ROUK Pound":         "ab_vs_rouk_gbp",
+        "abelini vs ROUK %":             "ab_vs_rouk_pct",
+        "ROUK Price Pound":              "rouk_price_gbp",
+        "ROUK -30% Pound":               "rouk_minus_30_gbp",
+        "diamond-heavon Link":           "dh_link",
+      };
 
       function getPct(row, vd) {
         const col = Object.keys(row).find(k => vd.pctPattern.test(k));
@@ -472,11 +508,9 @@
         const n = Number(row[col]);
         return isNaN(n) ? null : n;
       }
-      function vendorHasData(vd, src) {
-        return (src || ALL_DATA).some(r => {
-          const v = r[vd.priceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
+      function _vendorOptionsFromAggregates(ag) {
+        if (!ag || !ag.vendors) return [];
+        return VENDOR_DEFS.filter(vd => ag.vendors[vd.key] && (ag.vendors[vd.key].vendor_total || 0) > 0);
       }
 
       // ── Toast / loading ──────────────────────────────────────────
@@ -516,52 +550,34 @@
         return res.json();
       }
 
-      async function loadSelectedFile(filename = "compare.json") {
-        currentDataset = filename;
-        resetFilters();
-        showLoading("Loading " + filename + "…");
-        try {
-          const data = await api("GET", `/api/uk/data/${filename}`);
-          ALL_DATA = Array.isArray(data) ? data : [];
-
-          // also try loading partial for price bucket section
-          if (filename === "compare.json") {
-            try {
-              const pd = await api("GET", "/api/uk/data/compare_partial.json");
-              PARTIAL_DATA = Array.isArray(pd) ? pd : [];
-            } catch { PARTIAL_DATA = [...ALL_DATA]; }
-          } else {
-            PARTIAL_DATA = [...ALL_DATA];
-          }
-
-          hideLoading();
-          toast(`Loaded ${ALL_DATA.length.toLocaleString()} records`, "success");
-          document.getElementById("totalCount").textContent = ALL_DATA.length.toLocaleString();
-          render();
-        } catch (e) {
-          hideLoading();
-          toast("Failed to load: " + e.message, "error");
+      // ── Build query params for /data/* (server-side filters) ──────
+      function buildFilterParams(extraOffset = null) {
+        const p = new URLSearchParams();
+        p.set("limit", PAGE_SIZE);
+        p.set("offset", extraOffset !== null ? extraOffset : (currentPage - 1) * PAGE_SIZE);
+        if (certSearch) p.set("cert", certSearch);
+        if (priceMin !== null) p.set("price_min", priceMin);
+        if (priceMax !== null) p.set("price_max", priceMax);
+        if (commonOnly) p.set("common_only", "true");
+        if (activeBucketFilter)
+          p.set("vendor_pct", activeBucketFilter.vendorKey + ":" + activeBucketFilter.bucketIdx);
+        if (activePriceBucket !== null && selectedPriceVendorKey)
+          p.set("vendor_price", selectedPriceVendorKey + ":" + activePriceBucket);
+        if (sortCol) {
+          p.set("sort_col", SORT_COL_MAP[sortCol] || sortCol);
+          p.set("sort_dir", sortDir);
         }
+        return p;
+      }
+      // Top pct cards / price buckets are always drawn from compare_partial.json;
+      // the main table switches to it too whenever one of those filters is active.
+      function getActiveTableFilename() {
+        const usePartial = activePriceBucket !== null ||
+          (activeBucketFilter && activeBucketFilter.src === "partial");
+        return usePartial ? "compare_partial.json" : "compare.json";
       }
 
-      function resetFilters() {
-        priceMin = priceMax = null;
-        certSearch = "";
-        commonOnly = false;
-        activeBucketFilter = null;
-        activePriceBucket = null;
-        selectedPriceVendorKey = null;
-        selectedVendorKey = null;
-        currentPage = 1;
-        document.getElementById("priceMin").value = "";
-        document.getElementById("priceMax").value = "";
-        document.getElementById("certSearch").value = "";
-        const ct = document.getElementById("commonTab");
-        if (ct) ct.classList.remove("active");
-        document.querySelectorAll(".tab").forEach((t, i) => t.classList.toggle("active", i === 0));
-      }
-
-      // ── Filter handlers ──────────────────────────────────────────
+      // ── FILTER HANDLERS (every change triggers a fresh server fetch) ──
       function applyPriceFilter() {
         const mn = document.getElementById("priceMin").value,
               mx = document.getElementById("priceMax").value;
@@ -618,60 +634,15 @@
       }
       function goPage(p) { currentPage = p; render(); }
 
-      // ── Apply filters (client-side) ──────────────────────────────
-      function applyFilters() {
-        const usePartial = activePriceBucket !== null ||
-          (activeBucketFilter && activeBucketFilter.src === "partial");
-        const SRC = usePartial ? PARTIAL_DATA : ALL_DATA;
-        filteredData = SRC.filter(row => {
-          const rouk = Number(row["ROUK Price Pound"]);
-          if (priceMin !== null && rouk < priceMin) return false;
-          if (priceMax !== null && rouk > priceMax) return false;
-          if (certSearch && !String(row["certificate_number"] ?? "").includes(certSearch)) return false;
-          if (activeBucketFilter) {
-            const { vendorKey, bucketIdx } = activeBucketFilter;
-            const vd = VENDOR_DEFS.find(v => v.key === vendorKey);
-            const b  = BUCKETS[bucketIdx];
-            const p  = getPct(row, vd);
-            if (p === null || p < b.min || p >= b.max) return false;
-          }
-          if (activePriceBucket !== null) {
-            const pb  = PRICE_BUCKETS[activePriceBucket];
-            const pvd = VENDOR_DEFS.find(v => v.key === selectedPriceVendorKey);
-            if (pvd) {
-              const price = Number(row[pvd.priceCol]);
-              if (isNaN(price) || price <= 0 || price < pb.min || price >= pb.max) return false;
-            }
-          }
-          if (commonOnly) {
-            const allPresent = VENDOR_DEFS.every(vd => {
-              const v = row[vd.priceCol];
-              return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-            }) && (() => {
-              const rv = row["ROUK Price Pound"];
-              return rv !== null && rv !== undefined && rv !== "" && Number(rv) !== 0;
-            })();
-            if (!allPresent) return false;
-          }
-          return true;
-        });
-      }
-
-      // ── Shared % card builder (client-side) ──────────────────────
-      function buildPctCards(vd, src, filterSrc) {
-        const total = src.filter(r => {
-          const v = r[vd.priceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        }).length || 1;
-
-        const hasPrice = r => { const v = Number(r[vd.priceCol]); return !isNaN(v) && v > 0; };
-        const counts = BUCKETS.map(b =>
-          src.filter(r => { if (!hasPrice(r)) return false; const p = getPct(r, vd); return p !== null && p >= b.min && p < b.max; }).length
-        );
+      // ── Shared % card builder — reads pre-aggregated bucket counts from
+      // the server (aggregates/partialAggregates) instead of scanning rows.
+      function buildPctCardsFromAgg(vd, vagg, total, filterSrc) {
+        const buckets = (vagg && vagg.pct_buckets) || [];
+        const counts = buckets.map(b => b.count || 0);
         const maxC = Math.max(...counts, 1);
 
         return BUCKETS.map((b, i) => {
-          const cnt = counts[i], isEmpty = cnt === 0;
+          const cnt = counts[i] || 0, isEmpty = cnt === 0;
           const isActive = activeBucketFilter &&
             activeBucketFilter.vendorKey === vd.key &&
             activeBucketFilter.bucketIdx === i &&
@@ -680,10 +651,7 @@
           const barW = ((cnt / maxC) * 100).toFixed(1);
           const color = isEmpty ? "var(--border)" : b.color;
 
-          // avg ROUK price for this bucket (only rows where vendor has a price)
-          const roukVals = src.filter(r => { if (!hasPrice(r)) return false; const p = getPct(r, vd); return p !== null && p >= b.min && p < b.max; })
-            .map(r => Number(r["ROUK Price Pound"])).filter(v => !isNaN(v) && v > 0);
-          const avgROUK = roukVals.length ? roukVals.reduce((a, x) => a + x, 0) / roukVals.length : null;
+          const avgROUK = buckets[i] && buckets[i].avg_rouk != null ? Number(buckets[i].avg_rouk) : null;
           const avgRow = (!isEmpty && avgROUK !== null)
             ? `<div class="avg-info-row"><div class="avg-info-item"><span class="avg-info-label">Avg ROUK Price</span><span class="avg-info-val" style="color:var(--muted)">£${avgROUK.toFixed(0)}</span></div></div>`
             : "";
@@ -693,7 +661,7 @@
             onclick="${isEmpty ? "" : "togglePctBucket('" + vd.key + "'," + i + ",'" + filterSrc + "')"}">
             <div class="pb-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
             <div class="pb-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
-            <div class="pb-pct-of-total" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of ${total.toLocaleString()} ${filterSrc === "common" ? "common" : "matched"}</div>
+            <div class="pb-pct-of-total" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of ${total.toLocaleString()} ${filterSrc === "common" ? "total" : "matched"}</div>
             <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${color}"></div></div>
             ${avgRow}
           </div>`;
@@ -703,20 +671,17 @@
       // ── Render: Price vendor tabs ────────────────────────────────
       function renderPriceVendorTabs() {
         const tabsEl = document.getElementById("priceVendorTabs");
-        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length) { tabsEl.innerHTML = ""; return; }
-        const av = VENDOR_DEFS.filter(vd => vendorHasData(vd, SRC));
+        const ag = partialAggregates;
+        if (!ag || !ag.vendors) { tabsEl.innerHTML = ""; return; }
+        const av = _vendorOptionsFromAggregates(ag);
         if (!av.length) { tabsEl.innerHTML = ""; return; }
         if (!selectedPriceVendorKey || !av.find(v => v.key === selectedPriceVendorKey))
           selectedPriceVendorKey = av[0].key;
-        const srcLabel = PARTIAL_DATA.length
-          ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from compare_partial (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+        const srcLabel = (ag.total || 0)
+          ? `<span style="font-size:.58rem;color:var(--green);margin-left:8px;align-self:center">✓ from compare_partial (${(ag.total || 0).toLocaleString()} matched)</span>`
           : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial empty</span>`;
         tabsEl.innerHTML = av.map(vd => {
-          const total = SRC.filter(r => {
-            const v = r[vd.priceCol];
-            return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-          }).length;
+          const total = ag.vendors[vd.key].vendor_total || 0;
           return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
         }).join("") + srcLabel;
       }
@@ -725,58 +690,40 @@
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
         const tag  = document.getElementById("activePriceBucketTag");
-        const SRC  = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length) {
+        const ag   = partialAggregates;
+        if (!ag || !ag.vendors) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
           if (tag) tag.style.display = "none"; return;
         }
         const vd = VENDOR_DEFS.find(v => v.key === selectedPriceVendorKey);
-        if (!vd) { grid.innerHTML = ""; if (tag) tag.style.display = "none"; return; }
+        if (!vd || !ag.vendors[vd.key]) { grid.innerHTML = ""; if (tag) tag.style.display = "none"; return; }
 
-        const vendorRows = SRC.filter(r => {
-          const v = r[vd.priceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
-        const total   = vendorRows.length || 1;
-        const buckets = PRICE_BUCKETS.map((pb, i) => {
-          const rows = vendorRows.filter(r => {
-            const p = Number(r[vd.priceCol]);
-            return !isNaN(p) && p >= pb.min && p < pb.max;
-          });
-          const roukVals = rows.map(r => Number(r["ROUK Price Pound"])).filter(v => !isNaN(v) && v > 0);
-          const avgROUK  = roukVals.length ? roukVals.reduce((a, x) => a + x, 0) / roukVals.length : null;
-
-          // avg % per vendor
-          const avgPcts = VENDOR_DEFS.map(av => {
-            const vals = rows.map(r => getPct(r, av)).filter(v => v !== null);
-            return { vd: av, avg: vals.length ? vals.reduce((a, x) => a + x, 0) / vals.length : null };
-          });
-          return { pb, count: rows.length, avgROUK, avgPcts, idx: i };
-        });
-        const nonEmpty  = buckets.filter(b => b.count > 0);
-        const maxCount  = Math.max(...nonEmpty.map(b => b.count), 1);
+        const vagg    = ag.vendors[vd.key];
+        const total   = vagg.vendor_total || 1;
+        const buckets = vagg.price_buckets || [];
+        const nonEmpty = buckets.filter(b => (b.count || 0) > 0);
+        const maxCount = Math.max(...nonEmpty.map(b => b.count), 1);
 
         if (!nonEmpty.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No price data for ${vd.label}</h3></div>`;
           if (tag) tag.style.display = "none"; return;
         }
 
-        grid.innerHTML = nonEmpty.map(({ pb, count, avgROUK, avgPcts, idx }) => {
-          const isActive   = activePriceBucket === idx;
-          const pctOfTotal = ((count / total) * 100).toFixed(1);
-          const barW       = ((count / maxCount) * 100).toFixed(1);
-          const avgRows    = avgPcts.map(({ vd: av, avg }) => {
-            const valStr  = avg === null ? "—" : `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%`;
-            const valColor = avg === null ? "var(--muted)" : avg < 0 ? "#3ecf8e" : avg < 100 ? "#60a5fa" : avg < 200 ? "#c9a84c" : "#f87171";
-            return `<div class="avg-info-item"><span class="avg-info-label" style="color:${av.color}">${av.label} vs ROUK</span><span class="avg-info-val" style="color:${valColor}">${valStr}</span></div>`;
-          }).join("");
-          const avgROUKStr = avgROUK !== null ? `<div class="avg-info-item"><span class="avg-info-label">Avg ROUK Price</span><span class="avg-info-val" style="color:var(--muted)">£${avgROUK.toFixed(0)}</span></div>` : "";
-          return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})">
+        grid.innerHTML = nonEmpty.map(b => {
+          const pb = PRICE_BUCKETS[b.idx];
+          const isActive   = activePriceBucket === b.idx;
+          const pctOfTotal = ((b.count / total) * 100).toFixed(1);
+          const barW       = ((b.count / maxCount) * 100).toFixed(1);
+          const avgROUK    = b.avg_rouk != null ? Number(b.avg_rouk) : null;
+          const avgRow     = avgROUK !== null
+            ? `<div class="avg-info-row"><div class="avg-info-item"><span class="avg-info-label">Avg ROUK Price</span><span class="avg-info-val" style="color:var(--muted)">£${avgROUK.toFixed(0)}</span></div></div>`
+            : "";
+          return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${b.idx})">
             <div class="pb-range">${pb.label}</div>
-            <div class="pb-count">${count.toLocaleString()}</div>
+            <div class="pb-count">${b.count.toLocaleString()}</div>
             <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
             <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${pb.color}"></div></div>
-            <div class="avg-info-row">${avgRows}${avgROUKStr}</div>
+            ${avgRow}
           </div>`;
         }).join("");
 
@@ -791,12 +738,13 @@
       function renderPctBucketsTop() {
         const grid   = document.getElementById("pctBucketsTopGrid");
         const tagTop = document.getElementById("activeBucketTagTop");
-        const SRC    = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length) { grid.innerHTML = ""; if (tagTop) tagTop.style.display = "none"; return; }
+        const ag     = partialAggregates;
+        if (!ag || !ag.vendors || !selectedPriceVendorKey) { grid.innerHTML = ""; if (tagTop) tagTop.style.display = "none"; return; }
         const vd = VENDOR_DEFS.find(v => v.key === selectedPriceVendorKey);
-        if (!vd) { grid.innerHTML = ""; if (tagTop) tagTop.style.display = "none"; return; }
+        if (!vd || !ag.vendors[vd.key]) { grid.innerHTML = ""; if (tagTop) tagTop.style.display = "none"; return; }
 
-        grid.innerHTML = buildPctCards(vd, SRC, "partial");
+        const vagg = ag.vendors[vd.key];
+        grid.innerHTML = buildPctCardsFromAgg(vd, vagg, vagg.vendor_total || 1, "partial");
 
         if (activeBucketFilter && activeBucketFilter.src === "partial" && activeBucketFilter.vendorKey === selectedPriceVendorKey) {
           document.getElementById("activeBucketTagTopText").textContent = `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
@@ -807,32 +755,32 @@
       // ── Render: Vendor tabs (independent %) ─────────────────────
       function renderVendorTabs() {
         const tabsEl = document.getElementById("vendorTabs");
-        if (!ALL_DATA.length) { tabsEl.innerHTML = ""; return; }
-        const av = VENDOR_DEFS.filter(vd => vendorHasData(vd, ALL_DATA));
+        const ag = aggregates;
+        if (!ag || !ag.vendors) { tabsEl.innerHTML = ""; return; }
+        const av = _vendorOptionsFromAggregates(ag);
         if (!av.length) { tabsEl.innerHTML = ""; return; }
         if (!selectedVendorKey || !av.find(v => v.key === selectedVendorKey))
           selectedVendorKey = av[0].key;
         tabsEl.innerHTML = av.map(vd => {
-          const total = ALL_DATA.filter(r => {
-            const v = r[vd.priceCol];
-            return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-          }).length;
+          const total = ag.vendors[vd.key].vendor_total || 0;
           return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')"><span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
         }).join("");
       }
 
-      // ── Render: % buckets (independent, all data) ───────────────
+      // ── Render: % buckets (independent, common data) ────────────
       function renderPctBuckets() {
         const grid = document.getElementById("pctBucketsGrid");
         const tag  = document.getElementById("activeBucketTag");
-        if (!ALL_DATA.length) {
+        const ag   = aggregates;
+        if (!ag || !ag.vendors) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
           if (tag) tag.style.display = "none"; return;
         }
         const vd = VENDOR_DEFS.find(v => v.key === selectedVendorKey);
-        if (!vd) { grid.innerHTML = ""; if (tag) tag.style.display = "none"; return; }
+        if (!vd || !ag.vendors[vd.key]) { grid.innerHTML = ""; if (tag) tag.style.display = "none"; return; }
 
-        grid.innerHTML = buildPctCards(vd, ALL_DATA, "common");
+        const vagg = ag.vendors[vd.key];
+        grid.innerHTML = buildPctCardsFromAgg(vd, vagg, ag.total || 1, "common");
 
         if (activeBucketFilter && activeBucketFilter.src === "common" && activeBucketFilter.vendorKey === selectedVendorKey) {
           document.getElementById("activeBucketTagText").textContent = `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
@@ -901,15 +849,14 @@
           if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
             th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
         });
-        document.getElementById("tableCount").textContent = `— ${filteredData.length.toLocaleString()} records`;
-        document.getElementById("matchedCount").textContent = filteredData.length.toLocaleString();
-        const tp = Math.max(1, Math.ceil(filteredData.length / PAGE_SIZE));
+        document.getElementById("tableCount").textContent = `— ${pageTotal.toLocaleString()} records`;
+        document.getElementById("matchedCount").textContent = pageTotal.toLocaleString();
+        const tp = Math.max(1, Math.ceil(pageTotal / PAGE_SIZE));
         currentPage = Math.min(currentPage, tp);
-        const pageRows = filteredData.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
         if (!pageRows.length) {
           document.getElementById("tableBody").innerHTML =
-            `<tr><td colspan="15"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+            `<tr><td colspan="15"><div class="empty-state"><div class="icon">💎</div>${datasetTotal ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
           document.getElementById("pagination").innerHTML = "";
           return;
         }
@@ -956,15 +903,59 @@
         document.getElementById("pagination").innerHTML = pages;
       }
 
-      // ── Master render ────────────────────────────────────────────
-      function render() {
-        applyFilters();
-        if (sortCol) {
-          filteredData.sort((a, b) => {
-            const av = a[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(a[sortCol]);
-            const bv = b[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(b[sortCol]);
-            return sortDir === "asc" ? av - bv : bv - av;
-          });
+      // ── FETCH (page + aggregates) ─────────────────────────────────
+      async function fetchPage() {
+        const filename = getActiveTableFilename();
+        const params = buildFilterParams();
+        const res = await api("GET", `/data/${filename}?${params.toString()}`);
+        pageRows = Array.isArray(res.rows) ? res.rows : [];
+        pageTotal = Number(res.total || 0);
+      }
+      async function fetchAggregates() {
+        // Bucket panels always show the full, unfiltered breakdown — only the
+        // table rows (fetchPage) apply the active filters. Fetched once each
+        // since UK has a single fixed base dataset (no dataset switcher).
+        if (partialAggregates === null) {
+          try {
+            const r = await api("GET", `/aggregates?dataset=compare_partial.json`);
+            partialAggregates = r;
+            partialTotal = Number(r.total || 0);
+          } catch (e) {
+            partialAggregates = { vendors: {}, total: 0 };
+          }
+        }
+        if (aggregates === null) {
+          try {
+            const r = await api("GET", `/aggregates?dataset=compare.json`);
+            aggregates = r;
+            datasetTotal = Number(r.total || 0);
+          } catch (e) {
+            aggregates = { vendors: {}, total: 0 };
+          }
+        }
+      }
+
+      // ── Master render (token guard against stale fetches) ─────────
+      async function render() {
+        const token = ++renderToken;
+        try {
+          await Promise.all([fetchPage(), fetchAggregates()]);
+        } catch (e) {
+          if (token === renderToken) toast("Load failed: " + e.message, "error");
+          return;
+        }
+        if (token !== renderToken) return;
+
+        document.getElementById("totalCount").textContent = datasetTotal.toLocaleString();
+        const tl = document.getElementById("tableSourceLabel");
+        if (tl) {
+          if (getActiveTableFilename() === "compare_partial.json") {
+            tl.textContent = "· showing compare_partial.json (matched)";
+            tl.style.color = "#60a5fa";
+          } else {
+            tl.textContent = "· showing compare.json";
+            tl.style.color = "var(--muted)";
+          }
         }
         renderPriceVendorTabs();
         renderPriceBuckets();
@@ -979,7 +970,7 @@
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
         try {
-          const s = await api("GET", "/api/uk/status");
+          const s = await api("GET", "/status");
           renderStats(s);
         } catch (e) {
           panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> to generate statistics</div></div>`;
@@ -1050,15 +1041,22 @@
       async function startDashboard() {
         showLoading("Connecting to API…");
         try {
-          const health = await api("GET", "/api/uk/health");
+          const health = await api("GET", "/health");
           loadStats();
 
           if (health.default_dataset) {
-            showLoading("Loading UK data…");
-            await loadSelectedFile("compare.json");
+            showLoading("Loading paginated data from PostgreSQL…");
+            await render();
+            hideLoading();
 
             const bucketCreatedEl = document.getElementById("bucketCreatedAt");
             if (bucketCreatedEl) bucketCreatedEl.textContent = "Source: ROUK · abelini · diamond-heavon";
+
+            if (partialTotal > 0) {
+              toast(`✓ Loaded — ${datasetTotal.toLocaleString()} common · ${partialTotal.toLocaleString()} partial`, "success", 3000);
+            } else {
+              toast(`✓ Loaded ${datasetTotal.toLocaleString()} records`, "success", 3000);
+            }
           } else {
             hideLoading();
             toast("UK database is empty — run the pipeline first", "info", 6000);

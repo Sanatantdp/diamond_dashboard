@@ -35,7 +35,7 @@ UK_DIR = BASE_DIR / "uk_scrapping"
 UK_STATIC_DIR = UK_DIR / "static"
 UK_COMPARE_DIR = UK_DIR / "compare" / "uk"
 
-ROA_DIR = BASE_DIR / "roa_scrapping"
+ROA_DIR = BASE_DIR / "aus_scrapping"
 ROA_STATIC_DIR = ROA_DIR / "static"
 
 ROG_DIR = BASE_DIR / "germany_scrapping"
@@ -227,13 +227,16 @@ DEFAULT_LIMIT = 20
 # ============================================================================
 # Filter -> WHERE clause builder
 # ============================================================================
-def _parse_bucket_param(raw: str | None) -> tuple[str | None, int | None]:
+def _parse_bucket_param(
+    raw: str | None, valid_keys: dict | set | None = None
+) -> tuple[str | None, int | None]:
     """Parse 'lg:3' -> ('lg', 3). Returns (None, None) on invalid."""
     if not raw or ":" not in raw:
         return None, None
     vendor_key, idx_s = raw.split(":", 1)
     vendor_key = vendor_key.strip()
-    if vendor_key not in VENDOR_COLS:
+    valid = valid_keys if valid_keys is not None else VENDOR_COLS
+    if vendor_key not in valid:
         return None, None
     try:
         idx = int(idx_s)
@@ -650,18 +653,201 @@ ROG_VENDOR_PRICE_COL = {
     "77diamonds": "d77_price_eur",
     "renesim":    "renesim_price_eur",
 }
+ROG_VENDOR_PCT_COL = {
+    "novita":     "novita_vs_rog_pct",
+    "77diamonds": "d77_vs_rog_pct",
+    "renesim":    "renesim_vs_rog_pct",
+}
+
+ROG_DEFAULT_LIMIT = 25
+ROG_MAX_LIMIT = 500
 
 
-def _fetch_all_rog(table: str, where_sql: str = "", where_args: list | None = None) -> list[dict]:
+def _rog_build_where(
+    table: str,
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> tuple[str, list]:
+    """Build a SQL WHERE clause + parameter list from the request's filter params."""
+    clauses: list[str] = list(extra_clauses or [])
+    args: list[Any] = list(extra_args or [])
+
+    cert = (params.get("cert") or "").strip()
+    if cert:
+        clauses.append('"certificate_number"::text ILIKE %s')
+        args.append(f"%{cert}%")
+
+    pmin = params.get("price_min")
+    pmax = params.get("price_max")
+    if pmin not in (None, ""):
+        try:
+            clauses.append('"rog_price_eur" >= %s'); args.append(float(pmin))
+        except ValueError:
+            pass
+    if pmax not in (None, ""):
+        try:
+            clauses.append('"rog_price_eur" <= %s'); args.append(float(pmax))
+        except ValueError:
+            pass
+
+    vp_key, vp_idx = _parse_bucket_param(params.get("vendor_pct"), ROG_VENDOR_PCT_COL)
+    if vp_key and vp_idx is not None and 0 <= vp_idx < len(PCT_BUCKETS):
+        col = ROG_VENDOR_PCT_COL[vp_key]
+        bucket = PCT_BUCKETS[vp_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL')
+
+    vpr_key, vpr_idx = _parse_bucket_param(params.get("vendor_price"), ROG_VENDOR_PRICE_COL)
+    if vpr_key and vpr_idx is not None and 0 <= vpr_idx < len(PRICE_BUCKETS):
+        col = ROG_VENDOR_PRICE_COL[vpr_key]
+        bucket = PRICE_BUCKETS[vpr_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL AND "{col}" > 0')
+
+    if (params.get("common_only") or "").lower() == "true":
+        for c in ROG_VENDOR_PRICE_COL.values():
+            clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, args
+
+
+def _fetch_rog_rows_paginated(
+    table: str,
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> dict:
+    """Paginated + filtered row fetch — never loads a whole ROG table into memory."""
     if table not in ROG_ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Unknown ROG table: {table}")
+
+    limit = _clamp_int(params.get("limit"), ROG_DEFAULT_LIMIT, 1, ROG_MAX_LIMIT)
+    offset = _clamp_int(params.get("offset"), 0, 0, 10_000_000)
+
+    where_sql, where_args = _rog_build_where(table, params, extra_clauses, extra_args)
+
+    sort_col = _sanitize_sort(params.get("sort_col"), ROG_DB_TO_JSON)
+    sort_dir = "ASC" if (params.get("sort_dir") or "asc").lower() == "asc" else "DESC"
+    order_sql = f'ORDER BY "{sort_col}" {sort_dir} NULLS LAST' if sort_col else ""
+
     db_cols = list(ROG_DB_TO_JSON.keys())
     cols_sql = ", ".join(f'"{c}"' for c in db_cols)
-    sql = f'SELECT {cols_sql} FROM "{table}" {where_sql}'
+
+    rows_sql = f'SELECT {cols_sql} FROM "{table}" {where_sql} {order_sql} LIMIT %s OFFSET %s'
+    count_sql = f'SELECT COUNT(*) AS c FROM "{table}" {where_sql}'
+
     with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, where_args or [])
+        cur.execute(count_sql, where_args)
+        total = int(cur.fetchone()["c"])
+        cur.execute(rows_sql, [*where_args, limit, offset])
         raw = cur.fetchall()
-    return [{ROG_DB_TO_JSON[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+
+    out_rows = [{ROG_DB_TO_JSON[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+    return {"rows": out_rows, "total": total, "limit": limit, "offset": offset}
+
+
+def _rog_aggregate_sql_for_vendor(vendor_key: str) -> tuple[list[str], list[str]] | None:
+    """Returns (pct_expressions, price_expressions) for the SELECT clause."""
+    pct_col = ROG_VENDOR_PCT_COL.get(vendor_key)
+    price_col = ROG_VENDOR_PRICE_COL.get(vendor_key)
+    if not pct_col or not price_col:
+        return None
+
+    pct_exprs: list[str] = []
+    for i, b in enumerate(PCT_BUCKETS):
+        conds = [f'"{pct_col}" IS NOT NULL']
+        if b["min"] is not None:
+            conds.append(f'"{pct_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{pct_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        pct_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS pct_{vendor_key}_{i}_cnt')
+        pct_exprs.append(
+            f'AVG("rog_price_eur") FILTER (WHERE {cond_sql} AND "rog_price_eur" > 0) '
+            f'AS pct_{vendor_key}_{i}_avgrog'
+        )
+
+    price_exprs: list[str] = []
+    for i, b in enumerate(PRICE_BUCKETS):
+        conds = [f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0']
+        if b["min"] is not None:
+            conds.append(f'"{price_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{price_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        price_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS price_{vendor_key}_{i}_cnt')
+        price_exprs.append(
+            f'AVG("rog_price_eur") FILTER (WHERE {cond_sql} AND "rog_price_eur" > 0) '
+            f'AS price_{vendor_key}_{i}_avgrog'
+        )
+
+    pct_exprs.append(
+        f'COUNT(*) FILTER (WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0) '
+        f'AS vendor_{vendor_key}_total'
+    )
+    return pct_exprs, price_exprs
+
+
+def _compute_rog_aggregates(table: str, params: dict) -> dict:
+    """One aggregate query returning bucket counts + averages for all ROG vendors."""
+    if table not in ROG_ALLOWED_TABLES:
+        return {"vendors": {}, "total": 0}
+
+    where_sql, where_args = _rog_build_where(table, params)
+
+    select_exprs: list[str] = ['COUNT(*) AS total_rows']
+    active_vendors: list[str] = []
+    for vk in ("novita", "77diamonds", "renesim"):
+        out = _rog_aggregate_sql_for_vendor(vk)
+        if out is None:
+            continue
+        pct_exprs, price_exprs = out
+        select_exprs.extend(pct_exprs)
+        select_exprs.extend(price_exprs)
+        active_vendors.append(vk)
+
+    sql = f'SELECT {", ".join(select_exprs)} FROM "{table}" {where_sql}'
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, where_args)
+        row = cur.fetchone()
+
+    def _f(key: str) -> float | None:
+        v = row.get(key)
+        return None if v is None else _jsonify_value(v)
+
+    vendors: dict[str, dict] = {}
+    for vk in active_vendors:
+        pct_bs = [
+            {
+                "idx":     i,
+                "count":   int(row.get(f"pct_{vk}_{i}_cnt") or 0),
+                "avg_rog": _f(f"pct_{vk}_{i}_avgrog"),
+            }
+            for i in range(len(PCT_BUCKETS))
+        ]
+        price_bs = [
+            {
+                "idx":     i,
+                "count":   int(row.get(f"price_{vk}_{i}_cnt") or 0),
+                "avg_rog": _f(f"price_{vk}_{i}_avgrog"),
+            }
+            for i in range(len(PRICE_BUCKETS))
+        ]
+        vendors[vk] = {
+            "vendor_total":  int(row.get(f"vendor_{vk}_total") or 0),
+            "pct_buckets":   pct_bs,
+            "price_buckets": price_bs,
+        }
+
+    return {"vendors": vendors, "total": int(row.get("total_rows") or 0)}
 
 
 def _rog_table_row_count(table: str) -> int:
@@ -762,9 +948,12 @@ async def rog_list_datasets():
 
 
 @app.get("/api/rog/compare")
-async def rog_get_default_compare():
+async def rog_get_default_compare(request: Request):
+    """rog_compare_common, paginated (default 25/page) + server-side filters."""
     try:
-        return JSONResponse(content=_fetch_all_rog("rog_compare_common"))
+        return JSONResponse(content=_fetch_rog_rows_paginated(
+            "rog_compare_common", _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
@@ -772,17 +961,31 @@ async def rog_get_default_compare():
 
 
 @app.get("/api/rog/data/{filename}")
-async def rog_get_json_data(filename: str):
+async def rog_get_json_data(filename: str, request: Request):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if filename not in ROG_FILENAME_TO_TABLE:
         raise HTTPException(status_code=404, detail=f"Unknown ROG dataset: {filename}")
     try:
-        return JSONResponse(content=_fetch_all_rog(ROG_FILENAME_TO_TABLE[filename]))
+        return JSONResponse(content=_fetch_rog_rows_paginated(
+            ROG_FILENAME_TO_TABLE[filename], _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/rog/aggregates")
+async def rog_get_aggregates(request: Request, dataset: str = Query("compare_partial.json")):
+    """Per-vendor bucket counts + averages for the given ROG dataset, with filters applied."""
+    if dataset not in ROG_FILENAME_TO_TABLE:
+        raise HTTPException(status_code=404, detail=f"Unknown ROG dataset: {dataset}")
+    table = ROG_FILENAME_TO_TABLE[dataset]
+    try:
+        return JSONResponse(content=_compute_rog_aggregates(table, _params_dict(request)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Aggregate query failed: {e}")
 
 
 @app.get("/api/rog/status")
@@ -817,30 +1020,35 @@ async def rog_vendor_common_summary():
 
 
 @app.get("/api/rog/vendor-common/{vendor}")
-async def rog_vendor_common_rows(vendor: str):
+async def rog_vendor_common_rows(vendor: str, request: Request):
+    """Rows where this vendor AND ROG both have a price (matched set), paginated."""
     price_col = ROG_VENDOR_PRICE_COL.get(vendor)
     if not price_col:
         raise HTTPException(status_code=404, detail=f"Unknown ROG vendor: {vendor}")
-    where = (
-        f'WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0 '
-        f'AND "rog_price_eur" IS NOT NULL AND "rog_price_eur" > 0'
-    )
+    extra = [
+        f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0',
+        '"rog_price_eur" IS NOT NULL', '"rog_price_eur" > 0',
+    ]
     try:
-        return JSONResponse(content=_fetch_all_rog("rog_compare_all", where))
+        return JSONResponse(content=_fetch_rog_rows_paginated(
+            "rog_compare_all", _params_dict(request), extra_clauses=extra
+        ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/rog/vendor-overlap")
-async def rog_vendor_overlap():
-    """Diamonds whose certificate appears across novita, 77diamonds, and renesim."""
+async def rog_vendor_overlap(request: Request):
+    """Diamonds whose certificate appears across novita, 77diamonds, and renesim (paginated)."""
+    extra = [
+        clause
+        for col in ROG_VENDOR_PRICE_COL.values()
+        for clause in (f'"{col}" IS NOT NULL', f'"{col}" > 0')
+    ]
     try:
-        conditions = " AND ".join(
-            f'"{col}" IS NOT NULL AND "{col}" > 0'
-            for col in ROG_VENDOR_PRICE_COL.values()
-        )
-        where = f"WHERE {conditions}"
-        return JSONResponse(content=_fetch_all_rog("rog_compare_all", where))
+        return JSONResponse(content=_fetch_rog_rows_paginated(
+            "rog_compare_all", _params_dict(request), extra_clauses=extra
+        ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
@@ -1173,8 +1381,7 @@ async def health():
 # ============================================================================
 # ============================================================================
 # DB column -> the JSON key the UK dashboard expects (matches the keys written
-# by uk_scrapping/diamond_compare_uk.py). The UK dashboard does client-side
-# filtering/pagination, so these endpoints return full arrays.
+# by uk_scrapping/diamond_compare_uk.py).
 UK_DB_TO_JSON = {
     "certificate_number": "certificate_number",
     "vendors_matched":    "vendors_matched",
@@ -1208,19 +1415,207 @@ UK_VENDOR_PRICE_COL = {
     "diamond-heavon": "dh_price_gbp",
     "abelini":        "ab_price_gbp",
 }
+UK_VENDOR_PCT_COL = {
+    "diamond-heavon": "dh_vs_rouk_pct",
+    "abelini":        "ab_vs_rouk_pct",
+}
+
+UK_DEFAULT_LIMIT = 25
+UK_MAX_LIMIT = 500
 
 
-def _fetch_all_uk(table: str, where_sql: str = "", where_args: list | None = None) -> list[dict]:
-    """Return every row of a uk_* table as a list of dicts keyed by the UK JSON keys."""
+def _uk_build_where(
+    table: str,
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> tuple[str, list]:
+    """Build a SQL WHERE clause + parameter list from the request's filter params."""
+    clauses: list[str] = list(extra_clauses or [])
+    args: list[Any] = list(extra_args or [])
+
+    cert = (params.get("cert") or "").strip()
+    if cert:
+        clauses.append('"certificate_number"::text ILIKE %s')
+        args.append(f"%{cert}%")
+
+    pmin = params.get("price_min")
+    pmax = params.get("price_max")
+    if pmin not in (None, ""):
+        try:
+            clauses.append('"rouk_price_gbp" >= %s'); args.append(float(pmin))
+        except ValueError:
+            pass
+    if pmax not in (None, ""):
+        try:
+            clauses.append('"rouk_price_gbp" <= %s'); args.append(float(pmax))
+        except ValueError:
+            pass
+
+    vp_key, vp_idx = _parse_bucket_param(params.get("vendor_pct"), UK_VENDOR_PCT_COL)
+    if vp_key and vp_idx is not None and 0 <= vp_idx < len(PCT_BUCKETS):
+        col = UK_VENDOR_PCT_COL[vp_key]
+        bucket = PCT_BUCKETS[vp_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL')
+
+    vpr_key, vpr_idx = _parse_bucket_param(params.get("vendor_price"), UK_VENDOR_PRICE_COL)
+    if vpr_key and vpr_idx is not None and 0 <= vpr_idx < len(PRICE_BUCKETS):
+        col = UK_VENDOR_PRICE_COL[vpr_key]
+        bucket = PRICE_BUCKETS[vpr_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL AND "{col}" > 0')
+
+    if (params.get("common_only") or "").lower() == "true":
+        for c in UK_VENDOR_PRICE_COL.values():
+            clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, args
+
+
+def _fetch_uk_rows_paginated(
+    table: str,
+    key_map: dict[str, str],
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> dict:
+    """Paginated + filtered row fetch — never loads a whole UK table into memory."""
     if table not in UK_ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Unknown UK table: {table}")
-    db_cols = list(UK_DB_TO_JSON.keys())
+
+    limit = _clamp_int(params.get("limit"), UK_DEFAULT_LIMIT, 1, UK_MAX_LIMIT)
+    offset = _clamp_int(params.get("offset"), 0, 0, 10_000_000)
+
+    where_sql, where_args = _uk_build_where(table, params, extra_clauses, extra_args)
+
+    sort_col = _sanitize_sort(params.get("sort_col"), key_map)
+    sort_dir = "ASC" if (params.get("sort_dir") or "asc").lower() == "asc" else "DESC"
+    order_sql = f'ORDER BY "{sort_col}" {sort_dir} NULLS LAST' if sort_col else ""
+
+    db_cols = list(key_map.keys())
     cols_sql = ", ".join(f'"{c}"' for c in db_cols)
-    sql = f'SELECT {cols_sql} FROM "{table}" {where_sql}'
+
+    rows_sql = f'SELECT {cols_sql} FROM "{table}" {where_sql} {order_sql} LIMIT %s OFFSET %s'
+    count_sql = f'SELECT COUNT(*) AS c FROM "{table}" {where_sql}'
+
     with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, where_args or [])
+        cur.execute(count_sql, where_args)
+        total = int(cur.fetchone()["c"])
+        cur.execute(rows_sql, [*where_args, limit, offset])
         raw = cur.fetchall()
-    return [{UK_DB_TO_JSON[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+
+    out_rows = [{key_map[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+    return {"rows": out_rows, "total": total, "limit": limit, "offset": offset}
+
+
+def _uk_aggregate_sql_for_vendor(vendor_key: str) -> tuple[list[str], list[str]] | None:
+    """Returns (pct_expressions, price_expressions) for the SELECT clause."""
+    pct_col = UK_VENDOR_PCT_COL.get(vendor_key)
+    price_col = UK_VENDOR_PRICE_COL.get(vendor_key)
+    if not pct_col or not price_col:
+        return None
+
+    # SELECT aliases must be valid unquoted SQL identifiers — UK vendor keys
+    # like "diamond-heavon" contain a hyphen, which Postgres would otherwise
+    # parse as subtraction (e.g. "pct_diamond-heavon_0_cnt" -> syntax error).
+    safe_vk = vendor_key.replace("-", "_")
+
+    pct_exprs: list[str] = []
+    for i, b in enumerate(PCT_BUCKETS):
+        conds = [f'"{pct_col}" IS NOT NULL']
+        if b["min"] is not None:
+            conds.append(f'"{pct_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{pct_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        pct_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS pct_{safe_vk}_{i}_cnt')
+        pct_exprs.append(
+            f'AVG("rouk_price_gbp") FILTER (WHERE {cond_sql} AND "rouk_price_gbp" > 0) '
+            f'AS pct_{safe_vk}_{i}_avgrouk'
+        )
+
+    price_exprs: list[str] = []
+    for i, b in enumerate(PRICE_BUCKETS):
+        conds = [f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0']
+        if b["min"] is not None:
+            conds.append(f'"{price_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{price_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        price_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS price_{safe_vk}_{i}_cnt')
+        price_exprs.append(
+            f'AVG("rouk_price_gbp") FILTER (WHERE {cond_sql} AND "rouk_price_gbp" > 0) '
+            f'AS price_{safe_vk}_{i}_avgrouk'
+        )
+
+    pct_exprs.append(
+        f'COUNT(*) FILTER (WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0) '
+        f'AS vendor_{safe_vk}_total'
+    )
+    return pct_exprs, price_exprs
+
+
+def _compute_uk_aggregates(table: str, params: dict) -> dict:
+    """One aggregate query returning bucket counts + averages for all UK vendors."""
+    if table not in UK_ALLOWED_TABLES:
+        return {"vendors": {}, "total": 0}
+
+    where_sql, where_args = _uk_build_where(table, params)
+
+    select_exprs: list[str] = ['COUNT(*) AS total_rows']
+    active_vendors: list[str] = []
+    for vk in ("diamond-heavon", "abelini"):
+        out = _uk_aggregate_sql_for_vendor(vk)
+        if out is None:
+            continue
+        pct_exprs, price_exprs = out
+        select_exprs.extend(pct_exprs)
+        select_exprs.extend(price_exprs)
+        active_vendors.append(vk)
+
+    sql = f'SELECT {", ".join(select_exprs)} FROM "{table}" {where_sql}'
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, where_args)
+        row = cur.fetchone()
+
+    def _f(key: str) -> float | None:
+        v = row.get(key)
+        return None if v is None else _jsonify_value(v)
+
+    vendors: dict[str, dict] = {}
+    for vk in active_vendors:
+        safe_vk = vk.replace("-", "_")
+        pct_bs = [
+            {
+                "idx":      i,
+                "count":    int(row.get(f"pct_{safe_vk}_{i}_cnt") or 0),
+                "avg_rouk": _f(f"pct_{safe_vk}_{i}_avgrouk"),
+            }
+            for i in range(len(PCT_BUCKETS))
+        ]
+        price_bs = [
+            {
+                "idx":      i,
+                "count":    int(row.get(f"price_{safe_vk}_{i}_cnt") or 0),
+                "avg_rouk": _f(f"price_{safe_vk}_{i}_avgrouk"),
+            }
+            for i in range(len(PRICE_BUCKETS))
+        ]
+        vendors[vk] = {
+            "vendor_total":  int(row.get(f"vendor_{safe_vk}_total") or 0),
+            "pct_buckets":   pct_bs,
+            "price_buckets": price_bs,
+        }
+
+    return {"vendors": vendors, "total": int(row.get("total_rows") or 0)}
 
 
 def _uk_table_row_count(table: str) -> int:
@@ -1318,10 +1713,12 @@ async def uk_list_datasets():
 
 
 @app.get("/api/uk/compare")
-async def uk_get_default_compare():
-    """uk_compare_common (ROUK + all vendors), full array."""
+async def uk_get_default_compare(request: Request):
+    """uk_compare_common (ROUK + all vendors), paginated (default 25/page) + server-side filters."""
     try:
-        return JSONResponse(content=_fetch_all_uk("uk_compare_common"))
+        return JSONResponse(content=_fetch_uk_rows_paginated(
+            "uk_compare_common", UK_DB_TO_JSON, _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
@@ -1329,17 +1726,31 @@ async def uk_get_default_compare():
 
 
 @app.get("/api/uk/data/{filename}")
-async def uk_get_json_data(filename: str):
+async def uk_get_json_data(filename: str, request: Request):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if filename not in UK_FILENAME_TO_TABLE:
         raise HTTPException(status_code=404, detail=f"Unknown UK dataset: {filename}")
     try:
-        return JSONResponse(content=_fetch_all_uk(UK_FILENAME_TO_TABLE[filename]))
+        return JSONResponse(content=_fetch_uk_rows_paginated(
+            UK_FILENAME_TO_TABLE[filename], UK_DB_TO_JSON, _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/uk/aggregates")
+async def uk_get_aggregates(request: Request, dataset: str = Query("compare_partial.json")):
+    """Per-vendor bucket counts + averages for the given UK dataset, with filters applied."""
+    if dataset not in UK_FILENAME_TO_TABLE:
+        raise HTTPException(status_code=404, detail=f"Unknown UK dataset: {dataset}")
+    table = UK_FILENAME_TO_TABLE[dataset]
+    try:
+        return JSONResponse(content=_compute_uk_aggregates(table, _params_dict(request)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Aggregate query failed: {e}")
 
 
 @app.get("/api/uk/status")
@@ -1373,16 +1784,20 @@ async def uk_vendor_common_summary():
 
 
 @app.get("/api/uk/vendor-common/{vendor}")
-async def uk_vendor_common_rows(vendor: str):
-    """Rows where the given vendor AND ROUK both have a price (matched set)."""
+async def uk_vendor_common_rows(vendor: str, request: Request):
+    """Rows where the given vendor AND ROUK both have a price (matched set), paginated."""
     vendor = vendor.replace("_", "-") if vendor not in UK_VENDOR_PRICE_COL else vendor
     price_col = UK_VENDOR_PRICE_COL.get(vendor)
     if not price_col:
         raise HTTPException(status_code=404, detail=f"Unknown UK vendor: {vendor}")
-    where = (f'WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0 '
-             f'AND "rouk_price_gbp" IS NOT NULL AND "rouk_price_gbp" > 0')
+    extra = [
+        f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0',
+        '"rouk_price_gbp" IS NOT NULL', '"rouk_price_gbp" > 0',
+    ]
     try:
-        return JSONResponse(content=_fetch_all_uk("uk_compare_all", where))
+        return JSONResponse(content=_fetch_uk_rows_paginated(
+            "uk_compare_all", UK_DB_TO_JSON, _params_dict(request), extra_clauses=extra
+        ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
@@ -1474,24 +1889,218 @@ ROA_FILENAME_TO_TABLE = {
     "compare_partial.json": "roa_compare_partial",
     "compare_all.json":     "roa_compare_all",
 }
-ROA_ALLOWED_TABLES = set(ROA_FILENAME_TO_TABLE.values())
+# roa_compare_vendor_overlap isn't one of the JSON-filename datasets, but it's a
+# real paginated-fetch target (see roa_vendor_overlap below), so it must be
+# allowed through the same table-name guard as the filename-mapped tables.
+ROA_ALLOWED_TABLES = set(ROA_FILENAME_TO_TABLE.values()) | {"roa_compare_vendor_overlap"}
 
 ROA_VENDOR_PRICE_COL = {
     "cullen": "cullen_price_usd",
     "gs":     "gs_price_usd",
 }
+ROA_VENDOR_PCT_COL = {
+    "cullen": "cullen_vs_roa_pct",
+    "gs":     "gs_vs_roa_pct",
+}
+
+ROA_DEFAULT_LIMIT = 25
+ROA_MAX_LIMIT = 500
 
 
-def _fetch_all_roa(table: str, where_sql: str = "", where_args: list | None = None) -> list[dict]:
+def _roa_build_where(
+    table: str,
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> tuple[str, list]:
+    """Build a SQL WHERE clause + parameter list from the request's filter params."""
+    clauses: list[str] = list(extra_clauses or [])
+    args: list[Any] = list(extra_args or [])
+
+    cert = (params.get("cert") or "").strip()
+    if cert:
+        clauses.append('"certificate_number"::text ILIKE %s')
+        args.append(f"%{cert}%")
+
+    pmin = params.get("price_min")
+    pmax = params.get("price_max")
+    if pmin not in (None, ""):
+        try:
+            clauses.append('"roa_price_usd" >= %s'); args.append(float(pmin))
+        except ValueError:
+            pass
+    if pmax not in (None, ""):
+        try:
+            clauses.append('"roa_price_usd" <= %s'); args.append(float(pmax))
+        except ValueError:
+            pass
+
+    vp_key, vp_idx = _parse_bucket_param(params.get("vendor_pct"), ROA_VENDOR_PCT_COL)
+    if vp_key and vp_idx is not None and 0 <= vp_idx < len(PCT_BUCKETS):
+        col = ROA_VENDOR_PCT_COL[vp_key]
+        bucket = PCT_BUCKETS[vp_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL')
+
+    vpr_key, vpr_idx = _parse_bucket_param(params.get("vendor_price"), ROA_VENDOR_PRICE_COL)
+    if vpr_key and vpr_idx is not None and 0 <= vpr_idx < len(PRICE_BUCKETS):
+        col = ROA_VENDOR_PRICE_COL[vpr_key]
+        bucket = PRICE_BUCKETS[vpr_idx]
+        if bucket["min"] is not None:
+            clauses.append(f'"{col}" >= %s'); args.append(bucket["min"])
+        if bucket["max"] is not None:
+            clauses.append(f'"{col}" < %s'); args.append(bucket["max"])
+        clauses.append(f'"{col}" IS NOT NULL AND "{col}" > 0')
+
+    if (params.get("common_only") or "").lower() == "true":
+        for c in ROA_VENDOR_PRICE_COL.values():
+            clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, args
+
+
+def _fetch_roa_rows_paginated(
+    table: str,
+    key_map: dict[str, str],
+    params: dict,
+    extra_clauses: list[str] | None = None,
+    extra_args: list | None = None,
+) -> dict:
+    """Paginated + filtered row fetch — never loads a whole ROA table into memory.
+    key_map is explicit (not hardcoded to ROA_DB_TO_JSON) because ROA has a second,
+    smaller column map (ROA_OVERLAP_DB_TO_JSON) for roa_compare_vendor_overlap."""
     if table not in ROA_ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Unknown ROA table: {table}")
-    db_cols = list(ROA_DB_TO_JSON.keys())
+
+    limit = _clamp_int(params.get("limit"), ROA_DEFAULT_LIMIT, 1, ROA_MAX_LIMIT)
+    offset = _clamp_int(params.get("offset"), 0, 0, 10_000_000)
+
+    where_sql, where_args = _roa_build_where(table, params, extra_clauses, extra_args)
+
+    sort_col = _sanitize_sort(params.get("sort_col"), key_map)
+    sort_dir = "ASC" if (params.get("sort_dir") or "asc").lower() == "asc" else "DESC"
+    order_sql = f'ORDER BY "{sort_col}" {sort_dir} NULLS LAST' if sort_col else ""
+
+    db_cols = list(key_map.keys())
     cols_sql = ", ".join(f'"{c}"' for c in db_cols)
-    sql = f'SELECT {cols_sql} FROM "{table}" {where_sql}'
+
+    rows_sql = f'SELECT {cols_sql} FROM "{table}" {where_sql} {order_sql} LIMIT %s OFFSET %s'
+    count_sql = f'SELECT COUNT(*) AS c FROM "{table}" {where_sql}'
+
     with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, where_args or [])
+        cur.execute(count_sql, where_args)
+        total = int(cur.fetchone()["c"])
+        cur.execute(rows_sql, [*where_args, limit, offset])
         raw = cur.fetchall()
-    return [{ROA_DB_TO_JSON[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+
+    out_rows = [{key_map[c]: _jsonify_value(r[c]) for c in db_cols} for r in raw]
+    return {"rows": out_rows, "total": total, "limit": limit, "offset": offset}
+
+
+def _roa_aggregate_sql_for_vendor(vendor_key: str) -> tuple[list[str], list[str]] | None:
+    """Returns (pct_expressions, price_expressions) for the SELECT clause."""
+    pct_col = ROA_VENDOR_PCT_COL.get(vendor_key)
+    price_col = ROA_VENDOR_PRICE_COL.get(vendor_key)
+    if not pct_col or not price_col:
+        return None
+
+    # SELECT aliases must be valid unquoted SQL identifiers — sanitize hyphens
+    # (cheap insurance; current ROA vendor keys have none, but this keeps the
+    # pattern consistent with the UK port where it mattered).
+    safe_vk = vendor_key.replace("-", "_")
+
+    pct_exprs: list[str] = []
+    for i, b in enumerate(PCT_BUCKETS):
+        conds = [f'"{pct_col}" IS NOT NULL']
+        if b["min"] is not None:
+            conds.append(f'"{pct_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{pct_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        pct_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS pct_{safe_vk}_{i}_cnt')
+        pct_exprs.append(
+            f'AVG("roa_price_usd") FILTER (WHERE {cond_sql} AND "roa_price_usd" > 0) '
+            f'AS pct_{safe_vk}_{i}_avgroa'
+        )
+
+    price_exprs: list[str] = []
+    for i, b in enumerate(PRICE_BUCKETS):
+        conds = [f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0']
+        if b["min"] is not None:
+            conds.append(f'"{price_col}" >= {b["min"]}')
+        if b["max"] is not None:
+            conds.append(f'"{price_col}" < {b["max"]}')
+        cond_sql = " AND ".join(conds)
+        price_exprs.append(f'COUNT(*) FILTER (WHERE {cond_sql}) AS price_{safe_vk}_{i}_cnt')
+        price_exprs.append(
+            f'AVG("roa_price_usd") FILTER (WHERE {cond_sql} AND "roa_price_usd" > 0) '
+            f'AS price_{safe_vk}_{i}_avgroa'
+        )
+
+    pct_exprs.append(
+        f'COUNT(*) FILTER (WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0) '
+        f'AS vendor_{safe_vk}_total'
+    )
+    return pct_exprs, price_exprs
+
+
+def _compute_roa_aggregates(table: str, params: dict) -> dict:
+    """One aggregate query returning bucket counts + averages for all ROA vendors."""
+    if table not in ROA_ALLOWED_TABLES:
+        return {"vendors": {}, "total": 0}
+
+    where_sql, where_args = _roa_build_where(table, params)
+
+    select_exprs: list[str] = ['COUNT(*) AS total_rows']
+    active_vendors: list[str] = []
+    for vk in ("cullen", "gs"):
+        out = _roa_aggregate_sql_for_vendor(vk)
+        if out is None:
+            continue
+        pct_exprs, price_exprs = out
+        select_exprs.extend(pct_exprs)
+        select_exprs.extend(price_exprs)
+        active_vendors.append(vk)
+
+    sql = f'SELECT {", ".join(select_exprs)} FROM "{table}" {where_sql}'
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, where_args)
+        row = cur.fetchone()
+
+    def _f(key: str) -> float | None:
+        v = row.get(key)
+        return None if v is None else _jsonify_value(v)
+
+    vendors: dict[str, dict] = {}
+    for vk in active_vendors:
+        safe_vk = vk.replace("-", "_")
+        pct_bs = [
+            {
+                "idx":     i,
+                "count":   int(row.get(f"pct_{safe_vk}_{i}_cnt") or 0),
+                "avg_roa": _f(f"pct_{safe_vk}_{i}_avgroa"),
+            }
+            for i in range(len(PCT_BUCKETS))
+        ]
+        price_bs = [
+            {
+                "idx":     i,
+                "count":   int(row.get(f"price_{safe_vk}_{i}_cnt") or 0),
+                "avg_roa": _f(f"price_{safe_vk}_{i}_avgroa"),
+            }
+            for i in range(len(PRICE_BUCKETS))
+        ]
+        vendors[vk] = {
+            "vendor_total":  int(row.get(f"vendor_{safe_vk}_total") or 0),
+            "pct_buckets":   pct_bs,
+            "price_buckets": price_bs,
+        }
+
+    return {"vendors": vendors, "total": int(row.get("total_rows") or 0)}
 
 
 def _roa_table_row_count(table: str) -> int:
@@ -1588,10 +2197,12 @@ async def roa_list_datasets():
 
 
 @app.get("/api/roa/compare")
-async def roa_get_default_compare():
-    """roa_compare_common — all rows as an array."""
+async def roa_get_default_compare(request: Request):
+    """roa_compare_common, paginated (default 25/page) + server-side filters."""
     try:
-        return JSONResponse(content=_fetch_all_roa("roa_compare_common"))
+        return JSONResponse(content=_fetch_roa_rows_paginated(
+            "roa_compare_common", ROA_DB_TO_JSON, _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
@@ -1599,17 +2210,31 @@ async def roa_get_default_compare():
 
 
 @app.get("/api/roa/data/{filename}")
-async def roa_get_json_data(filename: str):
+async def roa_get_json_data(filename: str, request: Request):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if filename not in ROA_FILENAME_TO_TABLE:
         raise HTTPException(status_code=404, detail=f"Unknown ROA dataset: {filename}")
     try:
-        return JSONResponse(content=_fetch_all_roa(ROA_FILENAME_TO_TABLE[filename]))
+        return JSONResponse(content=_fetch_roa_rows_paginated(
+            ROA_FILENAME_TO_TABLE[filename], ROA_DB_TO_JSON, _params_dict(request)
+        ))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/roa/aggregates")
+async def roa_get_aggregates(request: Request, dataset: str = Query("compare_partial.json")):
+    """Per-vendor bucket counts + averages for the given ROA dataset, with filters applied."""
+    if dataset not in ROA_FILENAME_TO_TABLE:
+        raise HTTPException(status_code=404, detail=f"Unknown ROA dataset: {dataset}")
+    table = ROA_FILENAME_TO_TABLE[dataset]
+    try:
+        return JSONResponse(content=_compute_roa_aggregates(table, _params_dict(request)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Aggregate query failed: {e}")
 
 
 @app.get("/api/roa/status")
@@ -1644,35 +2269,34 @@ async def roa_vendor_common_summary():
 
 
 @app.get("/api/roa/vendor-common/{vendor}")
-async def roa_vendor_common_rows(vendor: str):
-    """Rows where this vendor AND ROA both have a price."""
+async def roa_vendor_common_rows(vendor: str, request: Request):
+    """Rows where this vendor AND ROA both have a price (matched set), paginated."""
     price_col = ROA_VENDOR_PRICE_COL.get(vendor)
     if not price_col:
         raise HTTPException(status_code=404, detail=f"Unknown ROA vendor: {vendor}")
-    where = (
-        f'WHERE "{price_col}" IS NOT NULL AND "{price_col}" > 0 '
-        f'AND "roa_price_usd" IS NOT NULL AND "roa_price_usd" > 0'
-    )
+    extra = [
+        f'"{price_col}" IS NOT NULL', f'"{price_col}" > 0',
+        '"roa_price_usd" IS NOT NULL', '"roa_price_usd" > 0',
+    ]
     try:
-        return JSONResponse(content=_fetch_all_roa("roa_compare_all", where))
+        return JSONResponse(content=_fetch_roa_rows_paginated(
+            "roa_compare_all", ROA_DB_TO_JSON, _params_dict(request), extra_clauses=extra
+        ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/roa/vendor-overlap")
-async def roa_vendor_overlap():
-    """Diamonds whose certificate appears in both cullen and gs data."""
+async def roa_vendor_overlap(request: Request):
+    """Diamonds whose certificate appears in both cullen and gs data, paginated.
+    roa_compare_vendor_overlap is a pre-joined table (already filtered to overlap
+    rows), so no extra_clauses are needed — just the standard filters + paging."""
     try:
-        db_cols = list(ROA_OVERLAP_DB_TO_JSON.keys())
-        cols_sql = ", ".join(f'"{c}"' for c in db_cols)
-        sql = f'SELECT {cols_sql} FROM "roa_compare_vendor_overlap"'
-        with _get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql)
-            raw = cur.fetchall()
-        return JSONResponse(content=[
-            {ROA_OVERLAP_DB_TO_JSON[c]: _jsonify_value(r[c]) for c in db_cols}
-            for r in raw
-        ])
+        return JSONResponse(content=_fetch_roa_rows_paginated(
+            "roa_compare_vendor_overlap", ROA_OVERLAP_DB_TO_JSON, _params_dict(request)
+        ))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
@@ -1686,7 +2310,7 @@ async def roa_run_compare():
     loader_script  = ROA_DIR / "roa_compare_to_db.py"
 
     if not compare_script.exists():
-        raise HTTPException(status_code=404, detail="diamond_compare_roa.py not found in roa_scrapping/")
+        raise HTTPException(status_code=404, detail="diamond_compare_roa.py not found in aus_scrapping/")
 
     try:
         cmp_result = subprocess.run(

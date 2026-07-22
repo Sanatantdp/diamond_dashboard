@@ -1403,7 +1403,7 @@
             id="vcDownloadBtn"
             onclick="downloadVcCsv()"
           >
-            ⬇ Download CSV
+            ⬇ Download CSV (page)
           </button>
         </div>
         <div class="modal-body">
@@ -1705,22 +1705,28 @@
       }
 
       // ── STATE ─────────────────────────────────────────────────────
-      let ALL_DATA = [],
-        _RAW_DATA = [],
-        filteredData = [],
-        PARTIAL_DATA = [];
-      let tableMode = "all",
+      // All rows/aggregates come from the server — we only ever hold the
+      // current page + bucket aggregates in memory (never a full dataset).
+      const PAGE_SIZE = 25;
+      let pageRows = [],
+        pageTotal = 0;
+      let datasetTotal = 0; // unfiltered total of compare.json (rog_compare_common)
+      let partialTotal = 0; // unfiltered total of compare_partial.json
+      let aggregates = null; // bucket aggregates for compare.json
+      let partialAggregates = null; // bucket aggregates for compare_partial.json
+      let tableMode = "all", // legacy, kept so setTableMode handler doesn't break
         commonOnly = false;
       let sortCol = null, sortDir = "asc";
-      let currentPage = 1,
-        PAGE_SIZE = 20;
+      let currentPage = 1;
       let priceMin = null,
         priceMax = null;
-      let activeBucketFilter = null,
-        activePriceBucket = null;
-      let activeBucketTop = null;
+      let activeBucketFilter = null; // bottom "% Range Filter" section: {vendorKey, bucketIdx}
+      let activeBucketTop = null; // top pct-bucket cards (paired with price buckets): {vendorKey, bucketIdx}
+      let activePriceBucket = null;
       let selectedVendorKey = null,
         selectedPriceVendorKey = null;
+      let certSearch = "";
+      let renderToken = 0; // guards against stale, out-of-order fetches
 
       const BUCKETS = [
         { label: "< 0%", min: -Infinity, max: 0, color: "#3ecf8e" },
@@ -1775,12 +1781,6 @@
         const n = Number(row[col]);
         return isNaN(n) ? null : n;
       }
-      function vendorHasData(vd) {
-        return ALL_DATA.some((r) => {
-          const v = r[vd.priceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
-      }
 
       // ── TOAST / LOADING ───────────────────────────────────────────
       let toastTimer;
@@ -1829,94 +1829,68 @@
         return res.json();
       }
 
-      function ingestData(json) {
-        if (!Array.isArray(json)) {
-          hideLoading();
-          toast("Expected a JSON array", "error");
-          return;
+      // sortTable()/sortModal()/sortVc() are all called with the JSON display
+      // label (e.g. "novita vs ROG EUR", matches ROG_DB_TO_JSON's values in
+      // main.py), but the server's sort_col only recognizes real DB column
+      // names (ROG_DB_TO_JSON's keys) — translate before sending.
+      const SORT_COL_MAP = {
+        certificate_number: "certificate_number",
+        vendors_matched: "vendors_matched",
+        shape: "shape",
+        color: "color",
+        clarity: "clarity",
+        cut: "cut",
+        caratWeight: "carat_weight",
+        "ROG Price EUR": "rog_price_eur",
+        "ROG -30% EUR": "rog_minus_30_eur",
+        "renesim Price EUR": "renesim_price_eur",
+        "renesim -0% EUR": "renesim_minus_eur",
+        "renesim vs ROG EUR": "renesim_vs_rog_eur",
+        "renesim vs ROG %": "renesim_vs_rog_pct",
+        "novita Price EUR": "novita_price_eur",
+        "novita -0% EUR": "novita_minus_eur",
+        "novita vs ROG EUR": "novita_vs_rog_eur",
+        "novita vs ROG %": "novita_vs_rog_pct",
+        "77diamonds Price EUR": "d77_price_eur",
+        "77diamonds -30% EUR": "d77_minus_30_eur",
+        "77diamonds vs ROG EUR": "d77_vs_rog_eur",
+        "77diamonds vs ROG %": "d77_vs_rog_pct",
+        "renesim Link": "renesim_link",
+        "novita Link": "novita_link",
+      };
+
+      // ── Build query params for /data/* (server-side filters) ─────────
+      function buildFilterParams(extraOffset = null) {
+        const p = new URLSearchParams();
+        p.set("limit", PAGE_SIZE);
+        p.set("offset", extraOffset !== null ? extraOffset : (currentPage - 1) * PAGE_SIZE);
+        if (certSearch) p.set("cert", certSearch);
+        if (priceMin !== null) p.set("price_min", priceMin);
+        if (priceMax !== null) p.set("price_max", priceMax);
+        if (commonOnly) p.set("common_only", "true");
+        // Only one vendor_pct filter can be sent per request — the top
+        // (price-bucket-paired) filter wins if both happen to be active.
+        const bucketFilter = activeBucketTop || activeBucketFilter;
+        if (bucketFilter)
+          p.set("vendor_pct", bucketFilter.vendorKey + ":" + bucketFilter.bucketIdx);
+        if (activePriceBucket !== null && selectedPriceVendorKey)
+          p.set("vendor_price", selectedPriceVendorKey + ":" + activePriceBucket);
+        if (sortCol) {
+          p.set("sort_col", SORT_COL_MAP[sortCol] || sortCol);
+          p.set("sort_dir", sortDir);
         }
-        _RAW_DATA = json;
-        ALL_DATA = [...json];
-        activeBucketFilter = null;
-        activePriceBucket = null;
-        activeBucketTop = null;
-        selectedPriceVendorKey = null;
-        tableMode = "all";
-        currentPage = 1;
-        priceMin = priceMax = null;
-        document.getElementById("priceMin").value = "";
-        document.getElementById("priceMax").value = "";
-        document.getElementById("certSearch").value = "";
-        render();
-        hideLoading();
-        toast(`Loaded ${json.length.toLocaleString()} records`, "success");
+        return p;
+      }
+      // Top pct cards / price buckets are always drawn from compare_partial.json.
+      function getActiveTableFilename() {
+        if (activePriceBucket !== null || activeBucketTop) return "compare_partial.json";
+        return "compare.json";
       }
 
-      // ── FILTERS ───────────────────────────────────────────────────
-      function applyFiltersLocal() {
-        const cert = document.getElementById("certSearch").value.trim();
-        const BASE =
-          (activePriceBucket !== null || activeBucketTop !== null) && PARTIAL_DATA.length
-            ? PARTIAL_DATA
-            : ALL_DATA;
-        filteredData = BASE.filter((row) => {
-          const ROG = row["ROG Price EUR"];
-          if (priceMin !== null && ROG < priceMin) return false;
-          if (priceMax !== null && ROG > priceMax) return false;
-          if (cert && !String(row["certificate_number"] ?? "").includes(cert))
-            return false;
-          if (activeBucketTop) {
-            const { vendorKey, bucketIdx } = activeBucketTop;
-            const vtd = VENDOR_DEFS.find((v) => v.key === vendorKey);
-            if (vtd) {
-              const b = BUCKETS[bucketIdx];
-              const p = getPct(row, vtd);
-              if (p === null || p < b.min || p >= b.max) return false;
-            }
-          }
-          if (activeBucketFilter) {
-            const { vendorKey, bucketIdx } = activeBucketFilter;
-            const vd = VENDOR_DEFS.find((v) => v.key === vendorKey);
-            const b = BUCKETS[bucketIdx];
-            const p = getPct(row, vd);
-            if (p === null || p < b.min || p >= b.max) return false;
-          }
-          if (activePriceBucket !== null) {
-            const pb = PRICE_BUCKETS[activePriceBucket];
-            const pvd = VENDOR_DEFS.find(
-              (v) => v.key === selectedPriceVendorKey,
-            );
-            if (pvd) {
-              const price = Number(row[pvd.bucketPriceCol]);
-              if (
-                isNaN(price) ||
-                price <= 0 ||
-                price < pb.min ||
-                price >= pb.max
-              )
-                return false;
-            }
-          }
-          if (commonOnly) {
-            const pc = Object.keys(row).filter((k) => k.includes("Price EUR"));
-            if (
-              !pc.every((k) => {
-                const v = row[k];
-                return (
-                  v !== null && v !== undefined && v !== "" && Number(v) !== 0
-                );
-              })
-            )
-              return false;
-          }
-          return true;
-        });
-      }
+      // ── FILTER HANDLERS (every change triggers a fresh server fetch) ──
       function toggleCommonOnly() {
         commonOnly = !commonOnly;
-        document
-          .getElementById("commonTab")
-          .classList.toggle("active", commonOnly);
+        document.getElementById("commonTab").classList.toggle("active", commonOnly);
         currentPage = 1;
         render();
       }
@@ -1935,104 +1909,18 @@
         currentPage = 1;
         render();
       }
-      function clearBucketFilter() {
-        activeBucketFilter = null;
-        currentPage = 1;
-        render();
-      }
-
-      // ── VENDOR TABS ───────────────────────────────────────────────
-      function renderVendorTabs() {
-        const tabsEl = document.getElementById("vendorTabs");
-        if (!ALL_DATA.length) {
-          tabsEl.innerHTML = "";
-          return;
-        }
-        const av = VENDOR_DEFS.filter((vd) => vendorHasData(vd));
-        if (!av.length) {
-          tabsEl.innerHTML = "";
-          return;
-        }
-        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
-          selectedVendorKey = av[0].key;
-        tabsEl.innerHTML = av
-          .map((vd) => {
-            const total = ALL_DATA.filter((r) => {
-              const v = r[vd.priceCol];
-              return (
-                v !== null && v !== undefined && v !== "" && Number(v) !== 0
-              );
-            }).length;
-            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')">
-          <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
-          })
-          .join("");
-      }
-      function selectVendor(key) {
-        selectedVendorKey = key;
-        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
-          activeBucketFilter = null;
-        currentPage = 1;
-        render();
-      }
-      function renderBuckets() {
-        const grid = document.getElementById("bucketsGrid");
-        if (!ALL_DATA.length) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
-          return;
-        }
-        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
-        if (!vd) {
-          grid.innerHTML = "";
-          return;
-        }
-        const counts = BUCKETS.map(
-          (b) =>
-            ALL_DATA.filter((r) => {
-              const p = getPct(r, vd);
-              return p !== null && p >= b.min && p < b.max;
-            }).length,
-        );
-        const total = ALL_DATA.length,
-          maxC = Math.max(...counts, 1);
-        grid.innerHTML = BUCKETS.map((b, i) => {
-          const cnt = counts[i],
-            isEmpty = cnt === 0;
-          const isActive =
-            activeBucketFilter &&
-            activeBucketFilter.vendorKey === vd.key &&
-            activeBucketFilter.bucketIdx === i;
-          const pct = ((cnt / total) * 100).toFixed(1),
-            barW = ((cnt / maxC) * 100).toFixed(1);
-          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="${isEmpty ? "" : "toggleBucket(" + i + ")"}">
-          <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
-          <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
-          <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
-          <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
-        }).join("");
-        const tag = document.getElementById("activeBucketTag");
-        if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
-          document.getElementById("activeBucketTagText").textContent =
-            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
-          tag.style.display = "inline-flex";
-        } else tag.style.display = "none";
-      }
-      function toggleBucket(bucketIdx) {
-        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
-        if (!vd) return;
-        activeBucketFilter =
-          activeBucketFilter &&
-          activeBucketFilter.vendorKey === vd.key &&
-          activeBucketFilter.bucketIdx === bucketIdx
-            ? null
-            : { vendorKey: vd.key, bucketIdx };
-        currentPage = 1;
-        render();
-      }
-
-      // ── PRICE BUCKETS ─────────────────────────────────────────────
       function clearPriceBucketFilter() {
         activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
+      function clearBucketTopFilter() {
+        activeBucketTop = null;
+        currentPage = 1;
+        render();
+      }
+      function clearBucketFilter() {
+        activeBucketFilter = null;
         currentPage = 1;
         render();
       }
@@ -2044,23 +1932,33 @@
       function selectPriceVendor(key) {
         selectedPriceVendorKey = key;
         activePriceBucket = null;
-        activeBucketTop = null;
         currentPage = 1;
         render();
       }
+      function selectVendor(key) {
+        selectedVendorKey = key;
+        if (activeBucketFilter && activeBucketFilter.vendorKey !== key)
+          activeBucketFilter = null;
+        currentPage = 1;
+        render();
+      }
+
+      // ── Vendor tabs / bucket panels (read from server-computed aggregates) ──
+      function _vendorOptionsFromAggregates(ag) {
+        if (!ag || !ag.vendors) return [];
+        return VENDOR_DEFS.filter(
+          (vd) => ag.vendors[vd.key] && (ag.vendors[vd.key].vendor_total || 0) > 0,
+        );
+      }
+
       function renderPriceVendorTabs() {
         const tabsEl = document.getElementById("priceVendorTabs");
-        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length) {
+        const ag = partialAggregates;
+        if (!ag || !ag.vendors) {
           tabsEl.innerHTML = "";
           return;
         }
-        const av = VENDOR_DEFS.filter((vd) =>
-          SRC.some((r) => {
-            const v = r[vd.bucketPriceCol];
-            return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-          }),
-        );
+        const av = _vendorOptionsFromAggregates(ag);
         if (!av.length) {
           tabsEl.innerHTML = "";
           return;
@@ -2070,81 +1968,64 @@
           !av.find((v) => v.key === selectedPriceVendorKey)
         )
           selectedPriceVendorKey = av[0].key;
-        const sourceLabel = PARTIAL_DATA.length
-          ? `<span style="font-size:.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${PARTIAL_DATA.length.toLocaleString()} matched)</span>`
+        const sourceLabel = (ag.total || 0)
+          ? `<span style="font-size:.58rem;color:var(--muted);margin-left:8px;align-self:center">· from compare_partial.json (${(ag.total || 0).toLocaleString()} matched)</span>`
           : `<span style="font-size:.58rem;color:#f87171;margin-left:8px;align-self:center">⚠ compare_partial.json not loaded</span>`;
         tabsEl.innerHTML =
           av
             .map((vd) => {
-              const total = SRC.filter((r) => {
-                const v = r[vd.bucketPriceCol];
-                return (
-                  v !== null && v !== undefined && v !== "" && Number(v) !== 0
-                );
-              }).length;
+              const total = ag.vendors[vd.key].vendor_total || 0;
               return `<button class="vendor-tab ${selectedPriceVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectPriceVendor('${vd.key}')">
           <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
             })
             .join("") + sourceLabel;
       }
+
       function renderPriceBuckets() {
         const grid = document.getElementById("priceBucketsGrid");
-        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length) {
+        const tag = document.getElementById("activePriceBucketTag");
+        const ag = partialAggregates;
+        if (!ag || !ag.vendors) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>`;
-          document.getElementById("activePriceBucketTag").style.display =
-            "none";
+          if (tag) tag.style.display = "none";
           return;
         }
         const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
-        if (!vd) {
+        if (!vd || !ag.vendors[vd.key]) {
           grid.innerHTML = "";
+          if (tag) tag.style.display = "none";
           return;
         }
-        const vendorRows = SRC.filter((r) => {
-          const v = r[vd.bucketPriceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
-        const total = vendorRows.length || 1;
-        const bucketData = PRICE_BUCKETS.map((pb, i) => {
-          const rows = vendorRows.filter((r) => {
-            const p = Number(r[vd.bucketPriceCol]);
-            return !isNaN(p) && p >= pb.min && p < pb.max;
-          });
-          const count = rows.length;
-          const rogVals = rows
-            .map((r) => Number(r["ROG Price EUR"]))
-            .filter((v) => !isNaN(v) && v > 0);
-          const avgROG = rogVals.length
-            ? rogVals.reduce((a, b) => a + b, 0) / rogVals.length
-            : null;
-          return { pb, count, avgROG, idx: i };
-        });
-        const nonEmpty = bucketData.filter((b) => b.count > 0),
-          maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
+        const vagg = ag.vendors[vd.key];
+        const total = vagg.vendor_total || 1;
+        const buckets = vagg.price_buckets || [];
+        const nonEmpty = buckets.filter((b) => (b.count || 0) > 0);
+        const maxCount = Math.max(...nonEmpty.map((b) => b.count), 1);
         if (!nonEmpty.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No price data for ${vd.label}</h3></div>`;
-          document.getElementById("activePriceBucketTag").style.display =
-            "none";
+          if (tag) tag.style.display = "none";
           return;
         }
         grid.innerHTML = nonEmpty
-          .map(({ pb, count, avgROG, idx }) => {
-            const isActive = activePriceBucket === idx;
-            const pctOfTotal = ((count / total) * 100).toFixed(1),
-              barW = ((count / maxCount) * 100).toFixed(1);
-            const avgROGStr =
+          .map((b) => {
+            const pb = PRICE_BUCKETS[b.idx];
+            const isActive = activePriceBucket === b.idx;
+            const pctOfTotal = ((b.count / total) * 100).toFixed(1);
+            const barW = ((b.count / maxCount) * 100).toFixed(1);
+            const avgROG = b.avg_rog != null ? Number(b.avg_rog) : null;
+            const avgRow =
               avgROG !== null
                 ? `<div class="avg-info-row"><div class="avg-info-item"><span class="avg-info-label">Avg ROG Price</span><span class="avg-info-val" style="color:var(--muted)">€${avgROG.toFixed(0)}</span></div></div>`
                 : "";
-            return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${idx})">
-          <div class="pb-range">${pb.label}</div><div class="pb-count">${count.toLocaleString()}</div>
-          <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
-          <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%"></div></div>
-          ${avgROGStr}</div>`;
+            return `<div class="price-bucket-card ${isActive ? "active" : ""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${b.idx})">
+            <div class="pb-range">${pb.label}</div>
+            <div class="pb-count">${b.count.toLocaleString()}</div>
+            <div class="pb-pct-of-total" style="color:${pb.color}">${pctOfTotal}% of matched</div>
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${pb.color}"></div></div>
+            ${avgRow}
+          </div>`;
           })
           .join("");
-        const tag = document.getElementById("activePriceBucketTag");
         if (activePriceBucket !== null) {
           const pb = PRICE_BUCKETS[activePriceBucket];
           document.getElementById("activePriceBucketTagText").textContent = pb
@@ -2157,32 +2038,25 @@
       function renderPctBucketsTop() {
         const grid = document.getElementById("pctBucketsTopGrid");
         const tagTop = document.getElementById("activeBucketTagTop");
-        const SRC = PARTIAL_DATA.length ? PARTIAL_DATA : ALL_DATA;
-        if (!SRC.length || !selectedPriceVendorKey) {
+        const ag = partialAggregates;
+        if (!ag || !ag.vendors || !selectedPriceVendorKey) {
           grid.innerHTML = "";
           if (tagTop) tagTop.style.display = "none";
           return;
         }
         const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
-        if (!vd) {
+        if (!vd || !ag.vendors[vd.key]) {
           grid.innerHTML = "";
           if (tagTop) tagTop.style.display = "none";
           return;
         }
-        const vendorRows = SRC.filter((r) => {
-          const v = r[vd.priceCol];
-          return v !== null && v !== undefined && v !== "" && Number(v) !== 0;
-        });
-        const total = vendorRows.length || 1;
-        const counts = BUCKETS.map((b) =>
-          vendorRows.filter((r) => {
-            const p = getPct(r, vd);
-            return p !== null && p >= b.min && p < b.max;
-          }).length,
-        );
+        const vagg = ag.vendors[vd.key];
+        const total = vagg.vendor_total || 1;
+        const buckets = vagg.pct_buckets || [];
+        const counts = buckets.map((b) => b.count || 0);
         const maxC = Math.max(...counts, 1);
         grid.innerHTML = BUCKETS.map((b, i) => {
-          const cnt = counts[i];
+          const cnt = (buckets[i] && buckets[i].count) || 0;
           const isEmpty = cnt === 0;
           const isActive =
             activeBucketTop &&
@@ -2219,20 +2093,91 @@
         currentPage = 1;
         render();
       }
-      function clearBucketTopFilter() {
-        activeBucketTop = null;
+
+      function renderVendorTabs() {
+        const tabsEl = document.getElementById("vendorTabs");
+        const ag = aggregates;
+        if (!ag || !ag.vendors) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        const av = _vendorOptionsFromAggregates(ag);
+        if (!av.length) {
+          tabsEl.innerHTML = "";
+          return;
+        }
+        if (!selectedVendorKey || !av.find((v) => v.key === selectedVendorKey))
+          selectedVendorKey = av[0].key;
+        tabsEl.innerHTML = av
+          .map((vd) => {
+            const total = ag.vendors[vd.key].vendor_total || 0;
+            return `<button class="vendor-tab ${selectedVendorKey === vd.key ? "active" : ""}" style="--vcolor:${vd.color}" onclick="selectVendor('${vd.key}')">
+          <span class="vendor-tab-dot" style="background:${vd.color}"></span>${vd.label}<span class="v-count">${total.toLocaleString()}</span></button>`;
+          })
+          .join("");
+      }
+
+      function renderBuckets() {
+        const grid = document.getElementById("bucketsGrid");
+        const ag = aggregates;
+        if (!ag || !ag.vendors) {
+          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3><p style="font-size:.78rem;margin-top:6px">Load a dataset above to see distribution</p></div>`;
+          return;
+        }
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd || !ag.vendors[vd.key]) {
+          grid.innerHTML = "";
+          return;
+        }
+        const vagg = ag.vendors[vd.key];
+        const buckets = vagg.pct_buckets || [];
+        const counts = buckets.map((b) => b.count || 0);
+        const total = ag.total || 1,
+          maxC = Math.max(...counts, 1);
+        grid.innerHTML = BUCKETS.map((b, i) => {
+          const cnt = counts[i] || 0,
+            isEmpty = cnt === 0;
+          const isActive =
+            activeBucketFilter &&
+            activeBucketFilter.vendorKey === vd.key &&
+            activeBucketFilter.bucketIdx === i;
+          const pct = ((cnt / total) * 100).toFixed(1),
+            barW = ((cnt / maxC) * 100).toFixed(1);
+          return `<div class="bucket-card ${isActive ? "active" : ""}" style="--bucket-color:${isEmpty ? "var(--border)" : b.color};${isEmpty ? "opacity:.45;cursor:default" : "cursor:pointer"}" onclick="${isEmpty ? "" : "toggleBucket(" + i + ")"}">
+          <div class="bucket-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+          <div class="bucket-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+          <div class="bucket-pct" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of total</div>
+          <div class="bucket-bar"><div class="bucket-bar-fill" style="width:${barW}%;background:${isEmpty ? "var(--border)" : b.color}"></div></div></div>`;
+        }).join("");
+        const tag = document.getElementById("activeBucketTag");
+        if (activeBucketFilter && activeBucketFilter.vendorKey === vd.key) {
+          document.getElementById("activeBucketTagText").textContent =
+            `${vd.label} · ${BUCKETS[activeBucketFilter.bucketIdx].label}`;
+          tag.style.display = "inline-flex";
+        } else tag.style.display = "none";
+      }
+      function toggleBucket(bucketIdx) {
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedVendorKey);
+        if (!vd) return;
+        activeBucketFilter =
+          activeBucketFilter &&
+          activeBucketFilter.vendorKey === vd.key &&
+          activeBucketFilter.bucketIdx === bucketIdx
+            ? null
+            : { vendorKey: vd.key, bucketIdx };
         currentPage = 1;
         render();
       }
 
-      // ══ VENDOR COMMON CARDS & MODAL ═══════════════════════════════
-      let VC_CACHE = {}; // key -> array of records
-      let vcActive = null; // currently open vendor key
-      let vcSearch = "",
-        vcPage = 1;
-      const VC_PAGE = 30;
-      let vcSortCol = null,
-        vcSortDir = 1;
+      // ══ VENDOR COMMON CARDS & MODAL — paginated via /vendor-common/{vendor} ══
+      let vcActive = null;
+      let vcPageRows = [],
+        vcTotal = 0,
+        vcPage = 1,
+        vcSearch = "",
+        vcSortCol = null,
+        vcSortDir = "asc";
+      const VC_PAGE = 25;
 
       const VC_ICONS = { novita: "🟢", "77diamonds": "🔵", renesim: "🟣" };
       const VC_COLORS = {
@@ -2243,6 +2188,7 @@
 
       async function loadVendorCommonCards() {
         const grid = document.getElementById("vendorCommonGrid");
+        if (!grid) return;
         grid.innerHTML = `<div class="vc-loading" style="grid-column:1/-1">⏳ Loading vendor common data…</div>`;
         try {
           const summary = await api("GET", "/vendor-common/summary");
@@ -2292,11 +2238,10 @@
         vcSearch = "";
         vcPage = 1;
         vcSortCol = null;
-        vcSortDir = 1;
+        vcSortDir = "asc";
         const color = VC_COLORS[vendorKey] || "#c9a84c";
         const icon = VC_ICONS[vendorKey] || "💎";
 
-        // Apply color to modal
         document
           .getElementById("vendorCommonModal")
           .style.setProperty("--vc-border", color);
@@ -2311,30 +2256,10 @@
 
         document.getElementById("vendorCommonModal").classList.add("open");
         document.body.style.overflow = "hidden";
-
-        // Load data if not cached
-        if (!VC_CACHE[vendorKey]) {
-          document.getElementById("vcTbody").innerHTML =
-            `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading ${vendorKey} common data…</td></tr>`;
-          try {
-            const safe = vendorKey.replace(/\//g, "_").replace(/ /g, "_");
-            const data = await api("GET", `/vendor-common/${safe}`);
-            VC_CACHE[vendorKey] = Array.isArray(data) ? data : [];
-          } catch (e) {
-            document.getElementById("vcTbody").innerHTML =
-              `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Data not found — run the pipeline first." : e.message}</td></tr>`;
-            document.getElementById("vcModalPills").innerHTML =
-              `<div class="modal-pill" style="color:var(--red);border-color:var(--red)">Error</div>`;
-            return;
-          }
-        }
-
-        const rows = VC_CACHE[vendorKey];
-        document.getElementById("vcModalPills").innerHTML =
-          `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">
-          ${rows.length.toLocaleString()} records
-        </div>`;
-        renderVcTable();
+        document.getElementById("vcThead").innerHTML = "";
+        document.getElementById("vcTbody").innerHTML =
+          `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading ${vendorKey} common data…</td></tr>`;
+        await loadVcPage();
       }
 
       function closeVendorModal() {
@@ -2345,58 +2270,55 @@
       function onVcSearch() {
         vcSearch = document.getElementById("vcSearchInp").value.trim();
         vcPage = 1;
-        renderVcTable();
-      }
-
-      function getVcFiltered() {
-        let rows = VC_CACHE[vcActive] || [];
-        if (vcSearch)
-          rows = rows.filter((r) =>
-            String(r["certificate_number"] ?? "").includes(vcSearch),
-          );
-        if (vcSortCol) {
-          rows = [...rows].sort((a, b) => {
-            let va = a[vcSortCol],
-              vb = b[vcSortCol];
-            if (va === null || va === undefined)
-              va = vcSortDir === 1 ? Infinity : -Infinity;
-            if (vb === null || vb === undefined)
-              vb = vcSortDir === 1 ? Infinity : -Infinity;
-            if (typeof va === "string" && typeof vb === "string")
-              return vcSortDir * va.localeCompare(vb);
-            return vcSortDir * (va - vb);
-          });
-        }
-        return rows;
+        loadVcPage();
       }
 
       function sortVc(col) {
-        if (vcSortCol === col) vcSortDir *= -1;
+        if (vcSortCol === col) vcSortDir = vcSortDir === "asc" ? "desc" : "asc";
         else {
           vcSortCol = col;
-          vcSortDir = 1;
+          vcSortDir = "asc";
         }
-        document.querySelectorAll("#vcThead th").forEach((th) => {
-          th.classList.remove("sort-asc", "sort-desc");
-          if (th.dataset.col === col)
-            th.classList.add(vcSortDir === 1 ? "sort-asc" : "sort-desc");
-        });
-        renderVcTable();
+        vcPage = 1;
+        loadVcPage();
+      }
+
+      async function loadVcPage() {
+        if (!vcActive) return;
+        const safe = vcActive.replace(/\//g, "_").replace(/ /g, "_");
+        try {
+          const p = new URLSearchParams();
+          p.set("limit", VC_PAGE);
+          p.set("offset", (vcPage - 1) * VC_PAGE);
+          if (vcSearch) p.set("cert", vcSearch);
+          if (vcSortCol) {
+            p.set("sort_col", SORT_COL_MAP[vcSortCol] || vcSortCol);
+            p.set("sort_dir", vcSortDir);
+          }
+          const res = await api("GET", `/vendor-common/${safe}?${p.toString()}`);
+          vcPageRows = Array.isArray(res.rows) ? res.rows : [];
+          vcTotal = Number(res.total || 0);
+          const color = VC_COLORS[vcActive] || "#c9a84c";
+          document.getElementById("vcModalPills").innerHTML =
+            `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">${vcTotal.toLocaleString()} records</div>`;
+          renderVcTable();
+        } catch (e) {
+          document.getElementById("vcTbody").innerHTML =
+            `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Data not found — run the pipeline first." : e.message}</td></tr>`;
+          document.getElementById("vcModalPills").innerHTML =
+            `<div class="modal-pill" style="color:var(--red);border-color:var(--red)">Error</div>`;
+        }
       }
 
       function renderVcTable() {
-        if (!vcActive || !VC_CACHE[vcActive]) return;
-        const filtered = getVcFiltered();
-        const tp = Math.ceil(filtered.length / VC_PAGE);
-        vcPage = Math.min(vcPage, tp || 1);
-        const page = filtered.slice((vcPage - 1) * VC_PAGE, vcPage * VC_PAGE);
+        if (!vcActive) return;
+        const tp = Math.max(1, Math.ceil(vcTotal / VC_PAGE));
+        vcPage = Math.min(vcPage, tp);
         const color = VC_COLORS[vcActive] || "#c9a84c";
 
-        // Determine columns from first row
-        const sample = (VC_CACHE[vcActive] || [])[0] || {};
+        const sample = vcPageRows[0] || {};
         const allCols = Object.keys(sample);
 
-        // Pinned columns first, then the rest
         const PINNED = [
           "certificate_number",
           "shape",
@@ -2420,9 +2342,8 @@
           ...otherCols,
         ];
 
-        // Build thead once
         const thead = document.getElementById("vcThead");
-        if (thead.innerHTML === "" || thead.dataset.vendor !== vcActive) {
+        if (allCols.length && (thead.innerHTML === "" || thead.dataset.vendor !== vcActive)) {
           thead.dataset.vendor = vcActive;
           thead.innerHTML = `<tr>${orderedCols.map((c) => `<th data-col="${c}" onclick="sortVc('${c}')" style="cursor:pointer">${c.replace(/_/g, " ")}</th>`).join("")}</tr>`;
           thead.querySelectorAll("th").forEach((th) => {
@@ -2434,19 +2355,23 @@
             });
           });
         }
+        thead.querySelectorAll("th").forEach((th) => {
+          th.classList.remove("sort-asc", "sort-desc");
+          if (th.dataset.col === vcSortCol)
+            th.classList.add(vcSortDir === "asc" ? "sort-asc" : "sort-desc");
+        });
 
-        if (!page.length) {
+        if (!vcPageRows.length) {
           document.getElementById("vcTbody").innerHTML =
-            `<tr><td colspan="${orderedCols.length}" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+            `<tr><td colspan="${orderedCols.length || 1}" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
         } else {
-          document.getElementById("vcTbody").innerHTML = page
+          document.getElementById("vcTbody").innerHTML = vcPageRows
             .map((row) => {
               const cells = orderedCols
                 .map((col) => {
                   const v = row[col];
                   if (v === null || v === undefined || v === "")
                     return `<td class="cert">—</td>`;
-                  // price / EUR cols
                   if (col.includes("Price EUR"))
                     return `<td class="price">€${Number(v).toLocaleString()}</td>`;
                   if (col.endsWith("EUR") && !col.includes("Price")) {
@@ -2477,9 +2402,8 @@
         }
 
         document.getElementById("vcFooterInfo").textContent =
-          `Showing ${Math.min((vcPage - 1) * VC_PAGE + 1, filtered.length)}–${Math.min(vcPage * VC_PAGE, filtered.length)} of ${filtered.length.toLocaleString()} records`;
+          `Showing ${vcTotal === 0 ? 0 : Math.min((vcPage - 1) * VC_PAGE + 1, vcTotal)}–${Math.min(vcPage * VC_PAGE, vcTotal)} of ${vcTotal.toLocaleString()} records`;
 
-        // Pagination
         const d = 2;
         let pages = "";
         for (let p = 1; p <= tp; p++) {
@@ -2493,20 +2417,18 @@
 
       function vcGoPage(p) {
         vcPage = p;
-        renderVcTable();
+        loadVcPage();
       }
 
       function downloadVcCsv() {
-        if (!vcActive) return;
-        const rows = getVcFiltered();
-        if (!rows.length) {
+        if (!vcActive || !vcPageRows.length) {
           toast("No data to download", "error");
           return;
         }
-        const cols = Object.keys(rows[0]);
+        const cols = Object.keys(vcPageRows[0]);
         const csv = [
           cols.join(","),
-          ...rows.map((r) =>
+          ...vcPageRows.map((r) =>
             cols
               .map((c) => {
                 const v = r[c];
@@ -2520,11 +2442,11 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${vcActive}_common.csv`;
+        a.download = `${vcActive}_common_page${vcPage}.csv`;
         a.click();
         URL.revokeObjectURL(url);
         toast(
-          `Downloaded ${rows.length.toLocaleString()} rows as ${vcActive}_common.csv`,
+          `Downloaded ${vcPageRows.length.toLocaleString()} rows (page ${vcPage}) as CSV`,
           "success",
         );
       }
@@ -2584,32 +2506,28 @@
             : "";
         }).join("");
 
-      function renderTable(data) {
+      function renderTable() {
         document.querySelectorAll(".table-wrap thead th").forEach(th => {
           th.classList.remove("sort-asc", "sort-desc");
           if (sortCol && th.getAttribute("onclick") === `sortTable('${sortCol}')`)
             th.classList.add(sortDir === "asc" ? "sort-asc" : "sort-desc");
         });
         document.getElementById("tableCount").textContent =
-          `— ${data.length.toLocaleString()} records`;
+          `— ${pageTotal.toLocaleString()} records`;
         document.getElementById("matchedCount").textContent =
-          data.length.toLocaleString();
-        const tp = Math.ceil(data.length / PAGE_SIZE);
-        currentPage = Math.min(currentPage, tp || 1);
-        const pr = data.slice(
-          (currentPage - 1) * PAGE_SIZE,
-          currentPage * PAGE_SIZE,
-        );
-        if (!pr.length) {
+          pageTotal.toLocaleString();
+        const tp = Math.max(1, Math.ceil(pageTotal / PAGE_SIZE));
+        currentPage = Math.min(currentPage, tp);
+        if (!pageRows.length) {
           document.getElementById("tableBody").innerHTML =
-            `<tr><td colspan="19"><div class="empty-state"><div class="icon">💎</div>${ALL_DATA.length ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
+            `<tr><td colspan="19"><div class="empty-state"><div class="icon">💎</div>${datasetTotal ? "No records match filters" : "Load a dataset to begin"}</div></td></tr>`;
           document.getElementById("pagination").innerHTML = "";
           return;
         }
         const novVD = VENDOR_DEFS[0],
           d77VD = VENDOR_DEFS[1],
           renVD = VENDOR_DEFS[2];
-        document.getElementById("tableBody").innerHTML = pr
+        document.getElementById("tableBody").innerHTML = pageRows
           .map((r) => {
             const novP = getPct(r, novVD),
               d77P = getPct(r, d77VD),
@@ -2694,26 +2612,60 @@
       function onSearch() {
         clearTimeout(sTimer);
         sTimer = setTimeout(() => {
+          certSearch = document.getElementById("certSearch").value.trim();
           currentPage = 1;
           render();
-        }, 200);
+        }, 250);
       }
 
-      // ── MASTER RENDER ──────────────────────────────────────────────
-      function render() {
-        applyFiltersLocal();
-        if (sortCol) {
-          filteredData.sort((a, b) => {
-            const av = a[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(a[sortCol]);
-            const bv = b[sortCol] == null ? (sortDir === "asc" ? Infinity : -Infinity) : Number(b[sortCol]);
-            return sortDir === "asc" ? av - bv : bv - av;
-          });
+      // ── FETCH (page + aggregates) ─────────────────────────────
+      async function fetchPage() {
+        const filename = getActiveTableFilename();
+        const params = buildFilterParams();
+        const res = await api("GET", `/data/${filename}?${params.toString()}`);
+        pageRows = Array.isArray(res.rows) ? res.rows : [];
+        pageTotal = Number(res.total || 0);
+      }
+      async function fetchAggregates() {
+        // Bucket panels always show the full, unfiltered breakdown — only the
+        // table rows (fetchPage) apply the active filters. Fetched once each
+        // since ROG has a single fixed base dataset (no dataset switcher).
+        if (partialAggregates === null) {
+          try {
+            const r = await api("GET", `/aggregates?dataset=compare_partial.json`);
+            partialAggregates = r;
+            partialTotal = Number(r.total || 0);
+          } catch (e) {
+            partialAggregates = { vendors: {}, total: 0 };
+          }
         }
+        if (aggregates === null) {
+          try {
+            const r = await api("GET", `/aggregates?dataset=compare.json`);
+            aggregates = r;
+            datasetTotal = Number(r.total || 0);
+          } catch (e) {
+            aggregates = { vendors: {}, total: 0 };
+          }
+        }
+      }
+
+      // ── MASTER RENDER (token guard against stale fetches) ─────────
+      async function render() {
+        const token = ++renderToken;
+        try {
+          await Promise.all([fetchPage(), fetchAggregates()]);
+        } catch (e) {
+          if (token === renderToken) toast("Load failed: " + e.message, "error");
+          return;
+        }
+        if (token !== renderToken) return;
+
         document.getElementById("totalCount").textContent =
-          ALL_DATA.length.toLocaleString();
+          datasetTotal.toLocaleString();
         const tl = document.getElementById("tableSourceLabel");
         if (tl) {
-          if (activePriceBucket !== null && PARTIAL_DATA.length) {
+          if (getActiveTableFilename() === "compare_partial.json") {
             tl.textContent = "· showing compare_partial.json (matched)";
             tl.style.color = "#60a5fa";
           } else {
@@ -2726,55 +2678,29 @@
         renderPctBucketsTop();
         renderVendorTabs();
         renderBuckets();
-        renderTable(filteredData);
+        renderTable();
       }
 
-      // ── PARTIAL DATA ───────────────────────────────────────────────
-      async function loadPartialData() {
-        try {
-          const data = await api("GET", "/data/compare_partial.json");
-          if (Array.isArray(data)) {
-            PARTIAL_DATA = data;
-            toast(
-              `Partial data loaded — ${data.length.toLocaleString()} matched records`,
-              "success",
-              3000,
-            );
-            render();
-          }
-        } catch (e) {
-          PARTIAL_DATA = [];
-        }
-      }
-
-      // ── OVERLAP MODAL ──────────────────────────────────────────────
-      let OVERLAP_DATA = [],
+      // ── OVERLAP MODAL — paginated via /vendor-overlap ─────────
+      let overlapPageRows = [],
+        overlapTotal = 0,
+        overlapPage = 1,
         overlapSearch = "",
-        overlapPage = 1;
+        overlapSortCol = null,
+        overlapSortDir = "asc";
       const OVERLAP_PAGE_SIZE = 25;
-      let overlapSortCol = null,
-        overlapSortDir = 1;
       async function openOverlapModal() {
         document.getElementById("overlapModal").classList.add("open");
         document.body.style.overflow = "hidden";
-        if (!OVERLAP_DATA.length) {
-          document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading…</td></tr>`;
-          try {
-            const data = await api("GET", "/vendor-overlap");
-            OVERLAP_DATA = Array.isArray(data) ? data : [];
-            if (!OVERLAP_DATA.length) {
-              document.getElementById("modalTableBody").innerHTML =
-                `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⚠️</div>No data found. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> first.</td></tr>`;
-              return;
-            }
-          } catch (e) {
-            document.getElementById("modalTableBody").innerHTML =
-              `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Overlap data not found — run the pipeline first." : e.message}</td></tr>`;
-            return;
-          }
-        }
-        renderModalTable();
+        overlapPage = 1;
+        overlapSearch = "";
+        overlapSortCol = null;
+        overlapSortDir = "asc";
+        const inp = document.getElementById("modalSearchInp");
+        if (inp) inp.value = "";
+        document.getElementById("modalTableBody").innerHTML =
+          `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading…</td></tr>`;
+        await loadOverlapPage();
       }
       function closeOverlapModal() {
         document.getElementById("overlapModal").classList.remove("open");
@@ -2789,63 +2715,63 @@
       function setModalFilter(f) {
         overlapPage = 1;
         document.getElementById("mfAll").classList.add("active");
-        renderModalTable();
+        loadOverlapPage();
       }
+      let mTimer;
       function onModalSearch() {
-        overlapSearch = document.getElementById("modalSearchInp").value.trim();
-        overlapPage = 1;
-        renderModalTable();
+        clearTimeout(mTimer);
+        mTimer = setTimeout(() => {
+          overlapSearch = document.getElementById("modalSearchInp").value.trim();
+          overlapPage = 1;
+          loadOverlapPage();
+        }, 250);
       }
       function sortModal(col) {
-        if (overlapSortCol === col) overlapSortDir *= -1;
+        if (overlapSortCol === col)
+          overlapSortDir = overlapSortDir === "asc" ? "desc" : "asc";
         else {
           overlapSortCol = col;
-          overlapSortDir = 1;
+          overlapSortDir = "asc";
         }
         document.querySelectorAll(".modal-table thead th").forEach((th) => {
           th.classList.remove("sort-asc", "sort-desc");
           if (th.getAttribute("onclick") === `sortModal('${col}')`)
-            th.classList.add(overlapSortDir === 1 ? "sort-asc" : "sort-desc");
+            th.classList.add(overlapSortDir === "asc" ? "sort-asc" : "sort-desc");
         });
-        renderModalTable();
+        overlapPage = 1;
+        loadOverlapPage();
       }
-      function getModalFiltered() {
-        let rows = OVERLAP_DATA;
-        if (overlapSearch)
-          rows = rows.filter((r) =>
-            String(r["certificate_number"] ?? "").includes(overlapSearch),
-          );
-        if (overlapSortCol) {
-          rows = [...rows].sort((a, b) => {
-            let va = a[overlapSortCol],
-              vb = b[overlapSortCol];
-            if (va === null || va === undefined)
-              va = overlapSortDir === 1 ? Infinity : -Infinity;
-            if (vb === null || vb === undefined)
-              vb = overlapSortDir === 1 ? Infinity : -Infinity;
-            if (typeof va === "string" && typeof vb === "string")
-              return overlapSortDir * va.localeCompare(vb);
-            return overlapSortDir * (va - vb);
-          });
+      async function loadOverlapPage() {
+        try {
+          const p = new URLSearchParams();
+          p.set("limit", OVERLAP_PAGE_SIZE);
+          p.set("offset", (overlapPage - 1) * OVERLAP_PAGE_SIZE);
+          if (overlapSearch) p.set("cert", overlapSearch);
+          if (overlapSortCol) {
+            p.set("sort_col", SORT_COL_MAP[overlapSortCol] || overlapSortCol);
+            p.set("sort_dir", overlapSortDir);
+          }
+          const res = await api("GET", `/vendor-overlap?${p.toString()}`);
+          overlapPageRows = Array.isArray(res.rows) ? res.rows : [];
+          overlapTotal = Number(res.total || 0);
+          renderModalTable();
+        } catch (e) {
+          document.getElementById("modalTableBody").innerHTML =
+            `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Overlap data not found — run the pipeline first." : e.message}</td></tr>`;
         }
-        return rows;
       }
       function renderModalTable() {
-        const all = OVERLAP_DATA,
-          filtered = getModalFiltered();
-        const tp = Math.ceil(filtered.length / OVERLAP_PAGE_SIZE);
-        overlapPage = Math.min(overlapPage, tp || 1);
-        const page = filtered.slice(
-          (overlapPage - 1) * OVERLAP_PAGE_SIZE,
-          overlapPage * OVERLAP_PAGE_SIZE,
-        );
+        const tp = Math.max(1, Math.ceil(overlapTotal / OVERLAP_PAGE_SIZE));
+        overlapPage = Math.min(overlapPage, tp);
         document.getElementById("modalStatPills").innerHTML =
-          `<div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">Total <strong style="color:var(--overlap-color)">${all.length.toLocaleString()}</strong></div>`;
-        if (!page.length) {
+          `<div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">Total <strong style="color:var(--overlap-color)">${overlapTotal.toLocaleString()}</strong></div>`;
+        if (!overlapPageRows.length) {
           document.getElementById("modalTableBody").innerHTML =
-            `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+            overlapTotal === 0
+              ? `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)">⚠️ No data. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> first.</td></tr>`
+              : `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted)">🔍 No records match</td></tr>`;
         } else {
-          document.getElementById("modalTableBody").innerHTML = page
+          document.getElementById("modalTableBody").innerHTML = overlapPageRows
             .map((r) => {
               const cert = String(r["certificate_number"] ?? "—");
               const sh = r["shape"] || r["Shape"] || "—",
@@ -2884,7 +2810,7 @@
             .join("");
         }
         document.getElementById("modalFooterInfo").textContent =
-          `Showing ${Math.min((overlapPage - 1) * OVERLAP_PAGE_SIZE + 1, filtered.length)}–${Math.min(overlapPage * OVERLAP_PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} records`;
+          `Showing ${overlapTotal === 0 ? 0 : Math.min((overlapPage - 1) * OVERLAP_PAGE_SIZE + 1, overlapTotal)}–${Math.min(overlapPage * OVERLAP_PAGE_SIZE, overlapTotal)} of ${overlapTotal.toLocaleString()} records`;
         const d = 2;
         let pages = "";
         for (let p = 1; p <= tp; p++) {
@@ -2901,7 +2827,7 @@
       }
       function overlapGoPage(p) {
         overlapPage = p;
-        renderModalTable();
+        loadOverlapPage();
       }
 
       // ── STATS ──────────────────────────────────────────────────────
@@ -2994,10 +2920,18 @@
           loadStats();
           loadVendorCommonCards();
           if (health.default_dataset) {
-            showLoading("Loading compare.json…");
-            const data = await api("GET", "/compare");
-            ingestData(data);
-            loadPartialData();
+            showLoading("Loading paginated data from PostgreSQL…");
+            await render();
+            hideLoading();
+            if (partialTotal > 0) {
+              toast(
+                `✓ Loaded — ${datasetTotal.toLocaleString()} common · ${partialTotal.toLocaleString()} partial`,
+                "success",
+                3000,
+              );
+            } else {
+              toast(`✓ Loaded ${datasetTotal.toLocaleString()} records`, "success", 3000);
+            }
           } else {
             hideLoading();
             toast("No compare.json found on the server", "info", 6000);
