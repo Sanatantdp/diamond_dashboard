@@ -1314,18 +1314,18 @@
           <div class="control-group">
             <label>Carat</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="number" step="0.01" id="caratMin" class="inp" placeholder="Min ct" style="width:90px" />
+              <input type="number" step="0.01" id="caratMin" class="inp" placeholder="Min ct" style="width:90px" oninput="onAttrInputChange()" />
               <span style="color:var(--muted)">—</span>
-              <input type="number" step="0.01" id="caratMax" class="inp" placeholder="Max ct" style="width:90px" />
+              <input type="number" step="0.01" id="caratMax" class="inp" placeholder="Max ct" style="width:90px" oninput="onAttrInputChange()" />
             </div>
           </div>
           <div class="filter-card-sep"></div>
           <div class="control-group">
             <label>Color</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <select id="colorMin" class="inp"></select>
+              <select id="colorMin" class="inp" onchange="applyAttrFilters()"></select>
               <span style="color:var(--muted)">—</span>
-              <select id="colorMax" class="inp"></select>
+              <select id="colorMax" class="inp" onchange="applyAttrFilters()"></select>
             </div>
           </div>
         </div>
@@ -1333,18 +1333,18 @@
           <div class="control-group">
             <label>Clarity</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <select id="clarityMin" class="inp"></select>
+              <select id="clarityMin" class="inp" onchange="applyAttrFilters()"></select>
               <span style="color:var(--muted)">—</span>
-              <select id="clarityMax" class="inp"></select>
+              <select id="clarityMax" class="inp" onchange="applyAttrFilters()"></select>
             </div>
           </div>
           <div class="filter-card-sep"></div>
           <div class="control-group">
             <label>Cut</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <select id="cutMin" class="inp"></select>
+              <select id="cutMin" class="inp" onchange="applyAttrFilters()"></select>
               <span style="color:var(--muted)">—</span>
-              <select id="cutMax" class="inp"></select>
+              <select id="cutMax" class="inp" onchange="applyAttrFilters()"></select>
             </div>
           </div>
           <div class="filter-card-sep"></div>
@@ -1699,6 +1699,11 @@
         fill("colorMin", COLORS); fill("colorMax", COLORS);
         fill("clarityMin", CLARITIES); fill("clarityMax", CLARITIES);
         fill("cutMin", CUTS); fill("cutMax", CUTS);
+      }
+      let attrInputTimer;
+      function onAttrInputChange() {
+        clearTimeout(attrInputTimer);
+        attrInputTimer = setTimeout(applyAttrFilters, 400);
       }
       function applyAttrFilters() {
         colorMin = document.getElementById("colorMin").value || null;
