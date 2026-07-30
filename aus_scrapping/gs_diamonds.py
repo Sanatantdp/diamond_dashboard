@@ -28,7 +28,8 @@ VPN_ROTATE_AFTER_FAILS = 3
 JSON_DIR        = os.path.join(OUTPUT_DIR, "gs_pages")
 CSV_FILE        = os.path.join(OUTPUT_DIR, "gs_diamonds.csv")
 CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "gs_checkpoint.json")
-SLEEP_SEC       = 2.0
+SLEEP_MIN_SEC   = 5.0
+SLEEP_MAX_SEC   = 10.0
 CHECKPOINT_MAX_DAYS = 2
 
 import datetime
@@ -420,7 +421,7 @@ def fetch_all_pages(curl, existing_certs, rotate_after_fails=None):
                 total_rows += len(rows)
                 save_checkpoint(shape, page + 1)
                 page += 1
-                time.sleep(SLEEP_SEC)
+                time.sleep(random.uniform(SLEEP_MIN_SEC, SLEEP_MAX_SEC))
     finally:
         csv_f.close()
 

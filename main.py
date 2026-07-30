@@ -211,6 +211,59 @@ PRICE_BUCKETS = [
     {"label": "$1,200+",         "min": 1201.0, "max": None},
 ]
 
+# ============================================================================
+# Shared diamond attribute filters (shape / color / clarity / cut / carat).
+# Every compare table across all 4 stores exposes these same 5 columns, so
+# one filter builder covers USA/ROG/UK/ROA instead of duplicating it 4x.
+# ============================================================================
+COLOR_ORDER = ["K", "J", "I", "H", "G", "F", "E", "D"]              # worst -> best
+CLARITY_ORDER = ["FL", "IF", "VVS1", "VVS2", "VS1", "VS2", "SI1"]   # best -> worst
+CUT_ORDER = ["IDEAL", "EXCELLENT", "VERY GOOD", "GOOD"]             # best -> worst
+
+
+def _ordered_range(order: list[str], lo: str | None, hi: str | None) -> list[str] | None:
+    """Slice `order` between the positions of lo/hi (inclusive); None means no filter requested."""
+    if not lo and not hi:
+        return None
+    lo_idx = order.index(lo.upper()) if lo and lo.upper() in order else 0
+    hi_idx = order.index(hi.upper()) if hi and hi.upper() in order else len(order) - 1
+    if lo_idx > hi_idx:
+        lo_idx, hi_idx = hi_idx, lo_idx
+    return order[lo_idx : hi_idx + 1]
+
+
+def _add_diamond_attr_clauses(params: dict, clauses: list[str], args: list) -> None:
+    """Append shape/color/clarity/cut/carat WHERE clauses shared by every store."""
+    shapes = [s.strip().upper() for s in (params.get("shape") or "").split(",") if s.strip()]
+    if shapes:
+        clauses.append('UPPER("shape") = ANY(%s)'); args.append(shapes)
+
+    colors = _ordered_range(COLOR_ORDER, params.get("color_min"), params.get("color_max"))
+    if colors is not None:
+        clauses.append('UPPER("color") = ANY(%s)'); args.append(colors)
+
+    clarities = _ordered_range(CLARITY_ORDER, params.get("clarity_min"), params.get("clarity_max"))
+    if clarities is not None:
+        clauses.append('UPPER("clarity") = ANY(%s)'); args.append(clarities)
+
+    cuts = _ordered_range(CUT_ORDER, params.get("cut_min"), params.get("cut_max"))
+    if cuts is not None:
+        clauses.append('UPPER("cut") = ANY(%s)'); args.append(cuts)
+
+    cmin = params.get("carat_min")
+    cmax = params.get("carat_max")
+    if cmin not in (None, ""):
+        try:
+            clauses.append('"carat_weight" >= %s'); args.append(float(cmin))
+        except ValueError:
+            pass
+    if cmax not in (None, ""):
+        try:
+            clauses.append('"carat_weight" <= %s'); args.append(float(cmax))
+        except ValueError:
+            pass
+
+
 # Tables exposed via /api/data/{filename}
 FILENAME_TO_TABLE = {
     "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
@@ -302,6 +355,8 @@ def _build_where(table: str, params: dict) -> tuple[str, list]:
     if (params.get("common_only") or "").lower() == "true" and table != "compare_br_vs_lg":
         for c in ("lg_price_usd", "brilliance_price_usd", "pc_price_usd"):
             clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    _add_diamond_attr_clauses(params, clauses, args)
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, args
@@ -714,6 +769,8 @@ def _rog_build_where(
     if (params.get("common_only") or "").lower() == "true":
         for c in ROG_VENDOR_PRICE_COL.values():
             clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    _add_diamond_attr_clauses(params, clauses, args)
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, args
@@ -1476,6 +1533,8 @@ def _uk_build_where(
         for c in UK_VENDOR_PRICE_COL.values():
             clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
 
+    _add_diamond_attr_clauses(params, clauses, args)
+
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, args
 
@@ -1958,6 +2017,8 @@ def _roa_build_where(
     if (params.get("common_only") or "").lower() == "true":
         for c in ROA_VENDOR_PRICE_COL.values():
             clauses.append(f'"{c}" IS NOT NULL AND "{c}" > 0')
+
+    _add_diamond_attr_clauses(params, clauses, args)
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, args

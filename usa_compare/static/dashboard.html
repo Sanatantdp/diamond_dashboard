@@ -438,6 +438,14 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
       }
+      .shape-chips { display: grid; grid-template-columns: repeat(5, max-content); gap: 6px; }
+      .shape-chip {
+        padding: 6px 12px; border-radius: 6px; font-size: 0.7rem; cursor: pointer;
+        border: 1px solid var(--border); color: var(--muted); background: transparent;
+        font-family: var(--font-mono); transition: all 0.15s;
+      }
+      .shape-chip.active { background: color-mix(in srgb, var(--accent) 14%, var(--card)); border-color: var(--accent); color: var(--accent); }
+      .shape-chip:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
       .inp {
         background: var(--card);
         border: 1px solid var(--border);
@@ -1296,6 +1304,58 @@
             <input type="text" id="certSearch" class="inp" placeholder="e.g. 655414064" style="width:200px" oninput="onSearch()" />
           </div>
         </div>
+        <div class="filter-card-row">
+          <div class="control-group">
+            <label>Shape</label>
+            <div class="shape-chips" id="shapeChips"></div>
+          </div>
+        </div>
+        <div class="filter-card-row">
+          <div class="control-group">
+            <label>Carat</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="number" step="0.01" id="caratMin" class="inp" placeholder="Min ct" style="width:90px" />
+              <span style="color:var(--muted)">—</span>
+              <input type="number" step="0.01" id="caratMax" class="inp" placeholder="Max ct" style="width:90px" />
+            </div>
+          </div>
+          <div class="filter-card-sep"></div>
+          <div class="control-group">
+            <label>Color</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="colorMin" class="inp"></select>
+              <span style="color:var(--muted)">—</span>
+              <select id="colorMax" class="inp"></select>
+            </div>
+          </div>
+        </div>
+        <div class="filter-card-row">
+          <div class="control-group">
+            <label>Clarity</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="clarityMin" class="inp"></select>
+              <span style="color:var(--muted)">—</span>
+              <select id="clarityMax" class="inp"></select>
+            </div>
+          </div>
+          <div class="filter-card-sep"></div>
+          <div class="control-group">
+            <label>Cut</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="cutMin" class="inp"></select>
+              <span style="color:var(--muted)">—</span>
+              <select id="cutMax" class="inp"></select>
+            </div>
+          </div>
+          <div class="filter-card-sep"></div>
+          <div class="control-group">
+            <label>&nbsp;</label>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-gold btn-sm" onclick="applyAttrFilters()">Apply</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearAttrFilters()">Clear</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- File created date (data generation timestamp) -->
@@ -1386,6 +1446,15 @@
       let currentPage = 1;
       let priceMin = null,
         priceMax = null;
+      let selectedShapes = new Set(); // empty = all shapes
+      let colorMin = null, colorMax = null;
+      let clarityMin = null, clarityMax = null;
+      let cutMin = null, cutMax = null;
+      let caratMin = null, caratMax = null;
+      const SHAPES = ["Round", "Oval", "Cushion", "Emerald", "Princess", "Radiant", "Pear", "Marquise", "Asscher", "Heart"];
+      const COLORS = ["D", "E", "F", "G", "H", "I", "J", "K"];
+      const CLARITIES = ["FL", "IF", "VVS1", "VVS2", "VS1", "VS2", "SI1"];
+      const CUTS = ["Ideal", "Excellent", "Very Good", "Good"];
       let commonOnly = false;
       let activeBucketFilter = null;         // { vendorKey, bucketIdx, src: 'partial'|'common' }
       let activePriceBucket = null;          // bucket idx (vendor = selectedPriceVendorKey)
@@ -1551,6 +1620,15 @@
         if (certSearch) p.set("cert", certSearch);
         if (priceMin !== null) p.set("price_min", priceMin);
         if (priceMax !== null) p.set("price_max", priceMax);
+        if (selectedShapes.size) p.set("shape", [...selectedShapes].join(","));
+        if (colorMin) p.set("color_min", colorMin);
+        if (colorMax) p.set("color_max", colorMax);
+        if (clarityMin) p.set("clarity_min", clarityMin);
+        if (clarityMax) p.set("clarity_max", clarityMax);
+        if (cutMin) p.set("cut_min", cutMin);
+        if (cutMax) p.set("cut_max", cutMax);
+        if (caratMin !== null) p.set("carat_min", caratMin);
+        if (caratMax !== null) p.set("carat_max", caratMax);
         if (commonOnly) p.set("common_only", "true");
         if (activeBucketFilter)
           p.set(
@@ -1599,6 +1677,48 @@
       }
       function clearPriceBucketFilter() {
         activePriceBucket = null;
+        currentPage = 1;
+        render();
+      }
+      function renderShapeChips() {
+        document.getElementById("shapeChips").innerHTML = SHAPES.map(
+          (s) => `<button type="button" class="shape-chip${selectedShapes.has(s) ? " active" : ""}" onclick="toggleShape('${s}')">${s}</button>`
+        ).join("");
+      }
+      function toggleShape(s) {
+        if (selectedShapes.has(s)) selectedShapes.delete(s); else selectedShapes.add(s);
+        renderShapeChips();
+        currentPage = 1;
+        render();
+      }
+      function populateAttrSelects() {
+        const fill = (id, options) => {
+          document.getElementById(id).innerHTML =
+            `<option value="">Any</option>` + options.map((o) => `<option value="${o}">${o}</option>`).join("");
+        };
+        fill("colorMin", COLORS); fill("colorMax", COLORS);
+        fill("clarityMin", CLARITIES); fill("clarityMax", CLARITIES);
+        fill("cutMin", CUTS); fill("cutMax", CUTS);
+      }
+      function applyAttrFilters() {
+        colorMin = document.getElementById("colorMin").value || null;
+        colorMax = document.getElementById("colorMax").value || null;
+        clarityMin = document.getElementById("clarityMin").value || null;
+        clarityMax = document.getElementById("clarityMax").value || null;
+        cutMin = document.getElementById("cutMin").value || null;
+        cutMax = document.getElementById("cutMax").value || null;
+        const cmn = document.getElementById("caratMin").value, cmx = document.getElementById("caratMax").value;
+        caratMin = cmn ? parseFloat(cmn) : null;
+        caratMax = cmx ? parseFloat(cmx) : null;
+        currentPage = 1;
+        render();
+      }
+      function clearAttrFilters() {
+        selectedShapes.clear(); renderShapeChips();
+        colorMin = colorMax = clarityMin = clarityMax = cutMin = cutMax = caratMin = caratMax = null;
+        ["colorMin", "colorMax", "clarityMin", "clarityMax", "cutMin", "cutMax", "caratMin", "caratMax"].forEach(
+          (id) => (document.getElementById(id).value = "")
+        );
         currentPage = 1;
         render();
       }
@@ -2251,6 +2371,8 @@
 
       // Startup
       async function startDashboard() {
+        renderShapeChips();
+        populateAttrSelects();
         showLoading("Connecting to API…");
         try {
           const health = await api("GET", "/api/health");

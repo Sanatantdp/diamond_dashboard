@@ -375,7 +375,7 @@ def fetch_page(page: int, session: curl_requests.Session) -> tuple:
 
             resp.raise_for_status()
             diamonds = resp.json().get("response", {}).get("items", [])
-            time.sleep(random.uniform(1.0, 2.0))
+            time.sleep(random.uniform(2.0, 4.0))
             return page, diamonds
         except Exception as e:
             wait = 2 ** attempt
@@ -752,6 +752,9 @@ def run_forever_with_recovery(max_consecutive_crashes: int = 10):
     while True:
         try:
             return scrape()
+        except KeyboardInterrupt:
+            log.warning("Interrupted by user — stopping.")
+            return
         except VPNRotateNeeded as e:
             crashes += 1
             if crashes > max_consecutive_crashes:
@@ -760,9 +763,18 @@ def run_forever_with_recovery(max_consecutive_crashes: int = 10):
             cooldown = min(60 * crashes, 300)
             log.warning(f"Blocked ({e}) — cooling down {cooldown}s then resuming (attempt {crashes}/{max_consecutive_crashes})")
             time.sleep(cooldown)
-        except KeyboardInterrupt:
-            log.warning("Interrupted by user — stopping.")
-            return
+        except Exception as e:
+            # refresh_session() (or anything else in scrape()) can also fail
+            # outright when the IP/WAF block hits before the API even — same
+            # underlying block, just surfaced earlier. Treat it the same way
+            # instead of letting it kill the whole process.
+            crashes += 1
+            if crashes > max_consecutive_crashes:
+                log.error(f"Gave up after {crashes} consecutive failures — aborting.")
+                raise
+            cooldown = min(60 * crashes, 300)
+            log.warning(f"scrape() failed ({e}) — cooling down {cooldown}s then resuming (attempt {crashes}/{max_consecutive_crashes})")
+            time.sleep(cooldown)
 
 
 if __name__ == "__main__":

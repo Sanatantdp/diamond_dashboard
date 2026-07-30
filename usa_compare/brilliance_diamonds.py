@@ -569,7 +569,9 @@ def print_final_summary(all_reports, grand_wall, total_available):
 
 
 # ── MAIN SCRAPER (no scheduling, no file rotation) ────────────────────────────
-def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
+def brilliance_diamonds_scraper(rotate_after_fails: int | None = None,
+                                 start_page_override: int | None = None,
+                                 end_page_override: int | None = None):
     """
     Pure scraper. Appends to / resumes from the existing CSV + checkpoint.
 
@@ -578,6 +580,10 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
             failed pages. Caller should catch and switch VPN before retrying.
             None (default) preserves original behavior — failed pages are
             recorded and the scrape moves on.
+        start_page_override: If set, start at this page instead of resuming
+            from checkpoint.json. Used for manual page-range runs.
+        end_page_override: If set, stop after this page instead of scraping
+            through the API's full total_pages. Used for manual page-range runs.
 
     Use `run_with_scheduler()` for the daily-check + auto-backup loop,
     or `run_with_vpn_rotation()` to wrap this in a VPN tunnel with mid-scrape
@@ -612,16 +618,23 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
     file, writer               = get_writer()
     start_page, total_inserted, _stored_count = load_checkpoint()
 
+    manual_range = start_page_override is not None or end_page_override is not None
+    if start_page_override is not None:
+        start_page = start_page_override
+    end_page = min(end_page_override, total_pages) if end_page_override is not None else total_pages
+
     consecutive_fails    = 0
     last_successful_page = start_page - 1
 
     print(f"\n  {'═'*52}")
     print(f"  🚀  BRILLIANCE SCRAPER")
     print(f"  {'═'*52}")
-    print(f"  {'Total pages':<26}: {total_pages:,}")
+    if manual_range:
+        print(f"  {'Mode':<26}: manual page range")
+    print(f"  {'Total pages (API)':<26}: {total_pages:,}")
+    print(f"  {'Page range this run':<26}: {start_page:,} – {end_page:,}")
     print(f"  {'Batch size':<26}: {BATCH_SIZE:,} calls")
-    print(f"  {'Total batches':<26}: {math.ceil(total_pages / BATCH_SIZE):,}")
-    print(f"  {'Starting from page':<26}: {start_page:,}")
+    print(f"  {'Total batches':<26}: {math.ceil((end_page - start_page + 1) / BATCH_SIZE):,}")
     print(f"  {'Existing certs loaded':<26}: {len(existing_certs):,}")
     print(f"  {'Sleep between batches':<26}: {BATCH_SLEEP_MIN}–{BATCH_SLEEP_MAX}s (random)")
     print(f"  {'═'*52}\n")
@@ -633,11 +646,11 @@ def brilliance_diamonds_scraper(rotate_after_fails: int | None = None):
     batch_num = math.ceil(start_page / BATCH_SIZE)
 
     try:
-        while page <= total_pages:
+        while page <= end_page:
             batch_start    = time.perf_counter()
             batch_results  = []
             batch_inserted = 0
-            batch_end_page = min(page + BATCH_SIZE - 1, total_pages)
+            batch_end_page = min(page + BATCH_SIZE - 1, end_page)
 
             print(f"\n  ▶  Batch {batch_num}  "
                   f"(pages {page:,} – {batch_end_page:,}  |  "

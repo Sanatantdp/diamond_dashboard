@@ -5,25 +5,19 @@ import datetime
 import json
 import os
 import random
+import re
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import unquote
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from curl_cffi import requests
 
 from logger import get_logger
-
-# ── fake-useragent (lazy-init after logger is ready) ──────────────────────────
-try:
-    from fake_useragent import UserAgent as _FakeUA
-    _ua_pool = _FakeUA(browsers=["chrome", "firefox", "edge"], os=["windows", "macos"])
-except Exception:          # network unavailable, cache missing, etc.
-    _ua_pool = None
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -93,48 +87,89 @@ BASE_DIR    = str(Path(__file__).resolve().parent.parent)
 DOWN_FILES  = os.path.join(BASE_DIR, "diamond_files", "usa")
 CSV_FILE    = os.path.join(DOWN_FILES, "friendlydiamond.csv")
 STATE_FILE  = os.path.join(DOWN_FILES, "friendly_state.txt")
+CURL_FILE   = str(Path(__file__).resolve().parent / "curl_friendly.txt")
 
 os.makedirs(DOWN_FILES, exist_ok=True)
 
 # ── Backup config ────────────────────────────────────────────────────────────
 STALE_THRESHOLD_DAYS = 2    # CSV older than this -> archive + full re-scrape
 
-# ── Static HTTP config ────────────────────────────────────────────────────────
+# ── curl_friendly.txt parser ────────────────────────────────────────────────
+# The API is gated behind a real browser session (XSRF-TOKEN + Laravel session
+# cookie, Cloudflare), so header/UA rotation on a cookie-less client just gets
+# a 403 on every request. Instead we replay cookies+headers captured from a
+# real browser session, same pattern as aus_scrapping/gs_diamonds.py.
 
-BASE_HEADERS: dict[str, str] = {
-    "accept":             "application/json, text/plain, */*",
-    "accept-language":    "en-GB,en-US;q=0.9,en;q=0.8",
-    "cache-control":      "no-cache",
-    "origin":             "https://friendlydiamonds.com",
-    "pragma":             "no-cache",
-    "priority":           "u=1, i",
-    "referer":            "https://friendlydiamonds.com/loose-diamonds",
-    "sec-ch-ua":          '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
-    "sec-ch-ua-mobile":   "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest":     "empty",
-    "sec-fetch-mode":     "cors",
-    "sec-fetch-site":     "same-origin",
-}
+def load_curl(path: str) -> dict:
+    if not os.path.exists(path):
+        print(f"\n[FATAL] '{path}' not found.")
+        print("  Steps to create it:")
+        print("  1. Open Chrome -> friendlydiamonds.com/loose-diamonds")
+        print("  2. DevTools (F12) -> Network tab")
+        print("  3. Find any 'loose?...' XHR request to /api/us/diamond/filter/loose")
+        print("  4. Right-click -> Copy -> Copy as cURL (cmd)")
+        print("  5. Paste and save as usa_compare/curl_friendly.txt")
+        sys.exit(1)
 
-_FALLBACK_UA_POOL: list[str] = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
-]
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
 
+    # Normalise both Unix (\) and Windows CMD (^) line continuations
+    raw = raw.replace("^\r\n", " ").replace("^\n", " ").replace("\\\n", " ")
+    # Decode Windows CMD escape sequences before parsing
+    raw = re.sub(r'\^%\^', '%', raw)   # ^%^ → %  (encoded URL chars)
+    raw = raw.replace('^$', '$')        # ^$ → $
+    raw = raw.replace('^&', '&')        # ^& → &  (URL ampersands)
+    # Keep embedded quotes distinguishable from the outer -H/-b delimiters
+    # (e.g. a cookie value or sec-ch-ua's brand list both contain nested
+    # quotes) — collapsing straight to '"' makes "[^"]+" stop at the first
+    # embedded quote and silently truncates everything after it.
+    raw = raw.replace(r'^\^"', '\\"')   # ^\^" → \" (escaped quote inside -H/-b value)
+    raw = raw.replace('^"', '"')        # ^"  → "  (outer delimiters)
+    raw = raw.replace('^^', '^')        # ^^ → ^   (literal caret)
+    raw = re.sub(r"\s+", " ", raw).strip()
 
-def _random_ua() -> str:
-    if _ua_pool is not None:
+    q = "'" if raw.lstrip().startswith("curl '") else '"'
+    Q = re.escape(q)
+
+    result: dict = {}
+
+    # Cookies
+    cookie_m = re.search(rf'-b\s+{Q}((?:[^{q}\\]|\\.)*){Q}', raw)
+    cookies: dict[str, str] = {}
+    if cookie_m:
+        raw_c = cookie_m.group(1).replace('\\"', '"')
         try:
-            return _ua_pool.random
-        except Exception as exc:
-            log.debug(f"fake-useragent .random failed ({exc}) — using fallback pool.")
-    return random.choice(_FALLBACK_UA_POOL)
+            raw_c = unquote(raw_c)
+        except Exception:
+            pass
+        for part in raw_c.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, _, v = part.partition("=")
+                cookies[k.strip()] = v.strip()
+    result["cookies"] = cookies
+
+    # Headers
+    headers: dict[str, str] = {}
+    for hm in re.finditer(rf'-H\s+{Q}((?:[^{q}\\]|\\.)*){Q}', raw):
+        hdr = hm.group(1).replace('\\"', '"')
+        if ":" in hdr:
+            k, _, v = hdr.partition(":")
+            k = k.strip().lower()
+            if k not in ("host", "content-length"):
+                headers[k] = v.strip()
+    if "accept" not in headers:
+        headers["accept"] = "application/json, text/plain, */*"
+    result["headers"] = headers
+
+    return result
+
+
+def validate_curl(curl: dict) -> None:
+    log.info(f"curl_friendly.txt -> {len(curl['cookies'])} cookies, {len(curl['headers'])} headers loaded")
+    if not curl["cookies"]:
+        log.warning("No cookies parsed from curl_friendly.txt — requests will likely 403.")
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
@@ -180,36 +215,34 @@ class DiamondRow:
         return astuple(self)
 
 
-# ── HTTP session factory ──────────────────────────────────────────────────────
+# ── HTTP session (thread-local, persistent, seeded from curl_friendly.txt) ────
+# One session per worker thread — the cookie jar must survive across requests
+# so any cookie the server refreshes (XSRF-TOKEN rotation etc.) carries
+# forward, the same way a real browser tab would keep it.
 
-def _build_session() -> requests.Session:
-    """
-    Build a fresh requests.Session for a single page fetch.
+_thread_local = threading.local()
 
-    A new session is created per request so the User-Agent rotates on every
-    call and no keep-alive connection or cookie jar carries over between pages.
-    """
-    ua = _random_ua()
-    log.debug(f"Session UA -> {ua[:80]}{'...' if len(ua) > 80 else ''}")
 
-    session = requests.Session()
-    session.headers.update({**BASE_HEADERS, "user-agent": ua})
+def _get_session(curl: dict) -> requests.Session:
+    if not hasattr(_thread_local, "session"):
+        session = requests.Session(impersonate="chrome124")
+        for k, v in curl["cookies"].items():
+            session.cookies.set(k, v)
+        _thread_local.session = session
+    return _thread_local.session
 
-    adapter = HTTPAdapter(
-        pool_connections=1,
-        pool_maxsize=1,
-        max_retries=Retry(
-            total=3,
-            connect=3,
-            read=0,
-            backoff_factor=2,
-            status_forcelist=[502, 503, 504],
-            allowed_methods=["GET"],
-        ),
-    )
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
+
+def _reset_session(curl: dict) -> None:
+    """Recreate this thread's session (fresh TCP + cookie jar reseeded from curl_friendly.txt)."""
+    try:
+        if hasattr(_thread_local, "session"):
+            _thread_local.session.close()
+    except Exception:
+        pass
+    session = requests.Session(impersonate="chrome124")
+    for k, v in curl["cookies"].items():
+        session.cookies.set(k, v)
+    _thread_local.session = session
 
 # ── Back-off helpers ──────────────────────────────────────────────────────────
 
@@ -320,11 +353,14 @@ def _init_csv() -> None:
 
 # ── HTTP fetching ─────────────────────────────────────────────────────────────
 
-def _fetch_page(shape: str, carat_from: float, carat_to: float, page: int) -> dict[str, Any]:
+def _fetch_page(shape: str, carat_from: float, carat_to: float, page: int, curl: dict) -> dict[str, Any]:
     """
     GET the loose-diamond filter endpoint for a single (shape, carat band, page)
-    combo with a fresh session per call. Retries up to RETRY_TOTAL times on
-    transient failures using exponential back-off with jitter. Non-retriable
+    combo, replaying the headers/cookies captured in curl_friendly.txt over this
+    thread's persistent session. Retries up to RETRY_TOTAL times on transient
+    failures using exponential back-off with jitter. A 403 means the captured
+    session has expired — logged distinctly since header rotation cannot fix it
+    (curl_friendly.txt needs a fresh "Copy as cURL" paste). Other non-retriable
     errors (4xx) are logged and an empty dict returned immediately.
     """
     url = (
@@ -335,40 +371,48 @@ def _fetch_page(shape: str, carat_from: float, carat_to: float, page: int) -> di
     label = f"{shape} {carat_from:g}-{carat_to:g}ct page={page}"
 
     for attempt in range(1, RETRY_TOTAL + 1):
-        with _build_session() as session:
-            try:
-                resp = session.get(url, timeout=REQUEST_TIMEOUT)
-                resp.raise_for_status()
-                return resp.json()
+        session = _get_session(curl)
+        try:
+            resp = session.get(url, headers=curl["headers"], timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
 
-            except requests.exceptions.ReadTimeout:
-                wait = _backoff_wait(attempt)
-                log.warning(
-                    f"[attempt {attempt}/{RETRY_TOTAL}] Read timeout at {label}. "
-                    f"Retrying in {wait:.0f}s ..."
+        except requests.exceptions.ReadTimeout:
+            wait = _backoff_wait(attempt)
+            log.warning(
+                f"[attempt {attempt}/{RETRY_TOTAL}] Read timeout at {label}. "
+                f"Retrying in {wait:.0f}s ..."
+            )
+
+        except requests.exceptions.ConnectionError as exc:
+            wait = _backoff_wait(attempt)
+            log.warning(
+                f"[attempt {attempt}/{RETRY_TOTAL}] Connection error at {label}: {exc}. "
+                f"Retrying in {wait:.0f}s ..."
+            )
+            _reset_session(curl)
+
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "?"
+            if status == 403:
+                log.error(
+                    f"HTTP 403 at {label} — captured session in curl_friendly.txt has "
+                    f"likely expired. Re-copy a fresh cURL from the browser and re-save "
+                    f"usa_compare/curl_friendly.txt."
                 )
-
-            except requests.exceptions.ConnectionError as exc:
-                wait = _backoff_wait(attempt)
-                log.warning(
-                    f"[attempt {attempt}/{RETRY_TOTAL}] Connection error at {label}: {exc}. "
-                    f"Retrying in {wait:.0f}s ..."
-                )
-
-            except requests.exceptions.HTTPError as exc:
-                status = exc.response.status_code if exc.response is not None else "?"
-                if isinstance(status, int) and status < 500:
-                    log.error(f"Non-retriable HTTP {status} at {label}: {exc}")
-                    return {}
-                wait = _backoff_wait(attempt)
-                log.warning(
-                    f"[attempt {attempt}/{RETRY_TOTAL}] HTTP {status} at {label}. "
-                    f"Retrying in {wait:.0f}s ..."
-                )
-
-            except Exception as exc:
-                log.error(f"Unexpected error at {label}: {exc}")
                 return {}
+            if isinstance(status, int) and status < 500:
+                log.error(f"Non-retriable HTTP {status} at {label}: {exc}")
+                return {}
+            wait = _backoff_wait(attempt)
+            log.warning(
+                f"[attempt {attempt}/{RETRY_TOTAL}] HTTP {status} at {label}. "
+                f"Retrying in {wait:.0f}s ..."
+            )
+
+        except Exception as exc:
+            log.error(f"Unexpected error at {label}: {exc}")
+            return {}
 
         if attempt < RETRY_TOTAL:
             time.sleep(wait)
@@ -437,6 +481,7 @@ def _scrape_shape(
     state: dict,
     state_lock: threading.Lock,
     totals: dict[str, int],
+    curl: dict,
 ) -> None:
     """
     Walk every carat band for a single shape, paginating each to completion
@@ -458,7 +503,7 @@ def _scrape_shape(
         zero_streak  = 0
 
         while True:
-            response = _fetch_page(shape, carat_from, carat_to, page)
+            response = _fetch_page(shape, carat_from, carat_to, page, curl)
             payload  = response.get("data") if response else None
 
             if not payload:
@@ -544,6 +589,9 @@ def friendly_diamonds_scrape() -> dict[str, int]:
         f"({SHAPE_WORKERS} shapes running concurrently)"
     )
 
+    curl = load_curl(CURL_FILE)
+    validate_curl(curl)
+
     rotated = _rotate_old_file(CSV_FILE)
     if rotated:
         log.info("Old data archived — this will be a full fresh run.")
@@ -558,7 +606,7 @@ def friendly_diamonds_scrape() -> dict[str, int]:
 
     with ThreadPoolExecutor(max_workers=SHAPE_WORKERS) as executor:
         futures = {
-            executor.submit(_scrape_shape, shape, seen_certs, certs_lock, state, state_lock, totals): shape
+            executor.submit(_scrape_shape, shape, seen_certs, certs_lock, state, state_lock, totals, curl): shape
             for shape in SHAPES
         }
         for future in as_completed(futures):

@@ -1,0 +1,14 @@
+curl ^"https://worker.brilliance.com/api/v1/lab-grown-diamond-search^" ^
+  -H ^"accept: application/json, text/plain, */*^" ^
+  -H ^"accept-language: en-US,en;q=0.9^" ^
+  -H ^"content-type: application/json^" ^
+  -H ^"origin: https://www.brilliance.com^" ^
+  -H ^"priority: u=1, i^" ^
+  -H ^"sec-ch-ua: ^\^"Not;A=Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"150^\^", ^\^"Google Chrome^\^";v=^\^"150^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" ^
+  -H ^"sec-fetch-dest: empty^" ^
+  -H ^"sec-fetch-mode: cors^" ^
+  -H ^"sec-fetch-site: same-site^" ^
+  -H ^"user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36^" ^
+  --data-raw ^"^{^\^"data^\^":^{^\^"imgOnly^\^":true,^\^"view^\^":^\^"grid^\^",^\^"priceMin^\^":750,^\^"priceMax^\^":100000,^\^"caratMin^\^":1.5,^\^"caratMax^\^":12,^\^"colorMin^\^":6,^\^"colorMax^\^":9,^\^"clarityMin^\^":4,^\^"clarityMax^\^":9,^\^"depthMin^\^":0,^\^"depthMax^\^":90,^\^"tableMin^\^":0,^\^"tableMax^\^":90,^\^"shapeList^\^":^[^],^\^"certificateList^\^":^[^],^\^"pager^\^":2,^\^"cutMin^\^":0,^\^"cutMax^\^":4,^\^"polishMin^\^":0,^\^"polishMax^\^":3,^\^"symmetryMin^\^":0,^\^"symmetryMax^\^":3,^\^"fluorMin^\^":0,^\^"fluorMax^\^":3,^\^"fastShipping^\^":0^}^}^"

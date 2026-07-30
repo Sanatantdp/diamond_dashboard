@@ -229,10 +229,17 @@ def scrape(headless: bool) -> None:
                             result = browser_fetch(driver, payload)
 
                             if "error" in result:
-                                log.warning("[%s %.2f-%.2f] p%d fetch error: %s — will retry from here next run",
+                                log.warning("[%s %.2f-%.2f] p%d fetch error: %s — sleeping then retrying same page",
                                             shape, c_min, c_max, page, result["error"])
-                                shard_done = False
-                                break
+                                time.sleep(random.uniform(5, 10))
+                                retry_result = browser_fetch(driver, payload)
+                                if "error" in retry_result:
+                                    log.warning("[%s %.2f-%.2f] p%d fetch error again: %s — skipping to next page",
+                                                shape, c_min, c_max, page, retry_result["error"])
+                                    page += 1
+                                    time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+                                    continue
+                                result = retry_result
 
                             status = result.get("status")
                             if status == 403:
