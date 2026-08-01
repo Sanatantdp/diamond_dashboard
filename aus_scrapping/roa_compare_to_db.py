@@ -8,7 +8,8 @@ Load the AUS/ROA compare JSON files into the Render PostgreSQL database
 This is the ROA counterpart of compare_to_mysql.py (USA) and
 uk_compare_to_db.py (UK). The ROA pipeline uses ROA as the baseline vendor
 and compares two vendors against it: Cullen Jewellery and GS Diamonds.
-All prices are in USD ($).
+ROA, GS, and Cullen prices are all AUD. DB columns keep their historical
+"_usd" names regardless (no schema change) — see ROA_COMPARE_KEY_MAP below.
 
 Tables managed
 --------------
@@ -56,7 +57,7 @@ BATCH_SIZE = 1000
 
 
 # ── Schema ───────────────────────────────────────────────────────────────────
-# cullen = Cullen Jewellery, gs = GS Diamonds, roa = ROA baseline. USD ($).
+# cullen = Cullen Jewellery, gs = GS Diamonds, roa = ROA baseline. All AUD.
 ROA_COMPARE_COLUMNS = [
     ("certificate_number",  "VARCHAR(64)"),
     ("vendors_matched",     "VARCHAR(64)"),
@@ -73,9 +74,15 @@ ROA_COMPARE_COLUMNS = [
     ("gs_price_usd",        "DECIMAL(12,2)"),
     ("gs_vs_roa_usd",       "DECIMAL(12,2)"),
     ("gs_vs_roa_pct",       "DECIMAL(8,2)"),
+    ("cullen_link",         "TEXT"),
+    ("gs_link",             "TEXT"),
 ]
 
 # JSON key (written by diamond_compare_roa.py) -> DB column name
+# NOTE: JSON keys now carry each vendor's real currency — ROA/GS/Cullen are
+# all AUD (see diamond_compare.py's _price_col). The DB column names on the
+# right are left as "_usd" for compatibility — no DB schema change — even
+# though every value underneath is AUD, not USD.
 ROA_COMPARE_KEY_MAP = {
     "certificate_number":  "certificate_number",
     "vendors_matched":     "vendors_matched",
@@ -84,14 +91,16 @@ ROA_COMPARE_KEY_MAP = {
     "clarity":             "clarity",
     "cut":                 "cut",
     "caratWeight":         "carat_weight",
-    "ROA Price USD":       "roa_price_usd",
-    "ROA -30% USD":        "roa_minus_30_usd",
-    "cullen Price USD":    "cullen_price_usd",
-    "cullen vs ROA USD":   "cullen_vs_roa_usd",
+    "ROA Price AUD":       "roa_price_usd",
+    "ROA -30% AUD":        "roa_minus_30_usd",
+    "cullen Price AUD":    "cullen_price_usd",
+    "cullen vs ROA AUD":   "cullen_vs_roa_usd",
     "cullen vs ROA %":     "cullen_vs_roa_pct",
-    "gs Price USD":        "gs_price_usd",
-    "gs vs ROA USD":       "gs_vs_roa_usd",
+    "gs Price AUD":        "gs_price_usd",
+    "gs vs ROA AUD":       "gs_vs_roa_usd",
     "gs vs ROA %":         "gs_vs_roa_pct",
+    "cullen Link":         "cullen_link",
+    "gs Link":             "gs_link",
 }
 
 ROA_OVERLAP_COLUMNS = [
@@ -115,9 +124,9 @@ ROA_OVERLAP_KEY_MAP = {
     "clarity":             "clarity",
     "cut":                 "cut",
     "caratWeight":         "carat_weight",
-    "cullen Price USD":    "cullen_price_usd",
-    "gs Price USD":        "gs_price_usd",
-    "ROA Price USD":       "roa_price_usd",
+    "cullen Price AUD":    "cullen_price_usd",
+    "gs Price AUD":        "gs_price_usd",
+    "ROA Price AUD":       "roa_price_usd",
     "cullen vs ROA %":     "cullen_vs_roa_pct",
     "gs vs ROA %":         "gs_vs_roa_pct",
 }
@@ -135,6 +144,7 @@ ROA_STATUS_COLUMNS = [
     ("partial_count",         "INT"),
     ("all_roa_count",         "INT"),
     ("vendor_overlap_count",  "INT"),
+    ("file_dates",            "TEXT"),
 ]
 
 
@@ -156,6 +166,12 @@ def ensure_table_exists(
         f'  {cols_sql}\n'
         f")"
     )
+    # Table may already exist from a previous run with fewer columns —
+    # add any new ones so older deployments pick them up automatically.
+    for name, ctype in columns:
+        cur.execute(
+            f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{name}" {ctype}'
+        )
     for col in indexes:
         cur.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" ON "{table}" ("{col}")'
@@ -261,6 +277,7 @@ def upload_all_roa_json_files(cur: PgCursor) -> None:
         counts.get("partial"),
         counts.get("all_roa"),
         counts.get("vendor_overlap"),
+        json.dumps(s.get("file_dates") or {}),
     )
     insert_rows(cur, "roa_diamond_status", [c[0] for c in ROA_STATUS_COLUMNS], [status_row])
 

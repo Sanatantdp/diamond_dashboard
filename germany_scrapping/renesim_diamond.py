@@ -105,7 +105,7 @@ GQL_QUERY = """{{
     bulkPageData: "no",
     orderBy: "final_price_eur",
     langCode: "DE",
-    taxPercentage: "8",
+    taxPercentage: "20",
     sortBy: "asc"
   ) {{
     dataCount

@@ -64,7 +64,7 @@ BASE_FILTER = {
     },
     "sort": "recommended",
     "addedRanOut": False,
-    "currency": "USD",
+    "currency": "AUD",
 }
 
 FIELDS = [

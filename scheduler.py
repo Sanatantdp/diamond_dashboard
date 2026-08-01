@@ -82,7 +82,8 @@ PIPELINES: dict[str, list[Path]] = {
         BASE / "aus_scrapping" / "roa_diamond.py",         # 1. baseline (ROA)
         BASE / "aus_scrapping" / "cullen_diamonds.py",     # 2. vendor 1 – cullen
         BASE / "aus_scrapping" / "gs_diamonds.py",         # 3. vendor 2 – GS Diamonds
-        BASE / "aus_scrapping" / "roa_compare_to_db.py",   # 4. compare + DB upload
+        BASE / "aus_scrapping" / "diamond_compare.py",     # 4. compare
+        BASE / "aus_scrapping" / "roa_compare_to_db.py",   # 5. DB upload
     ],
 
     # ── UK   (baseline: ROUK | vendors: diamond-heaven · abelini) ────────────

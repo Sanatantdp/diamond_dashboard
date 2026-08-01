@@ -643,7 +643,7 @@ async def serve_dashboard_uk():
 
 @app.get("/dashboard/aus", response_class=HTMLResponse)
 async def serve_dashboard_roa():
-    """AUS/ROA dashboard. The client reads from /api/roa/* (PostgreSQL, USD)."""
+    """AUS/ROA dashboard. The client reads from /api/roa/* (PostgreSQL, AUD)."""
     html_path = ROA_STATIC_DIR / "dashboard.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="ROA dashboard.html not found")
@@ -1908,7 +1908,7 @@ async def uk_run_compare():
 
 # ============================================================================
 # ============================================================================
-# ROA SIDE  —  /api/roa/*   (cullen & GS Diamonds vs ROA baseline, USD)
+# ROA SIDE  —  /api/roa/*   (cullen & GS Diamonds vs ROA baseline, AUD)
 # ============================================================================
 # ============================================================================
 ROA_DB_TO_JSON = {
@@ -1919,14 +1919,16 @@ ROA_DB_TO_JSON = {
     "clarity":            "clarity",
     "cut":                "cut",
     "carat_weight":       "caratWeight",
-    "roa_price_usd":      "ROA Price USD",
-    "roa_minus_30_usd":   "ROA -30% USD",
-    "cullen_price_usd":   "cullen Price USD",
-    "gs_price_usd":       "gs Price USD",
-    "cullen_vs_roa_usd":  "cullen vs ROA USD",
+    "roa_price_usd":      "ROA Price AUD",
+    "roa_minus_30_usd":   "ROA -30% AUD",
+    "cullen_price_usd":   "cullen Price AUD",
+    "gs_price_usd":       "gs Price AUD",
+    "cullen_vs_roa_usd":  "cullen vs ROA AUD",
     "cullen_vs_roa_pct":  "cullen vs ROA %",
-    "gs_vs_roa_usd":      "gs vs ROA USD",
+    "gs_vs_roa_usd":      "gs vs ROA AUD",
     "gs_vs_roa_pct":      "gs vs ROA %",
+    "cullen_link":        "cullen Link",
+    "gs_link":            "gs Link",
 }
 
 ROA_OVERLAP_DB_TO_JSON = {
@@ -1936,9 +1938,9 @@ ROA_OVERLAP_DB_TO_JSON = {
     "clarity":            "clarity",
     "cut":                "cut",
     "carat_weight":       "caratWeight",
-    "cullen_price_usd":   "cullen Price USD",
-    "gs_price_usd":       "gs Price USD",
-    "roa_price_usd":      "ROA Price USD",
+    "cullen_price_usd":   "cullen Price AUD",
+    "gs_price_usd":       "gs Price AUD",
+    "roa_price_usd":      "ROA Price AUD",
     "cullen_vs_roa_pct":  "cullen vs ROA %",
     "gs_vs_roa_pct":      "gs vs ROA %",
 }
@@ -2209,6 +2211,7 @@ def _fetch_roa_status() -> dict | None:
             "all_roa":        r["all_roa_count"],
             "vendor_overlap": r["vendor_overlap_count"],
         },
+        "file_dates": json.loads(r["file_dates"]) if r.get("file_dates") else {},
     }
 
 

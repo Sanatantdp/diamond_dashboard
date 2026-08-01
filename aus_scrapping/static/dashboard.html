@@ -22,7 +22,6 @@
         --muted: #6b6b8a;
         --font-mono: "DM Mono", monospace;
         --font-display: "Playfair Display", serif;
-        --overlap-color: #f472b6;
       }
       *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
       body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; }
@@ -55,79 +54,6 @@
       #toast.success { background: color-mix(in srgb, var(--green) 15%, var(--card)); border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); color: var(--green); }
       #toast.error { background: color-mix(in srgb, var(--red) 15%, var(--card)); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); color: var(--red); }
       #toast.info { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
-
-      /* ── SHARED MODAL BASE ── */
-      .diamond-modal {
-        position: fixed; inset: 0; z-index: 10000;
-        background: rgba(5,5,10,0.88); backdrop-filter: blur(12px);
-        display: none; align-items: center; justify-content: center;
-        padding: 24px; animation: modalFadeIn 0.25s ease both;
-      }
-      .diamond-modal.open { display: flex; }
-      @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-      .modal-box {
-        background: var(--card); border-radius: 16px; width: 100%;
-        max-width: 1100px; max-height: 88vh; display: flex; flex-direction: column;
-        box-shadow: 0 32px 80px rgba(0,0,0,0.7);
-        animation: modalSlideIn 0.28s cubic-bezier(0.16,1,0.3,1) both; overflow: hidden;
-      }
-      @keyframes modalSlideIn { from { transform: translateY(30px) scale(0.97); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
-      .modal-header {
-        padding: 22px 28px 18px; border-bottom: 1px solid var(--border);
-        display: flex; align-items: center; justify-content: space-between;
-        flex-wrap: wrap; gap: 12px; flex-shrink: 0;
-      }
-      .modal-header-left { display: flex; flex-direction: column; gap: 4px; }
-      .modal-title { font-family: var(--font-display); font-size: 1.25rem; display: flex; align-items: center; gap: 10px; }
-      .modal-sub { font-size: 0.68rem; color: var(--muted); }
-      .modal-close {
-        background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-        border-radius: 8px; width: 36px; height: 36px; display: flex;
-        align-items: center; justify-content: center; cursor: pointer;
-        font-size: 1.1rem; transition: all 0.18s; flex-shrink: 0;
-      }
-      .modal-close:hover { border-color: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--surface)); }
-      .modal-controls {
-        padding: 12px 28px; border-bottom: 1px solid var(--border);
-        display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-        flex-shrink: 0; background: var(--surface);
-      }
-      .modal-search-inp {
-        background: var(--card); border: 1px solid var(--border); color: var(--text);
-        font-family: var(--font-mono); font-size: 0.75rem; padding: 6px 12px;
-        border-radius: 6px; outline: none; width: 200px; transition: border-color 0.2s;
-      }
-      .modal-search-inp::placeholder { color: var(--muted); }
-      .modal-body { flex: 1; overflow: auto; }
-      .modal-table { width: 100%; border-collapse: collapse; font-size: 0.73rem; }
-      .modal-table thead th {
-        background: var(--surface); padding: 10px 14px; text-align: left;
-        font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em;
-        color: var(--muted); border-bottom: 1px solid var(--border);
-        position: sticky; top: 0; z-index: 1; white-space: nowrap;
-        cursor: pointer; user-select: none; transition: color 0.15s;
-      }
-      .modal-table thead th:hover { color: var(--accent); }
-      .modal-table thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
-      .modal-table thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
-      .modal-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
-      .modal-table tbody tr:last-child { border-bottom: none; }
-      .modal-table tbody tr:hover { background: var(--surface); }
-      .modal-table tbody td { padding: 8px 14px; white-space: nowrap; }
-      .modal-footer {
-        padding: 12px 28px; border-top: 1px solid var(--border);
-        display: flex; align-items: center; justify-content: space-between;
-        flex-wrap: wrap; gap: 8px; flex-shrink: 0; background: var(--surface);
-      }
-      .modal-footer-info { font-size: 0.68rem; color: var(--muted); }
-      .modal-pagination { display: flex; gap: 4px; flex-wrap: wrap; }
-      .mpg-btn {
-        padding: 4px 10px; border-radius: 4px; font-size: 0.68rem; cursor: pointer;
-        border: 1px solid var(--border); color: var(--muted); background: var(--card);
-        font-family: var(--font-mono); transition: all 0.15s;
-      }
-      .mpg-btn.active { background: var(--accent); color: #0a0a0f; border-color: var(--accent); font-weight: 600; }
-      .mpg-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
 
       /* ── TOPBAR ── */
       .topbar {
@@ -251,6 +177,20 @@
       .price-bucket-card.active { border-color: var(--pb-color, #a78bfa); background: color-mix(in srgb, var(--pb-color, #a78bfa) 10%, var(--card)); }
       .price-bucket-card.empty { opacity: 0.42; cursor: default; }
       .price-bucket-card.empty:hover { transform: none; border-color: var(--border); }
+      .pct-buckets-top-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 8px; }
+      .pct-bucket-card {
+        background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+        padding: 16px 18px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+      }
+      .pct-bucket-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--pc-color, var(--accent)); }
+      .pct-bucket-card:hover { border-color: var(--pc-color, var(--accent)); transform: translateY(-2px); }
+      .pct-bucket-card.active { border-color: var(--pc-color, var(--accent)); background: color-mix(in srgb, var(--pc-color, var(--accent)) 10%, var(--card)); }
+      .pct-bucket-card.empty { opacity: 0.42; cursor: default; }
+      .pct-bucket-card.empty:hover { transform: none; border-color: var(--border); }
+      .sub-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; }
+      .sub-divider-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+      .sub-divider-line { flex: 1; height: 1px; background: var(--border); }
+      .sub-divider-hint { font-size: 0.6rem; color: var(--muted); white-space: nowrap; }
       .pb-range { font-size: 0.64rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; }
       .pb-count { font-size: 1.8rem; font-weight: 500; color: var(--text); line-height: 1; }
       .pb-pct-of-total { font-size: 0.68rem; margin-top: 4px; }
@@ -260,49 +200,6 @@
       .pb-avg-val { font-weight: 500; }
       .pb-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; }
       .pb-bar-fill { height: 100%; border-radius: 2px; background: var(--pb-color, #a78bfa); transition: width 0.5s ease; }
-
-      /* ── VENDOR COMMON CARDS ── */
-      .vendor-common-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 32px; }
-      .vendor-common-card {
-        background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-        padding: 20px 22px; cursor: pointer; transition: all 0.22s; position: relative; overflow: hidden;
-      }
-      .vendor-common-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--vc-color, var(--accent)); }
-      .vendor-common-card:hover { border-color: var(--vc-color, var(--accent)); transform: translateY(-3px); box-shadow: 0 10px 36px color-mix(in srgb, var(--vc-color, var(--accent)) 18%, transparent); }
-      .vc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-      .vc-name { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: var(--vc-color, var(--accent)); display: flex; align-items: center; gap: 7px; }
-      .vc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vc-color, var(--accent)); }
-      .vc-badge { font-size: 0.6rem; padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--vc-color, var(--accent)) 14%, var(--surface)); color: var(--vc-color, var(--accent)); border: 1px solid color-mix(in srgb, var(--vc-color, var(--accent)) 30%, transparent); }
-      .vc-count { font-size: 2.2rem; font-weight: 500; color: var(--text); line-height: 1.1; }
-      .vc-label { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
-      .vc-divider { height: 1px; background: var(--border); margin: 12px 0; }
-      .vc-stats { display: flex; flex-direction: column; gap: 5px; }
-      .vc-stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; }
-      .vc-stat-label { color: var(--muted); }
-      .vc-stat-val { color: var(--text); font-weight: 500; }
-      .vc-open-hint { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.64rem; color: var(--vc-color, var(--accent)); display: flex; align-items: center; gap: 6px; }
-      .vc-arrow { font-size: 0.9rem; transition: transform 0.2s; }
-      .vendor-common-card:hover .vc-arrow { transform: translateX(4px); }
-      .vc-loading { color: var(--muted); font-size: 0.72rem; text-align: center; padding: 14px 0; }
-
-      /* ── VENDOR COMMON MODAL ── */
-      #vendorCommonModal .modal-box { border: 1px solid var(--vc-border, var(--border)); }
-      #vendorCommonModal .modal-header { background: linear-gradient(135deg, color-mix(in srgb, var(--vc-border, var(--accent)) 8%, var(--card)), var(--card)); }
-      #vendorCommonModal .modal-title { color: var(--vc-border, var(--accent)); }
-      #vendorCommonModal .modal-search-inp:focus { border-color: var(--vc-border, var(--accent)); }
-      #vendorCommonModal .mpg-btn.active { background: var(--vc-border, var(--accent)); color: #0a0a0f; border-color: var(--vc-border, var(--accent)); }
-      #vendorCommonModal .mpg-btn:hover:not(.active) { border-color: var(--vc-border, var(--accent)); color: var(--vc-border, var(--accent)); }
-
-      /* ── OVERLAP MODAL ── */
-      #overlapModal .modal-box { border: 1px solid var(--overlap-color); box-shadow: 0 0 60px rgba(244,114,182,0.15), 0 32px 80px rgba(0,0,0,0.7); }
-      #overlapModal .modal-header { background: linear-gradient(135deg, color-mix(in srgb, var(--overlap-color) 8%, var(--card)), var(--card)); }
-      #overlapModal .modal-title { color: var(--overlap-color); }
-      #overlapModal .modal-search-inp:focus { border-color: var(--overlap-color); }
-      #overlapModal .mpg-btn.active { background: var(--overlap-color); color: #0a0a0f; border-color: var(--overlap-color); }
-      #overlapModal .mpg-btn:hover:not(.active) { border-color: var(--overlap-color); color: var(--overlap-color); }
-      .modal-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-      .modal-pill { padding: 4px 12px; border-radius: 20px; font-size: 0.65rem; font-weight: 500; border: 1px solid; white-space: nowrap; }
-      .modal-filter-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
 
       /* ── TABLE ── */
       .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
@@ -326,10 +223,21 @@
       tbody tr:hover { background: var(--surface); }
       td { padding: 9px 14px; white-space: nowrap; }
       td.cert { color: var(--accent); font-size: 0.72rem; }
+      .cert-links { display: inline-flex; gap: 4px; margin-left: 6px; }
+      .cert-link {
+        display: inline-block; padding: 1px 5px; border-radius: 3px;
+        font-size: 0.58rem; font-weight: 600; letter-spacing: 0.02em;
+        text-decoration: none !important;
+        border: 1px solid color-mix(in srgb, var(--vcolor, var(--accent)) 40%, transparent);
+        color: var(--vcolor, var(--accent));
+        background: color-mix(in srgb, var(--vcolor, var(--accent)) 10%, transparent);
+        transition: background 0.12s;
+      }
+      .cert-link:hover { background: color-mix(in srgb, var(--vcolor, var(--accent)) 25%, transparent); }
       td.attr { color: var(--muted); font-size: 0.72rem; }
       td.price { color: var(--text); }
-      td.pct-pos { color: #f87171; }
-      td.pct-neg { color: #3ecf8e; }
+      td.pct-pos { color: var(--green); }
+      td.pct-neg { color: var(--red); }
       td.pct-zero { color: var(--muted); }
       td.rog-cheaper { color: #3ecf8e; }
       .pagination { display: flex; gap: 6px; margin-top: 20px; flex-wrap: wrap; align-items: center; }
@@ -354,18 +262,10 @@
       .stats-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; margin-top: 3px; }
       .stats-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
       .badge-pct { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 0.62rem; font-weight: 600; }
-      .overlap-card { cursor: pointer; transition: all 0.2s; border-color: color-mix(in srgb, var(--overlap-color) 40%, var(--border)) !important; }
-      .overlap-card:hover { border-color: var(--overlap-color) !important; transform: translateY(-2px); box-shadow: 0 8px 32px rgba(244,114,182,0.15); }
-      .overlap-card::before { background: var(--overlap-color) !important; }
-      .overlap-open-hint { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.65rem; color: var(--overlap-color); display: flex; align-items: center; gap: 6px; }
-      .overlap-arrow { font-size: 0.9rem; transition: transform 0.2s; }
-      .overlap-card:hover .overlap-arrow { transform: translateX(3px); }
 
       @media (max-width: 768px) {
         .header, .controls, .main, .topbar { padding: 14px 16px; }
         .controls { flex-direction: column; }
-        .modal-box { max-height: 95vh; }
-        .modal-header, .modal-controls, .modal-footer { padding: 14px 16px; }
       }
     </style>
   </head>
@@ -376,91 +276,6 @@
       <div class="loading-sub" id="loadingMsg">Starting up…</div>
     </div>
     <div id="toast"></div>
-
-    <!-- ══ VENDOR COMMON MODAL ══════════════════════════════════ -->
-    <div id="vendorCommonModal" class="diamond-modal" onclick="if(event.target===this)closeVendorModal();">
-      <div class="modal-box">
-        <div class="modal-header">
-          <div class="modal-header-left">
-            <div class="modal-title" id="vcModalTitle">
-              <span id="vcModalIcon">💎</span>
-              <span id="vcModalName">Vendor</span> — Common with ROA
-            </div>
-            <div class="modal-sub" id="vcModalSub">Rows where both vendor price and ROA price are present</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div id="vcModalPills" class="modal-pills"></div>
-            <button class="modal-close" onclick="closeVendorModal()" title="Close">✕</button>
-          </div>
-        </div>
-        <div class="modal-controls">
-          <span class="modal-filter-label">Search</span>
-          <input class="modal-search-inp" id="vcSearchInp" placeholder="Search certificate…" oninput="onVcSearch()" />
-          <span style="flex:1"></span>
-          <button class="btn btn-ghost btn-sm" id="vcDownloadBtn" onclick="downloadVcCsv()">⬇ Download CSV</button>
-        </div>
-        <div class="modal-body">
-          <table class="modal-table" id="vcTable">
-            <thead id="vcThead"></thead>
-            <tbody id="vcTbody"></tbody>
-          </table>
-        </div>
-        <div class="modal-footer">
-          <div class="modal-footer-info" id="vcFooterInfo"></div>
-          <div class="modal-pagination" id="vcPagination"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ OVERLAP MODAL ═══════════════════════════════════════ -->
-    <div id="overlapModal" class="diamond-modal" onclick="if(event.target===this)closeOverlapModal();">
-      <div class="modal-box">
-        <div class="modal-header">
-          <div class="modal-header-left">
-            <div class="modal-title"><span>💠</span> Vendor Overlap</div>
-            <div class="modal-sub">
-              Diamonds whose certificate ID appears across
-              <strong style="color:#3ecf8e">Cullen</strong> &amp;
-              <strong style="color:#60a5fa">GS Diamonds</strong> — with ROA price where available
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div class="modal-pills" id="modalStatPills"></div>
-            <button class="modal-close" onclick="closeOverlapModal()" title="Close">✕</button>
-          </div>
-        </div>
-        <div class="modal-controls">
-          <span class="modal-filter-label">Filter:</span>
-          <button class="modal-filter-btn active" id="mfAll" onclick="setModalFilter('all')">All</button>
-          <span style="flex:1"></span>
-          <input class="modal-search-inp" id="modalSearchInp" placeholder="Search cert…" oninput="onModalSearch()" />
-        </div>
-        <div class="modal-body">
-          <table class="modal-table">
-            <thead>
-              <tr>
-                <th onclick="sortModal('certificate_number')">Certificate</th>
-                <th onclick="sortModal('shape')">Shape</th>
-                <th onclick="sortModal('color')">Color</th>
-                <th onclick="sortModal('clarity')">Clarity</th>
-                <th onclick="sortModal('cut')">Cut</th>
-                <th onclick="sortModal('caratWeight')">Carat</th>
-                <th onclick="sortModal('cullen Price USD')">Cullen Price</th>
-                <th onclick="sortModal('gs Price USD')">GS Price</th>
-                <th onclick="sortModal('ROA Price USD')">ROA Price</th>
-                <th onclick="sortModal('cullen vs ROA %')">Cullen vs ROA %</th>
-                <th onclick="sortModal('gs vs ROA %')">GS vs ROA %</th>
-              </tr>
-            </thead>
-            <tbody id="modalTableBody"></tbody>
-          </table>
-        </div>
-        <div class="modal-footer">
-          <div class="modal-footer-info" id="modalFooterInfo"></div>
-          <div class="modal-pagination" id="modalPagination"></div>
-        </div>
-      </div>
-    </div>
 
     <!-- ══ TOPBAR ════════════════════════════════════════════════ -->
     <div class="topbar">
@@ -500,10 +315,31 @@
         </div>
       </div>
 
-      <!-- % RANGE BUCKETS -->
-      <div class="section-title">
-        % Range Buckets
-        <span style="font-size:0.68rem;color:var(--muted)">select vendor · click bucket to filter</span>
+      <!-- VENDOR PRICE BUCKETS -->
+      <div class="section-title" style="margin-top:4px">
+        Vendor Price Buckets
+        <span style="font-size:0.68rem;color:var(--muted)">bucketed by vendor price · select vendor · avg % vs ROA shown · click to filter</span>
+      </div>
+      <div class="vendor-tabs" id="priceVendorTabs"></div>
+      <div id="activePriceBucketTag" style="display:none" class="bucket-filter-tag" onclick="clearPriceBucketFilter()">
+        <span id="activePriceBucketTagText">Filtered</span><span class="x">✕ clear</span>
+      </div>
+      <div class="price-buckets-grid" id="priceBucketsGrid">
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="icon">💎</div>
+          <h3>No data loaded</h3>
+        </div>
+      </div>
+      <div id="activeBucketTagTop" style="display:none" class="bucket-filter-tag" onclick="clearBucketTopFilter()">
+        <span id="activeBucketTagTopText">Filtered</span><span class="x">✕ clear</span>
+      </div>
+      <div class="pct-buckets-top-grid" id="pctBucketsTopGrid" style="margin-top:4px"></div>
+
+      <!-- % RANGE FILTER -->
+      <div class="sub-divider">
+        <span class="sub-divider-label">% Range Filter</span>
+        <span class="sub-divider-line"></span>
+        <span class="sub-divider-hint">select vendor · click to filter by % vs ROA</span>
       </div>
       <div class="vendor-tabs" id="vendorTabs"></div>
       <div id="activeBucketTag" style="display:none" class="bucket-filter-tag" onclick="clearBucketFilter()">
@@ -524,9 +360,9 @@
           <div class="control-group">
             <label>ROA Price Range</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="number" id="priceMin" class="inp" placeholder="Min $" style="width:100px" />
+              <input type="number" id="priceMin" class="inp" placeholder="Min A$" style="width:100px" />
               <span style="color:var(--muted)">—</span>
-              <input type="number" id="priceMax" class="inp" placeholder="Max $" style="width:100px" />
+              <input type="number" id="priceMax" class="inp" placeholder="Max A$" style="width:100px" />
               <button class="btn btn-gold btn-sm" onclick="applyPriceFilter()">Apply</button>
               <button class="btn btn-ghost btn-sm" onclick="clearPriceFilter()">Clear</button>
             </div>
@@ -591,30 +427,17 @@
         </div>
       </div>
 
-      <!-- VENDOR PRICE BUCKETS -->
-      <div class="section-title" style="margin-top:4px">
-        Vendor Price Buckets
-        <span style="font-size:0.68rem;color:var(--muted)">bucketed by vendor price · select vendor · avg % vs ROA shown · click to filter</span>
-      </div>
-      <div class="vendor-tabs" id="priceVendorTabs"></div>
-      <div id="activePriceBucketTag" style="display:none" class="bucket-filter-tag" onclick="clearPriceBucketFilter()">
-        <span id="activePriceBucketTagText">Filtered</span><span class="x">✕ clear</span>
-      </div>
-      <div class="price-buckets-grid" id="priceBucketsGrid">
-        <div class="empty-state" style="grid-column:1/-1">
-          <div class="icon">💎</div>
-          <h3>No data loaded</h3>
-        </div>
-      </div>
-
-      <!-- VENDOR COMMON CARDS -->
-      <div class="section-title" style="margin-top:4px">
-        Vendor Common
-        <span style="font-size:0.68rem;color:var(--muted)">diamonds matched between vendor and ROA · click to explore</span>
-      </div>
-      <div class="vendor-common-grid" id="vendorCommonGrid">
-        <div class="vc-loading" style="grid-column:1/-1">Run the pipeline to see common data</div>
-      </div>
+      <!-- File created date (data generation timestamp) -->
+      <div
+        id="bucketCreatedAt"
+        style="
+          font-size: 0.7rem;
+          color: var(--muted);
+          text-align: right;
+          margin: 0 4px 24px;
+          font-style: italic;
+        "
+      ></div>
 
       <!-- TABLE -->
       <div class="section-title" style="margin-top:32px">
@@ -640,9 +463,9 @@
               <th>ROA -30%</th>
               <th>Cullen Price</th>
               <th>GS Price</th>
-              <th onclick="sortTable('cullen vs ROA USD')">Cullen vs ROA $</th>
+              <th onclick="sortTable('cullen vs ROA AUD')">Cullen vs ROA A$</th>
               <th onclick="sortTable('cullen vs ROA %')">Cullen vs ROA %</th>
-              <th onclick="sortTable('gs vs ROA USD')">GS vs ROA $</th>
+              <th onclick="sortTable('gs vs ROA AUD')">GS vs ROA A$</th>
               <th onclick="sortTable('gs vs ROA %')">GS vs ROA %</th>
             </tr>
           </thead>
@@ -685,7 +508,8 @@
       const COLORS = ["D", "E", "F", "G", "H", "I", "J", "K"];
       const CLARITIES = ["FL", "IF", "VVS1", "VVS2", "VS1", "VS2", "SI1"];
       const CUTS = ["Ideal", "Excellent", "Very Good", "Good"];
-      let activeBucketFilter = null;   // % Range Buckets section: {vendorKey, bucketIdx}
+      let activeBucketFilter = null;   // bottom "% Range Filter" section: {vendorKey, bucketIdx}
+      let activeBucketTop = null;      // top pct-bucket cards (paired with price buckets): {vendorKey, bucketIdx}
       let activePriceBucket = null;
       let selectedVendorKey = null, selectedPriceVendorKey = null;
       let certSearch = "";
@@ -701,29 +525,29 @@
         { label: "500%+",   min: 500,        max: Infinity, color: "#818cf8" },
       ];
       const PRICE_BUCKETS = [
-        { label: "$0 – $150",     min: 0,    max: 151,      color: "#34d399" },
-        { label: "$151 – $300",   min: 151,  max: 301,      color: "#60a5fa" },
-        { label: "$301 – $400",   min: 301,  max: 401,      color: "#c9a84c" },
-        { label: "$401 – $550",   min: 401,  max: 551,      color: "#fb923c" },
-        { label: "$551 – $800",   min: 551,  max: 801,      color: "#f87171" },
-        { label: "$801 – $1,200", min: 801,  max: 1201,     color: "#e879f9" },
-        { label: "$1,200+",       min: 1201, max: Infinity, color: "#818cf8" },
+        { label: "A$0 – A$150",     min: 0,    max: 151,      color: "#34d399" },
+        { label: "A$151 – A$300",   min: 151,  max: 301,      color: "#60a5fa" },
+        { label: "A$301 – A$400",   min: 301,  max: 401,      color: "#c9a84c" },
+        { label: "A$401 – A$550",   min: 401,  max: 551,      color: "#fb923c" },
+        { label: "A$551 – A$800",   min: 551,  max: 801,      color: "#f87171" },
+        { label: "A$801 – A$1,200", min: 801,  max: 1201,     color: "#e879f9" },
+        { label: "A$1,200+",       min: 1201, max: Infinity, color: "#818cf8" },
       ];
       const VENDOR_DEFS = [
         {
           key: "cullen",
           label: "Cullen",
           color: "#3ecf8e",
-          priceCol: "cullen Price USD",
-          bucketPriceCol: "cullen Price USD",
+          priceCol: "cullen Price AUD",
+          bucketPriceCol: "cullen Price AUD",
           pctPattern: /cullen/i,
         },
         {
           key: "gs",
           label: "GS Diamonds",
           color: "#60a5fa",
-          priceCol: "gs Price USD",
-          bucketPriceCol: "gs Price USD",
+          priceCol: "gs Price AUD",
+          bucketPriceCol: "gs Price AUD",
           pctPattern: /^gs\b/i,
         },
       ];
@@ -779,12 +603,9 @@
         return res.json();
       }
 
-      // sortTable()/sortModal()/sortVc() are all called with the JSON display
-      // label (e.g. "cullen vs ROA %", matches ROA_DB_TO_JSON's / ROA_OVERLAP_DB_TO_JSON's
-      // values in main.py), but the server's sort_col only recognizes real DB
-      // column names — translate before sending. One shared map covers both the
-      // main table (ROA_DB_TO_JSON) and the overlap table (ROA_OVERLAP_DB_TO_JSON)
-      // since their overlapping keys use identical DB column names.
+      // sortTable() is called with the JSON display label (e.g. "cullen vs ROA %",
+      // matches ROA_DB_TO_JSON's values in main.py), but the server's sort_col
+      // only recognizes real DB column names — translate before sending.
       const SORT_COL_MAP = {
         certificate_number:   "certificate_number",
         vendors_matched:      "vendors_matched",
@@ -793,13 +614,13 @@
         clarity:              "clarity",
         cut:                  "cut",
         caratWeight:          "carat_weight",
-        "ROA Price USD":      "roa_price_usd",
-        "ROA -30% USD":       "roa_minus_30_usd",
-        "cullen Price USD":   "cullen_price_usd",
-        "gs Price USD":       "gs_price_usd",
-        "cullen vs ROA USD":  "cullen_vs_roa_usd",
+        "ROA Price AUD":      "roa_price_usd",
+        "ROA -30% AUD":       "roa_minus_30_usd",
+        "cullen Price AUD":   "cullen_price_usd",
+        "gs Price AUD":       "gs_price_usd",
+        "cullen vs ROA AUD":  "cullen_vs_roa_usd",
         "cullen vs ROA %":    "cullen_vs_roa_pct",
-        "gs vs ROA USD":      "gs_vs_roa_usd",
+        "gs vs ROA AUD":      "gs_vs_roa_usd",
         "gs vs ROA %":        "gs_vs_roa_pct",
       };
 
@@ -821,8 +642,11 @@
         if (caratMin !== null) p.set("carat_min", caratMin);
         if (caratMax !== null) p.set("carat_max", caratMax);
         if (commonOnly) p.set("common_only", "true");
-        if (activeBucketFilter)
-          p.set("vendor_pct", activeBucketFilter.vendorKey + ":" + activeBucketFilter.bucketIdx);
+        // Only one vendor_pct filter can be sent per request — the top
+        // (price-bucket-paired) filter wins if both happen to be active.
+        const bucketFilter = activeBucketTop || activeBucketFilter;
+        if (bucketFilter)
+          p.set("vendor_pct", bucketFilter.vendorKey + ":" + bucketFilter.bucketIdx);
         if (activePriceBucket !== null && selectedPriceVendorKey)
           p.set("vendor_price", selectedPriceVendorKey + ":" + activePriceBucket);
         if (sortCol) {
@@ -831,10 +655,10 @@
         }
         return p;
       }
-      // Vendor Price Buckets section is always drawn from compare_partial.json;
-      // the main table switches to it too whenever a price-bucket filter is active.
+      // Top pct cards / price buckets are always drawn from compare_partial.json.
       function getActiveTableFilename() {
-        return activePriceBucket !== null ? "compare_partial.json" : "compare.json";
+        if (activePriceBucket !== null || activeBucketTop) return "compare_partial.json";
+        return "compare.json";
       }
 
       // ── FILTER HANDLERS (every change triggers a fresh server fetch) ──
@@ -906,6 +730,7 @@
         render();
       }
       function clearBucketFilter() { activeBucketFilter = null; currentPage = 1; render(); }
+      function clearBucketTopFilter() { activeBucketTop = null; currentPage = 1; render(); }
       function clearPriceBucketFilter() { activePriceBucket = null; currentPage = 1; render(); }
       function togglePriceBucket(i) { activePriceBucket = activePriceBucket === i ? null : i; currentPage = 1; render(); }
       function selectPriceVendor(key) { selectedPriceVendorKey = key; activePriceBucket = null; currentPage = 1; render(); }
@@ -1020,7 +845,7 @@
           const pctOfTotal = ((b.count / total) * 100).toFixed(1), barW = ((b.count / maxCount) * 100).toFixed(1);
           const avgROA = b.avg_roa != null ? Number(b.avg_roa) : null;
           const avgRow = avgROA !== null
-            ? `<div class="pb-avg-row"><div class="pb-avg-item"><span class="pb-avg-label">Avg ROA Price</span><span class="pb-avg-val" style="color:var(--muted)">$${avgROA.toFixed(0)}</span></div></div>`
+            ? `<div class="pb-avg-row"><div class="pb-avg-item"><span class="pb-avg-label">Avg ROA Price</span><span class="pb-avg-val" style="color:var(--muted)">A$${avgROA.toFixed(0)}</span></div></div>`
             : "";
           return `<div class="price-bucket-card ${isActive?"active":""}" style="--pb-color:${pb.color}" onclick="togglePriceBucket(${b.idx})">
             <div class="pb-range">${pb.label}</div><div class="pb-count">${b.count.toLocaleString()}</div>
@@ -1035,173 +860,52 @@
         } else tag.style.display = "none";
       }
 
-      // ══ VENDOR COMMON CARDS & MODAL — paginated via /vendor-common/{vendor} ══
-      let vcActive = null;
-      let vcPageRows = [], vcTotal = 0, vcPage = 1, vcSearch = "", vcSortCol = null, vcSortDir = "asc";
-      const VC_PAGE = 25;
-
-      const VC_ICONS = { cullen: "🟢", gs: "🔵" };
-      const VC_COLORS = { cullen: "#3ecf8e", gs: "#60a5fa" };
-
-      async function loadVendorCommonCards() {
-        const grid = document.getElementById("vendorCommonGrid");
-        if (!grid) return;
-        grid.innerHTML = `<div class="vc-loading" style="grid-column:1/-1">⏳ Loading vendor common data…</div>`;
-        try {
-          const summary = await api("GET", "/vendor-common/summary");
-          if (!summary || !summary.vendors || !Object.keys(summary.vendors).length) {
-            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No common data yet</h3><p style="font-size:.78rem;margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first</p></div>`;
-            return;
-          }
-          grid.innerHTML = Object.entries(summary.vendors).map(([name, info]) => {
-            const color = VC_COLORS[name] || "#c9a84c";
-            const rows = info.rows || 0;
-            return `<div class="vendor-common-card" style="--vc-color:${color}" onclick="openVendorModal('${name}')">
-              <div class="vc-header">
-                <div class="vc-name"><span class="vc-dot"></span>${name}</div>
-                <span class="vc-badge">Common w/ ROA</span>
-              </div>
-              <div class="vc-count">${rows.toLocaleString()}</div>
-              <div class="vc-label">diamonds matched with ROA price</div>
-              <div class="vc-divider"></div>
-              <div class="vc-stats">
-                <div class="vc-stat-row">
-                  <span class="vc-stat-label">Generated</span>
-                  <span class="vc-stat-val" style="font-size:.64rem;color:var(--muted)">${summary.generated_at || "—"}</span>
-                </div>
-                <div class="vc-stat-row">
-                  <span class="vc-stat-label">CSV available</span>
-                  <span class="vc-stat-val" style="color:var(--green)">✓</span>
-                </div>
-              </div>
-              <div class="vc-open-hint">Click to explore full table <span class="vc-arrow">→</span></div>
-            </div>`;
-          }).join("");
-        } catch (e) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div><h3>Could not load summary</h3><p style="font-size:.74rem;margin-top:6px;color:var(--red)">${e.message}</p><p style="font-size:.72rem;margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> pipeline first</p></div>`;
+      function renderPctBucketsTop() {
+        const grid = document.getElementById("pctBucketsTopGrid");
+        const tagTop = document.getElementById("activeBucketTagTop");
+        const ag = partialAggregates;
+        if (!ag || !ag.vendors || !selectedPriceVendorKey) {
+          grid.innerHTML = "";
+          if (tagTop) tagTop.style.display = "none";
+          return;
         }
-      }
-
-      async function openVendorModal(vendorKey) {
-        vcActive = vendorKey;
-        vcSearch = "";
-        vcPage = 1;
-        vcSortCol = null;
-        vcSortDir = "asc";
-        const color = VC_COLORS[vendorKey] || "#c9a84c";
-        const icon = VC_ICONS[vendorKey] || "💎";
-        document.getElementById("vendorCommonModal").style.setProperty("--vc-border", color);
-        document.getElementById("vcModalName").textContent = vendorKey;
-        document.getElementById("vcModalIcon").textContent = icon;
-        document.getElementById("vcModalSub").textContent = `Rows where both ${vendorKey} price AND ROA price are present — matched on certificate number`;
-        document.getElementById("vcSearchInp").value = "";
-        document.getElementById("vcModalPills").innerHTML = `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">Loading…</div>`;
-        document.getElementById("vendorCommonModal").classList.add("open");
-        document.body.style.overflow = "hidden";
-        document.getElementById("vcThead").innerHTML = "";
-        document.getElementById("vcTbody").innerHTML = `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading ${vendorKey} common data…</td></tr>`;
-        await loadVcPage();
-      }
-      function closeVendorModal() { document.getElementById("vendorCommonModal").classList.remove("open"); document.body.style.overflow = ""; }
-      function onVcSearch() { vcSearch = document.getElementById("vcSearchInp").value.trim(); vcPage = 1; loadVcPage(); }
-      function sortVc(col) {
-        if (vcSortCol === col) vcSortDir = vcSortDir === "asc" ? "desc" : "asc";
-        else { vcSortCol = col; vcSortDir = "asc"; }
-        vcPage = 1;
-        loadVcPage();
-      }
-      async function loadVcPage() {
-        if (!vcActive) return;
-        const safe = vcActive.replace(/\//g, "_").replace(/ /g, "_");
-        try {
-          const p = new URLSearchParams();
-          p.set("limit", VC_PAGE);
-          p.set("offset", (vcPage - 1) * VC_PAGE);
-          if (vcSearch) p.set("cert", vcSearch);
-          if (vcSortCol) {
-            p.set("sort_col", SORT_COL_MAP[vcSortCol] || vcSortCol);
-            p.set("sort_dir", vcSortDir);
-          }
-          const res = await api("GET", `/vendor-common/${safe}?${p.toString()}`);
-          vcPageRows = Array.isArray(res.rows) ? res.rows : [];
-          vcTotal = Number(res.total || 0);
-          const color = VC_COLORS[vcActive] || "#c9a84c";
-          document.getElementById("vcModalPills").innerHTML = `<div class="modal-pill" style="color:${color};border-color:color-mix(in srgb,${color} 40%,transparent);background:color-mix(in srgb,${color} 10%,var(--card))">${vcTotal.toLocaleString()} records</div>`;
-          renderVcTable();
-        } catch (e) {
-          document.getElementById("vcTbody").innerHTML = `<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Data not found — run the pipeline first." : e.message}</td></tr>`;
-          document.getElementById("vcModalPills").innerHTML = `<div class="modal-pill" style="color:var(--red);border-color:var(--red)">Error</div>`;
-        }
-      }
-      function renderVcTable() {
-        if (!vcActive) return;
-        const tp = Math.max(1, Math.ceil(vcTotal / VC_PAGE));
-        vcPage = Math.min(vcPage, tp);
-        const color = VC_COLORS[vcActive] || "#c9a84c";
-        const sample = vcPageRows[0] || {};
-        const allCols = Object.keys(sample);
-        const PINNED = ["certificate_number", "shape", "color", "clarity", "cut", "caratWeight"];
-        const priceCols = allCols.filter((c) => c.includes("Price") || c.includes("USD") || c.includes("%"));
-        const otherCols = allCols.filter((c) => !PINNED.includes(c) && !priceCols.includes(c) && c !== "vendors_matched");
-        const orderedCols = [...PINNED.filter((c) => allCols.includes(c)), ...priceCols, ...otherCols];
-        const thead = document.getElementById("vcThead");
-        if (allCols.length && (thead.innerHTML === "" || thead.dataset.vendor !== vcActive)) {
-          thead.dataset.vendor = vcActive;
-          thead.innerHTML = `<tr>${orderedCols.map((c) => `<th data-col="${c}" onclick="sortVc('${c}')" style="cursor:pointer">${c.replace(/_/g, " ")}</th>`).join("")}</tr>`;
-          thead.querySelectorAll("th").forEach((th) => {
-            th.addEventListener("mouseenter", () => { if (th.dataset.col !== vcSortCol) th.style.color = color; });
-            th.addEventListener("mouseleave", () => { if (th.dataset.col !== vcSortCol) th.style.color = ""; });
-          });
-        }
-        thead.querySelectorAll("th").forEach((th) => {
-          th.classList.remove("sort-asc", "sort-desc");
-          if (th.dataset.col === vcSortCol) th.classList.add(vcSortDir === "asc" ? "sort-asc" : "sort-desc");
-        });
-        if (!vcPageRows.length) {
-          document.getElementById("vcTbody").innerHTML = `<tr><td colspan="${orderedCols.length || 1}" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">🔍</div>No records match the filter</td></tr>`;
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd || !ag.vendors[vd.key]) { grid.innerHTML = ""; if (tagTop) tagTop.style.display = "none"; return; }
+        const vagg = ag.vendors[vd.key];
+        const total = vagg.vendor_total || 1;
+        const buckets = vagg.pct_buckets || [];
+        const counts = buckets.map((b) => b.count || 0);
+        const maxC = Math.max(...counts, 1);
+        grid.innerHTML = BUCKETS.map((b, i) => {
+          const cnt = (buckets[i] && buckets[i].count) || 0;
+          const isEmpty = cnt === 0;
+          const isActive = activeBucketTop && activeBucketTop.vendorKey === vd.key && activeBucketTop.bucketIdx === i;
+          const pct = ((cnt / total) * 100).toFixed(1);
+          const barW = ((cnt / maxC) * 100).toFixed(1);
+          const color = isEmpty ? "var(--border)" : b.color;
+          return `<div class="pct-bucket-card ${isActive ? "active" : ""} ${isEmpty ? "empty" : ""}"
+            style="--pc-color:${color}"
+            onclick="${isEmpty ? "" : "toggleBucketTop(" + i + ")"}">
+            <div class="pb-range" style="color:${isEmpty ? "var(--muted)" : ""}">${b.label}</div>
+            <div class="pb-count" style="color:${isEmpty ? "var(--muted)" : "var(--text)"}">${cnt.toLocaleString()}</div>
+            <div class="pb-pct-of-total" style="color:${isEmpty ? "var(--muted)" : b.color}">${pct}% of ${total.toLocaleString()} matched</div>
+            <div class="pb-bar"><div class="pb-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+          </div>`;
+        }).join("");
+        if (activeBucketTop && activeBucketTop.vendorKey === vd.key) {
+          document.getElementById("activeBucketTagTopText").textContent = `${vd.label} · ${BUCKETS[activeBucketTop.bucketIdx].label}`;
+          tagTop.style.display = "inline-flex";
         } else {
-          document.getElementById("vcTbody").innerHTML = vcPageRows.map((row) => {
-            const cells = orderedCols.map((col) => {
-              const v = row[col];
-              if (v === null || v === undefined || v === "") return `<td class="cert">—</td>`;
-              if (col.includes("Price USD")) return `<td class="price">$${Number(v).toLocaleString()}</td>`;
-              if (col.endsWith("USD") && !col.includes("Price")) {
-                const n = Number(v);
-                const cls = n < 0 ? "pct-neg" : n > 0 ? "pct-pos" : "pct-zero";
-                return `<td class="${cls}">${n >= 0 ? "+" : ""}$${Math.abs(n).toLocaleString()}</td>`;
-              }
-              if (col.endsWith("%")) {
-                const n = Number(v);
-                const cls = isNaN(n) ? "pct-zero" : n < 0 ? "pct-neg" : n > 0 ? "pct-pos" : "pct-zero";
-                return `<td class="${cls}">${isNaN(n) ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%"}</td>`;
-              }
-              if (col === "certificate_number") return `<td class="cert">${v}</td>`;
-              return `<td class="attr">${v}</td>`;
-            }).join("");
-            return `<tr>${cells}</tr>`;
-          }).join("");
+          tagTop.style.display = "none";
         }
-        document.getElementById("vcFooterInfo").textContent = `Showing ${vcTotal===0?0:Math.min((vcPage-1)*VC_PAGE+1, vcTotal)}–${Math.min(vcPage*VC_PAGE, vcTotal)} of ${vcTotal.toLocaleString()} records`;
-        const d = 2; let pages = "";
-        for (let p = 1; p <= tp; p++) {
-          if (p===1 || p===tp || (p>=vcPage-d && p<=vcPage+d))
-            pages += `<button class="mpg-btn ${p===vcPage?"active":""}" onclick="vcGoPage(${p})">${p}</button>`;
-          else if (p===vcPage-d-1 || p===vcPage+d+1)
-            pages += `<span style="color:var(--muted);padding:4px;font-size:.68rem">…</span>`;
-        }
-        document.getElementById("vcPagination").innerHTML = pages;
       }
-      function vcGoPage(p) { vcPage = p; loadVcPage(); }
-      function downloadVcCsv() {
-        if (!vcActive || !vcPageRows.length) { toast("No data to download", "error"); return; }
-        const cols = Object.keys(vcPageRows[0]);
-        const csv = [cols.join(","), ...vcPageRows.map((r) => cols.map((c) => { const v = r[c]; if (v===null||v===undefined) return ""; return String(v).includes(",") ? `"${v}"` : v; }).join(","))].join("\n");
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = `${vcActive}_common_page${vcPage}.csv`; a.click();
-        URL.revokeObjectURL(url);
-        toast(`Downloaded ${vcPageRows.length.toLocaleString()} rows (page ${vcPage}) as CSV`, "success");
+      function toggleBucketTop(bucketIdx) {
+        const vd = VENDOR_DEFS.find((v) => v.key === selectedPriceVendorKey);
+        if (!vd) return;
+        const same = activeBucketTop && activeBucketTop.vendorKey === vd.key && activeBucketTop.bucketIdx === bucketIdx;
+        activeBucketTop = same ? null : { vendorKey: vd.key, bucketIdx };
+        currentPage = 1;
+        render();
       }
 
       // ── TABLE ──────────────────────────────────────────────────────
@@ -1213,10 +917,34 @@
       }
 
       function fmtPct(v) { return v===null||v===undefined ? "—" : Number(v).toFixed(2) + "%"; }
-      function fmtUSD(v) {
-        return v===null||v===undefined||v===""||Number(v)===0 ? "—" : "$" + Number(v).toLocaleString();
+      function fmtAUD(v) {
+        return v===null||v===undefined||v===""||Number(v)===0 ? "—" : "A$" + Number(v).toLocaleString();
       }
       function pctClass(v) { return v===null||v===undefined ? "pct-zero" : v>0 ? "pct-pos" : v<0 ? "pct-neg" : "pct-zero"; }
+      function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+
+      // Small badges next to the certificate number — one per vendor that has
+      // a product-page link for this row, opening the listing in a new tab.
+      // Cullen/GS links are built server-side (diamond_compare.py) from each
+      // vendor's own internal diamond ID/URL and stored as "{name} Link".
+      // ROA has no stored link column — its product URL is built straight
+      // from the certificate number (same "?diamondId=cert_no" scheme).
+      const LINK_BADGE_VENDORS = [
+        { tag: "CU", color: "#3ecf8e", label: "Cullen", url: (r) => r["cullen Link"] || null },
+        { tag: "GS", color: "#60a5fa", label: "GS Diamonds", url: (r) => r["gs Link"] || null },
+        { tag: "ROA", color: "#e879f9", label: "Rings of Australia", url: (r) =>
+            r["certificate_number"]
+              ? `https://ringsofaustralia.com.au/collections/lab-diamonds/diamonds?diamondId=${r["certificate_number"]}`
+              : null,
+        },
+      ];
+      const certLinks = (r) =>
+        LINK_BADGE_VENDORS.map(({ tag, color, label, url }) => {
+          const href = url(r);
+          return href
+            ? `<a class="cert-link" style="--vcolor:${color}" href="${escAttr(href)}" target="_blank" rel="noopener noreferrer" title="View on ${label}">${tag}</a>`
+            : "";
+        }).join("");
 
       function renderTable() {
         document.querySelectorAll(".table-wrap thead th").forEach(th => {
@@ -1241,17 +969,17 @@
           const ca = r["caratWeight"]||r["Carat"]||"—";
           const caD = ca===""||ca==="nan"||ca==="Na" ? "—" : ca;
           const roaCls = (culP!==null&&culP<0)||(gsP!==null&&gsP<0) ? "price rog-cheaper" : "price";
-          const culD = r["cullen vs ROA USD"]!=null ? Number(r["cullen vs ROA USD"]) : null;
-          const gsD  = r["gs vs ROA USD"]!=null    ? Number(r["gs vs ROA USD"])    : null;
-          const fmtDiff = (v) => v===null ? "—" : (v>=0?"+":"") + fmtUSD(v);
+          const culD = r["cullen vs ROA AUD"]!=null ? Number(r["cullen vs ROA AUD"]) : null;
+          const gsD  = r["gs vs ROA AUD"]!=null    ? Number(r["gs vs ROA AUD"])    : null;
+          const fmtDiff = (v) => v===null ? "—" : (v>=0?"+":"") + fmtAUD(v);
           const diffCls = (v) => v===null ? "pct-zero" : v<0 ? "pct-neg" : "pct-pos";
           return `<tr>
-            <td class="cert">${String(r["certificate_number"]??"—")}</td>
+            <td class="cert">${String(r["certificate_number"]??"—")}<span class="cert-links">${certLinks(r)}</span></td>
             <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
-            <td class="${roaCls}">${fmtUSD(r["ROA Price USD"])}</td>
-            <td class="${roaCls}">${fmtUSD(r["ROA -30% USD"])}</td>
-            <td class="price">${fmtUSD(r["cullen Price USD"])}</td>
-            <td class="price">${fmtUSD(r["gs Price USD"])}</td>
+            <td class="${roaCls}">${fmtAUD(r["ROA Price AUD"])}</td>
+            <td class="${roaCls}">${fmtAUD(r["ROA -30% AUD"])}</td>
+            <td class="price">${fmtAUD(r["cullen Price AUD"])}</td>
+            <td class="price">${fmtAUD(r["gs Price AUD"])}</td>
             <td class="${diffCls(culD)}">${fmtDiff(culD)}</td>
             <td class="${pctClass(culP)}">${fmtPct(culP)}</td>
             <td class="${diffCls(gsD)}">${fmtDiff(gsD)}</td>
@@ -1335,102 +1063,9 @@
         renderBuckets();
         renderPriceVendorTabs();
         renderPriceBuckets();
+        renderPctBucketsTop();
         renderTable();
       }
-
-      // ── OVERLAP MODAL — paginated via /vendor-overlap ─────────────
-      let overlapPageRows = [], overlapTotal = 0, overlapPage = 1, overlapSearch = "", overlapSortCol = null, overlapSortDir = "asc";
-      const OVERLAP_PAGE_SIZE = 25;
-
-      async function openOverlapModal() {
-        document.getElementById("overlapModal").classList.add("open");
-        document.body.style.overflow = "hidden";
-        overlapPage = 1;
-        overlapSearch = "";
-        overlapSortCol = null;
-        overlapSortDir = "asc";
-        const inp = document.getElementById("modalSearchInp");
-        if (inp) inp.value = "";
-        document.getElementById("modalTableBody").innerHTML = `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:1.4rem;margin-bottom:8px">⏳</div>Loading…</td></tr>`;
-        await loadOverlapPage();
-      }
-      function closeOverlapModal() { document.getElementById("overlapModal").classList.remove("open"); document.body.style.overflow = ""; }
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") { closeVendorModal(); closeOverlapModal(); }
-      });
-      function setModalFilter(f) { overlapPage = 1; document.getElementById("mfAll").classList.add("active"); loadOverlapPage(); }
-      let mTimer;
-      function onModalSearch() {
-        clearTimeout(mTimer);
-        mTimer = setTimeout(() => { overlapSearch = document.getElementById("modalSearchInp").value.trim(); overlapPage = 1; loadOverlapPage(); }, 250);
-      }
-      function sortModal(col) {
-        if (overlapSortCol===col) overlapSortDir = overlapSortDir === "asc" ? "desc" : "asc";
-        else { overlapSortCol = col; overlapSortDir = "asc"; }
-        document.querySelectorAll(".modal-table thead th").forEach((th) => {
-          th.classList.remove("sort-asc","sort-desc");
-          if (th.getAttribute("onclick")===`sortModal('${col}')`) th.classList.add(overlapSortDir==="asc"?"sort-asc":"sort-desc");
-        });
-        overlapPage = 1;
-        loadOverlapPage();
-      }
-      async function loadOverlapPage() {
-        try {
-          const p = new URLSearchParams();
-          p.set("limit", OVERLAP_PAGE_SIZE);
-          p.set("offset", (overlapPage - 1) * OVERLAP_PAGE_SIZE);
-          if (overlapSearch) p.set("cert", overlapSearch);
-          if (overlapSortCol) {
-            p.set("sort_col", SORT_COL_MAP[overlapSortCol] || overlapSortCol);
-            p.set("sort_dir", overlapSortDir);
-          }
-          const res = await api("GET", `/vendor-overlap?${p.toString()}`);
-          overlapPageRows = Array.isArray(res.rows) ? res.rows : [];
-          overlapTotal = Number(res.total || 0);
-          renderModalTable();
-        } catch (e) {
-          document.getElementById("modalTableBody").innerHTML = `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)"><div style="font-size:1.4rem;margin-bottom:8px">✗</div>${e.message.includes("404") ? "Overlap data not found — run the pipeline first." : e.message}</td></tr>`;
-        }
-      }
-      function renderModalTable() {
-        const tp = Math.max(1, Math.ceil(overlapTotal / OVERLAP_PAGE_SIZE));
-        overlapPage = Math.min(overlapPage, tp);
-        document.getElementById("modalStatPills").innerHTML = `<div class="modal-pill" style="color:#e8e8f0;border-color:var(--border);background:var(--surface)">Total <strong style="color:var(--overlap-color)">${overlapTotal.toLocaleString()}</strong></div>`;
-        if (!overlapPageRows.length) {
-          document.getElementById("modalTableBody").innerHTML = overlapTotal === 0
-            ? `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">⚠️ No data. Run <strong style="color:var(--accent)">⚙ Run Compare</strong> first.</td></tr>`
-            : `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">🔍 No records match</td></tr>`;
-        } else {
-          document.getElementById("modalTableBody").innerHTML = overlapPageRows.map((r) => {
-            const cert = String(r["certificate_number"]??"—");
-            const sh=r["shape"]||r["Shape"]||"—", co=r["color"]||r["Color"]||"—";
-            const cl=r["clarity"]||r["Clarity"]||"—", cu=r["cut"]||r["Cut"]||"—";
-            const ca=r["caratWeight"]||r["Carat"]||"—";
-            const caD = ca===""||ca==="nan"||ca==="Na"||ca==="None" ? "—" : ca;
-            const culP = r["cullen vs ROA %"]!=null ? Number(r["cullen vs ROA %"]) : null;
-            const gsP  = r["gs vs ROA %"]!=null     ? Number(r["gs vs ROA %"])     : null;
-            return `<tr>
-              <td class="cert">${cert}</td>
-              <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
-              <td class="price">${fmtUSD(r["cullen Price USD"])}</td>
-              <td class="price">${fmtUSD(r["gs Price USD"])}</td>
-              <td class="price">${fmtUSD(r["ROA Price USD"])}</td>
-              <td class="${pctClass(culP)}">${fmtPct(culP)}</td>
-              <td class="${pctClass(gsP)}">${fmtPct(gsP)}</td>
-            </tr>`;
-          }).join("");
-        }
-        document.getElementById("modalFooterInfo").textContent = `Showing ${overlapTotal===0?0:Math.min((overlapPage-1)*OVERLAP_PAGE_SIZE+1, overlapTotal)}–${Math.min(overlapPage*OVERLAP_PAGE_SIZE, overlapTotal)} of ${overlapTotal.toLocaleString()} records`;
-        const d = 2; let pages = "";
-        for (let p = 1; p <= tp; p++) {
-          if (p===1||p===tp||(p>=overlapPage-d&&p<=overlapPage+d))
-            pages += `<button class="mpg-btn ${p===overlapPage?"active":""}" onclick="overlapGoPage(${p})">${p}</button>`;
-          else if (p===overlapPage-d-1||p===overlapPage+d+1)
-            pages += `<span style="color:var(--muted);padding:4px;font-size:.68rem">…</span>`;
-        }
-        document.getElementById("modalPagination").innerHTML = pages;
-      }
-      function overlapGoPage(p) { overlapPage = p; loadOverlapPage(); }
 
       // ── STATS ──────────────────────────────────────────────────────
       async function loadStats() {
@@ -1448,9 +1083,20 @@
         if (!s) { panel.innerHTML = '<div class="stats-card"><div class="stats-card-sub">No stats available</div></div>'; return; }
         document.getElementById("statsLastRun").textContent = s.generated_at ? "· last run " + s.generated_at : "";
         const roaTotal = s.ROA_total || 0, vendors = s.ROA_vs_vendors || {}, datasets = s.dataset_counts || {}, vTotals = s.vendor_totals || {};
+        const fileDates = s.file_dates || {};
+        const fdLabel = (d) => (d ? d : "—");
+        const bucketCreatedEl = document.getElementById("bucketCreatedAt");
+        if (bucketCreatedEl) {
+          const parts = [
+            `ROA: ${fdLabel(fileDates.roa)}`,
+            `Cullen: ${fdLabel(fileDates.cullen)}`,
+            `GS: ${fdLabel(fileDates.gs)}`,
+          ];
+          bucketCreatedEl.textContent = "Source files · " + parts.join("  ·  ");
+        }
         const COLORS = { cullen: "#3ecf8e", gs: "#60a5fa", ROA: "#e879f9" };
         let html = `<div class="stats-card" style="--card-color:#e879f9">
-          <div class="stats-card-title">💠 ROA (Master List)</div>
+          <div class="stats-card-title">💠 ROA (Master List)<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates.roa)}</span></div>
           <div class="stats-card-value">${roaTotal.toLocaleString()}</div>
           <div class="stats-card-sub">Total diamonds in ROA master list</div>
           <div class="stats-row-grid" style="margin-top:10px">
@@ -1463,7 +1109,7 @@
           const notInROA = v.vendor_not_in_roa||0, rate = v.match_rate_pct||0;
           const barW = roaTotal ? Math.min((matched/roaTotal)*100, 100).toFixed(1) : 0;
           html += `<div class="stats-card" style="--card-color:${color}">
-            <div class="stats-card-title" style="color:${color}">${name}</div>
+            <div class="stats-card-title" style="color:${color}">${name}<span style="float:right;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--muted);font-size:.58rem">📅 ${fdLabel(fileDates[name])}</span></div>
             <div class="stats-card-value">${vTotal.toLocaleString()}</div>
             <div class="stats-card-sub">Total in vendor CSV</div>
             <div class="stats-row-grid" style="margin-top:12px">
@@ -1482,15 +1128,6 @@
             <div class="stats-bar-wrap"><div class="stats-bar-fill" style="width:${roaTotal?(((datasets.partial||0)/roaTotal)*100).toFixed(1):0}%;background:#60a5fa"></div></div>
             <div class="stats-row-item"><span class="label">◉ All ROA certs</span><span class="val" style="color:var(--muted)">${(datasets.all_roa||0).toLocaleString()}</span></div>
           </div></div>`;
-        const overlapCount = datasets.vendor_overlap || 0;
-        html += `<div class="stats-card overlap-card" onclick="openOverlapModal()">
-          <div class="stats-card-title" style="color:var(--overlap-color)">💠 Vendor Overlap</div>
-          <div class="stats-card-value" style="color:var(--overlap-color)">${overlapCount.toLocaleString()}</div>
-          <div class="stats-card-sub">Cert IDs shared across cullen &amp; gs diamonds</div>
-          <div class="stats-row-grid" style="margin-top:10px">
-            <div class="stats-row-item"><span class="label">Source</span><span class="val" style="font-size:.68rem;color:var(--muted)">compare_all.json</span></div>
-          </div>
-          <div class="overlap-open-hint"><span>Click to view full table</span><span class="overlap-arrow">→</span></div></div>`;
         panel.innerHTML = html;
       }
 
@@ -1502,7 +1139,6 @@
         try {
           const health = await api("GET", "/health");
           loadStats();
-          loadVendorCommonCards();
           if (health.default_dataset) {
             showLoading("Loading paginated data from PostgreSQL…");
             await render();

@@ -33,8 +33,7 @@ log = get_logger("roa")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 URL      = "https://py.preciouscarbon.com/roa/graphql"
-DATE_STR = datetime.datetime.now().strftime("%Y-%m-%d")
-CSV_FILE = f"roa_{DATE_STR}.csv"
+CSV_FILE = "roa_diamonds.csv"
 PAGE_SIZE  = 1000
 WORKERS    = 20
 SAVE_EVERY = 100
@@ -71,8 +70,7 @@ def delete_if_older_than_1_day(file_path: str):
             log.info(f"Deleted old file: {file_path}")
 
 
-for _f in (MAIN_CSV, PROGRESS_FILE):
-    delete_if_older_than_1_day(_f)
+delete_if_older_than_1_day(PROGRESS_FILE)
 
 
 # ── Headers (updated from latest curl) ───────────────────────────────────────
@@ -247,7 +245,7 @@ def fetch_page(page: int, session: curl_requests.Session) -> tuple:
             resp.raise_for_status()
             diamond_data = resp.json().get("data", {}).get("diamondData", {})
             diamonds     = diamond_data.get("diamond") or []
-            time.sleep(random.uniform(0, 0.5))
+            time.sleep(random.uniform(2, 3))
             return page, diamonds, elapsed, True
         except Exception as e:
             wait = 2 ** attempt
