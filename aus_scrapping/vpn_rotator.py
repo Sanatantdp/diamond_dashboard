@@ -314,6 +314,8 @@ class VPNConnection:
         stem_lower = self.config_path.stem.lower()
         if "protonvpn" in stem_lower:
             provider = "proton"
+        elif "veepn" in stem_lower:
+            provider = "veepn"
         else:
             provider = stem_lower.split("-", 1)[0]
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,6 +39,9 @@ from psycopg2.extras import execute_values
 
 # ── Config ───────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+
 load_dotenv(REPO_ROOT / ".env")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -203,39 +207,12 @@ def insert_rows(cur: PgCursor, table: str, db_cols: list[str],
     return len(rows)
 
 
-# ── Main upload logic ─────────────────────────────────────────────────────────
-def upload_all(cur: PgCursor) -> dict[str, int]:
-    # Step 1 – ensure tables exist
-    ensure_table(cur, "rog_compare_common",  ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table(cur, "rog_compare_all",     ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table(cur, "rog_compare_partial", ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table(cur, "rog_diamond_status",  ROG_STATUS_COLUMNS,  ["generated_at"])
-
-    # Step 2 – truncate
-    truncate_tables(cur)
-
-    # Step 3 – upload compare files
-    print("Uploading ROG JSON files…")
-    counts: dict[str, int] = {}
-    for table, filename in [
-        ("rog_compare_common",  "compare.json"),
-        ("rog_compare_all",     "compare_all.json"),
-        ("rog_compare_partial", "compare_partial.json"),
-    ]:
-        path = COMPARE_DIR / filename
-        if not path.exists():
-            print(f'  SKIP "{table}" — {filename} not found')
-            counts[table] = 0
-            continue
-        db_cols, rows = load_rows(path, ROG_COMPARE_KEY_MAP)
-        counts[table] = insert_rows(cur, table, db_cols, rows)
-
-    # Step 4 – upload diamond_status
-    status_path = COMPARE_DIR / "diamond_status.json"
+def _parse_rog_status_row(status_path: Path) -> tuple | None:
+    """Read diamond_status.json and build the ROG_STATUS_COLUMNS row tuple, or
+    None if the file is missing. Shared by the history snapshot (pre-truncate)
+    and the live rog_diamond_status insert (post-truncate)."""
     if not status_path.exists():
-        print('  SKIP "rog_diamond_status" — diamond_status.json not found')
-        counts["rog_diamond_status"] = 0
-        return counts
+        return None
 
     with open(status_path, encoding="utf-8") as f:
         s = json.load(f)
@@ -248,7 +225,7 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
     nov  = rog_vs.get("novita",  {}) or {}
     d77  = rog_vs.get("77diamonds", {}) or {}
 
-    status_row = (
+    return (
         s.get("generated_at"),
         s.get("rog_total"),
         vendor_totals.get("renesim"),
@@ -265,6 +242,49 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
         dataset.get("all_ROG") or dataset.get("all_rog"),
         json.dumps(s.get("file_dates") or {}),
     )
+
+
+# ── Main upload logic ─────────────────────────────────────────────────────────
+def upload_all(cur: PgCursor) -> dict[str, int]:
+    # Step 1 – ensure tables exist
+    ensure_table(cur, "rog_compare_common",  ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table(cur, "rog_compare_all",     ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table(cur, "rog_compare_partial", ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table(cur, "rog_diamond_status",  ROG_STATUS_COLUMNS,  ["generated_at"])
+    snapshot_history.ensure_status_history_table(cur, "rog_diamond_status_history", ROG_STATUS_COLUMNS)
+
+    # Step 2 – historical snapshot, BEFORE truncate
+    status_row = _parse_rog_status_row(COMPARE_DIR / "diamond_status.json")
+    snapshot_history.archive_compare_json("germany", COMPARE_DIR)
+    if status_row is not None:
+        snapshot_history.insert_status_history_row(
+            cur, "rog_diamond_status_history", [c[0] for c in ROG_STATUS_COLUMNS], status_row
+        )
+
+    # Step 3 – truncate
+    truncate_tables(cur)
+
+    # Step 4 – upload compare files
+    print("Uploading ROG JSON files…")
+    counts: dict[str, int] = {}
+    for table, filename in [
+        ("rog_compare_common",  "compare.json"),
+        ("rog_compare_all",     "compare_all.json"),
+        ("rog_compare_partial", "compare_partial.json"),
+    ]:
+        path = COMPARE_DIR / filename
+        if not path.exists():
+            print(f'  SKIP "{table}" — {filename} not found')
+            counts[table] = 0
+            continue
+        db_cols, rows = load_rows(path, ROG_COMPARE_KEY_MAP)
+        counts[table] = insert_rows(cur, table, db_cols, rows)
+
+    # Step 5 – upload diamond_status (live table)
+    if status_row is None:
+        print('  SKIP "rog_diamond_status" — diamond_status.json not found')
+        counts["rog_diamond_status"] = 0
+        return counts
     status_cols = [c[0] for c in ROG_STATUS_COLUMNS]
     counts["rog_diamond_status"] = insert_rows(
         cur, "rog_diamond_status", status_cols, [status_row]

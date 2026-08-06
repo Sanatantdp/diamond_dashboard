@@ -4,6 +4,7 @@ __pycache__/
 /diamond_files
 /logs
 /compare
+/history
 *.csv*
 *.log*
 *.json*

@@ -10,6 +10,7 @@ Folder layout created inside vpnbook/:
       usa/
         brilliance/       <- configs that pass Brilliance API
         loosegrown/       <- configs that pass Loosegrown API
+        friendly/         <- configs that pass Friendly Diamonds API
       uk/
         abelini/          <- configs that pass Abelini API
         diamond_heaven/   <- configs that pass Diamond Heaven API
@@ -56,6 +57,7 @@ if str(_ROOT) not in sys.path:
 from test_all_apis import (  # noqa: E402
     test_brilliance,
     test_loosegrown,
+    test_friendly,
     test_abelini,
     test_diamond_heaven,
     test_cullen,
@@ -70,9 +72,17 @@ from test_all_apis import (  # noqa: E402
 #   vpnbook/<region>/<scraper>/  is where passing .ovpn files are copied.
 #
 ALL_SCRAPERS: list[tuple[str, str, str, Any]] = [
-    # key            region   scraper_dir      test_fn
-    ("brilliance",   "usa",   "brilliance",    test_brilliance),
-  
+    # key             region     scraper_dir       test_fn
+    ("brilliance",    "usa",     "brilliance",     test_brilliance),
+    ("loosegrown",    "usa",     "loosegrown",     test_loosegrown),
+    ("friendly",      "usa",     "friendly",       test_friendly),
+    ("abelini",       "uk",      "abelini",        test_abelini),
+    ("diamond-heaven", "uk",     "diamond_heaven", test_diamond_heaven),
+    ("gs-diamonds",   "aus",     "gs",             test_gs),
+    ("cullen",        "aus",     "cullen",         test_cullen),
+    ("novita",        "germany", "novita",         test_novita),
+    ("renesim",       "germany", "renesim",        test_renesim),
+    ("77diamonds",    "germany", "77diamonds",     test_77diamonds),
 ]
 
 
@@ -82,19 +92,6 @@ def scraper_dir(key: str) -> Path:
         if k == key:
             return VPN_DIR / region / folder
     raise KeyError(key)
-
-
-# ── Auth helper ───────────────────────────────────────────────────────────────
-
-def _setup_proton_auth() -> Path:
-    from vpn_rotator import parse_credentials_file, write_auth_file
-    proton_creds = VPN_DIR / "proton_credentials.txt"
-    proton_auth  = VPN_DIR / "proton_auth.txt"
-    if not proton_creds.exists():
-        sys.exit(f"Missing {proton_creds}. Create it with Username:/Password: lines.")
-    user, pwd = parse_credentials_file(proton_creds)
-    write_auth_file(user, pwd, proton_auth)
-    return proton_auth
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -123,7 +120,8 @@ def main() -> int:
     if not configs:
         sys.exit(f"No .ovpn files found in {VPN_DIR}/")
 
-    proton_auth = _setup_proton_auth()
+    # No forced auth_file: VPNConnection resolves the right credentials per
+    # config (proton / veepn / etc.) automatically based on its filename.
     mode = "APPLY" if args.apply else "DRY-RUN"
 
     # Show target folder layout
@@ -160,7 +158,6 @@ def main() -> int:
             try:
                 with VPNConnection(
                     cfg,
-                    auth_file=proton_auth,
                     verify_ip=True,
                     connect_timeout=args.connect_timeout,
                 ) as vpn:

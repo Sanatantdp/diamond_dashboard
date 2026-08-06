@@ -10,6 +10,7 @@ before running a full scrape.
 APIs covered:
   brilliance     — USA  — worker.brilliance.com
   loosegrown     — USA  — loosegrowndiamond.com
+  friendly       — USA  — friendlydiamonds.com
   abelini        — UK   — abelini.com
   diamond-heaven — UK   — diamond-heaven.co.uk
   cullen         — ROA  — api.cullenjewellery.com
@@ -882,10 +883,65 @@ def test_brilliant_earth() -> dict[str, Any]:
     return result
 
 
+# ── 11. Friendly Diamonds (USA) ────────────────────────────────────────────────
+def test_friendly() -> dict[str, Any]:
+    from urllib.parse import urlencode
+    BASE_URL = "https://friendlydiamonds.com/api/us/diamond/filter/loose"
+    params = {
+        "Shape":     "Round",
+        "CaratFrom": "0.50",
+        "CaratTo":   "1.00",
+        "Cut":       "FR,GD,VG,EX,ID",
+        "Color":     "M,L,K,J,I,H,G,F,E,D",
+        "Clarity":   "I1,SI2,SI1,VS2,VS1,VVS2,VVS1,IF,FL",
+        "page":      "1",
+    }
+    url = f"{BASE_URL}?{urlencode(params, safe=',')}"
+    headers = {
+        "accept":             "application/json, text/plain, */*",
+        "accept-language":    "en-US,en;q=0.9",
+        "referer":            "https://friendlydiamonds.com/loose-diamonds",
+        "sec-ch-ua":          _SEC_CH,
+        "sec-ch-ua-mobile":   "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest":     "empty",
+        "sec-fetch-mode":     "cors",
+        "sec-fetch-site":     "same-origin",
+        "user-agent":         _UA,
+    }
+    result: dict[str, Any] = {"scraper": "friendly", "url": url}
+    start = time.perf_counter()
+    try:
+        with _session() as s:
+            resp = s.get(url, headers=headers, timeout=30)
+        result["status_code"] = resp.status_code
+        result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 1)
+        if not resp.ok:
+            result["ok"] = False
+            result["error"] = f"HTTP {resp.status_code}"
+            result["body_preview"] = resp.text[:300]
+            return result
+        data = resp.json()
+        payload = data.get("data") if isinstance(data, dict) else None
+        items = payload.get("data") if isinstance(payload, dict) else None
+        result["ok"] = isinstance(items, list) and len(items) > 0
+        result["total"] = (payload or {}).get("total")
+        result["returned"] = len(items) if isinstance(items, list) else None
+        if not result["ok"]:
+            result["error"] = "No diamonds returned"
+            result["body_preview"] = resp.text[:300]
+    except Exception as exc:
+        result["ok"] = False
+        result["error"] = f"{exc.__class__.__name__}: {exc}"
+        result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 1)
+    return result
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 ALL_TESTS: dict[str, Any] = {
     "brilliance":     test_brilliance,
     "loosegrown":     test_loosegrown,
+    "friendly":       test_friendly,
     "brilliant-earth": test_brilliant_earth,
     "abelini":        test_abelini,
     "diamond-heaven": test_diamond_heaven,
@@ -899,6 +955,7 @@ ALL_TESTS: dict[str, Any] = {
 REGIONS = {
     "brilliance":     "USA",
     "loosegrown":     "USA",
+    "friendly":       "USA",
     "brilliant-earth": "USA",
     "abelini":        "UK",
     "diamond-heaven": "UK",
@@ -960,22 +1017,6 @@ def resolve_vpn_config(arg: str, vpn_dir: Path) -> Path:
     sys.exit(f"VPN config not found: {arg} (also tried {in_dir})")
 
 
-def _setup_proton_auth(vpn_dir: Path) -> Path | None:
-    from vpn_rotator import parse_credentials_file, write_auth_file  # type: ignore
-
-    # Walk up from vpn_dir to find proton_credentials.txt
-    for d in [vpn_dir, vpn_dir.parent, vpn_dir.parent.parent]:
-        creds = d / "proton_credentials.txt"
-        if creds.exists():
-            user, pwd = parse_credentials_file(creds)
-            auth = d / "proton_auth.txt"
-            write_auth_file(user, pwd, auth)
-            print(f"ProtonVPN credentials loaded from {creds}")
-            return auth
-    print("WARNING: proton_credentials.txt not found — will use per-config credential lookup.")
-    return None
-
-
 def _collect_ovpn_configs(vpn_dir: Path, recursive: bool = False) -> list[Path]:
     if recursive:
         return sorted(vpn_dir.rglob("*.ovpn"))
@@ -998,7 +1039,10 @@ def test_all_vpns(targets: list[str], vpn_dir: Path, recursive: bool = False) ->
     if not configs:
         sys.exit(f"No .ovpn files found in {vpn_dir}/ (recursive={recursive})")
 
-    proton_auth = _setup_proton_auth(vpn_dir)
+    # No forced auth_file: VPNConnection resolves the right credentials per
+    # config (proton / veepn / etc.) automatically. Forcing a single
+    # provider's auth here used to break any non-ProtonVPN configs mixed
+    # into the same directory.
     openvpn_log = vpn_dir / "openvpn.log"
 
     print(f"\n{'=' * 70}")
@@ -1021,7 +1065,6 @@ def test_all_vpns(targets: list[str], vpn_dir: Path, recursive: bool = False) ->
             try:
                 with VPNConnection(
                     cfg,
-                    auth_file=proton_auth,
                     log_file=openvpn_log,
                     verify_ip=True,
                 ) as vpn:
@@ -1149,13 +1192,11 @@ def main() -> int:
         if not is_admin():
             sys.exit("--vpn requires Administrator. Re-run as Admin and try again.")
         cfg = resolve_vpn_config(args.vpn, vpn_dir)
-        proton_auth = _setup_proton_auth(vpn_dir)
         print(f"Bringing up VPN: {cfg.name}")
         before = get_public_ip()
         print(f"  exit IP before: {before}")
         vpn_ctx = VPNConnection(
             cfg,
-            auth_file=proton_auth,
             log_file=vpn_dir / "openvpn.log",
             verify_ip=True,
         )

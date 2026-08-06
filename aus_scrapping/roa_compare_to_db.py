@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -40,6 +41,9 @@ from psycopg2.extras import execute_values
 
 # ── Config ───────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+
 load_dotenv(REPO_ROOT / ".env")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -215,45 +219,12 @@ def insert_rows(
     return len(rows)
 
 
-# ── Upload ───────────────────────────────────────────────────────────────────
-def upload_all_roa_json_files(cur: PgCursor) -> None:
-    # Step 1 — create tables on first run (no-op thereafter)
-    ensure_table_exists(cur, "roa_compare_common",         ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "roa_compare_all",            ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "roa_compare_partial",        ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "roa_compare_vendor_overlap", ROA_OVERLAP_COLUMNS, ["certificate_number"])
-    ensure_table_exists(cur, "roa_diamond_status",         ROA_STATUS_COLUMNS,  ["generated_at"])
-
-    # Step 2 — truncate all ROA tables
-    truncate_all_roa_tables(cur)
-
-    # Step 3 — upload compare JSON files
-    print("Uploading ROA JSON files…")
-    for table, json_file in [
-        ("roa_compare_common",  "compare.json"),
-        ("roa_compare_all",     "compare_all.json"),
-        ("roa_compare_partial", "compare_partial.json"),
-    ]:
-        path = COMPARE_DIR / json_file
-        if not path.exists():
-            print(f'  SKIP "{table}" — file missing: {json_file}')
-            continue
-        db_cols, rows = load_compare_rows(path, ROA_COMPARE_KEY_MAP)
-        insert_rows(cur, table, db_cols, rows)
-
-    # Step 4 — vendor overlap
-    overlap_path = COMPARE_DIR / "compare_vendor_overlap.json"
-    if overlap_path.exists():
-        db_cols, rows = load_compare_rows(overlap_path, ROA_OVERLAP_KEY_MAP)
-        insert_rows(cur, "roa_compare_vendor_overlap", db_cols, rows)
-    else:
-        print('  SKIP "roa_compare_vendor_overlap" — file missing')
-
-    # Step 5 — status snapshot
-    status_path = COMPARE_DIR / "diamond_status.json"
+def _parse_roa_status_row(status_path: Path) -> tuple | None:
+    """Read diamond_status.json and build the ROA_STATUS_COLUMNS row tuple, or
+    None if the file is missing. Shared by the history snapshot (pre-truncate)
+    and the live roa_diamond_status insert (post-truncate)."""
     if not status_path.exists():
-        print('  SKIP "roa_diamond_status" — file missing')
-        return
+        return None
 
     with open(status_path, encoding="utf-8") as f:
         s = json.load(f)
@@ -264,7 +235,7 @@ def upload_all_roa_json_files(cur: PgCursor) -> None:
     cullen_stats    = roa_vs_vendors.get("cullen", {}) or {}
     gs_stats        = roa_vs_vendors.get("gs", {}) or {}
 
-    status_row = (
+    return (
         s.get("generated_at"),
         s.get("ROA_total"),
         vendor_totals.get("cullen"),
@@ -279,6 +250,55 @@ def upload_all_roa_json_files(cur: PgCursor) -> None:
         counts.get("vendor_overlap"),
         json.dumps(s.get("file_dates") or {}),
     )
+
+
+# ── Upload ───────────────────────────────────────────────────────────────────
+def upload_all_roa_json_files(cur: PgCursor) -> None:
+    # Step 1 — create tables on first run (no-op thereafter)
+    ensure_table_exists(cur, "roa_compare_common",         ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "roa_compare_all",            ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "roa_compare_partial",        ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "roa_compare_vendor_overlap", ROA_OVERLAP_COLUMNS, ["certificate_number"])
+    ensure_table_exists(cur, "roa_diamond_status",         ROA_STATUS_COLUMNS,  ["generated_at"])
+    snapshot_history.ensure_status_history_table(cur, "roa_diamond_status_history", ROA_STATUS_COLUMNS)
+
+    # Step 2 — historical snapshot, BEFORE truncate
+    status_row = _parse_roa_status_row(COMPARE_DIR / "diamond_status.json")
+    snapshot_history.archive_compare_json("aus", COMPARE_DIR)
+    if status_row is not None:
+        snapshot_history.insert_status_history_row(
+            cur, "roa_diamond_status_history", [c[0] for c in ROA_STATUS_COLUMNS], status_row
+        )
+
+    # Step 3 — truncate all ROA tables
+    truncate_all_roa_tables(cur)
+
+    # Step 4 — upload compare JSON files
+    print("Uploading ROA JSON files…")
+    for table, json_file in [
+        ("roa_compare_common",  "compare.json"),
+        ("roa_compare_all",     "compare_all.json"),
+        ("roa_compare_partial", "compare_partial.json"),
+    ]:
+        path = COMPARE_DIR / json_file
+        if not path.exists():
+            print(f'  SKIP "{table}" — file missing: {json_file}')
+            continue
+        db_cols, rows = load_compare_rows(path, ROA_COMPARE_KEY_MAP)
+        insert_rows(cur, table, db_cols, rows)
+
+    # Step 5 — vendor overlap
+    overlap_path = COMPARE_DIR / "compare_vendor_overlap.json"
+    if overlap_path.exists():
+        db_cols, rows = load_compare_rows(overlap_path, ROA_OVERLAP_KEY_MAP)
+        insert_rows(cur, "roa_compare_vendor_overlap", db_cols, rows)
+    else:
+        print('  SKIP "roa_compare_vendor_overlap" — file missing')
+
+    # Step 6 — status snapshot (live table)
+    if status_row is None:
+        print('  SKIP "roa_diamond_status" — file missing')
+        return
     insert_rows(cur, "roa_diamond_status", [c[0] for c in ROA_STATUS_COLUMNS], [status_row])
 
 

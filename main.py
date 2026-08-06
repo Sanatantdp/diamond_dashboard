@@ -590,6 +590,30 @@ def _table_row_count(table: str) -> int:
 
 
 # ============================================================================
+# Status-history (trend) — shared reader for all 4 regions' *_status_history
+# tables written by snapshot_history.py before each region's loader truncates.
+# Each table has the same shape as its live status table plus snapshot_date,
+# and is append-only (never truncated), so this is the source for trend charts
+# (match-rate %, vendor totals, dataset counts over time).
+# ============================================================================
+def _fetch_status_history(history_table: str, limit: int) -> list[dict]:
+    """Most recent `limit` snapshots, returned oldest -> newest (chart order)."""
+    sql = (
+        f'SELECT * FROM "{history_table}" '
+        f'ORDER BY "snapshot_date" DESC, "id" DESC LIMIT %s'
+    )
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, [limit])
+        raw = cur.fetchall()
+    rows = [
+        {k: _jsonify_value(v) for k, v in dict(r).items() if k != "id"}
+        for r in raw
+    ]
+    rows.reverse()
+    return rows
+
+
+# ============================================================================
 # Pages
 # ============================================================================
 
@@ -1056,6 +1080,17 @@ async def rog_get_status():
     return JSONResponse(content=data)
 
 
+@app.get("/api/rog/status/history")
+async def rog_get_status_history(limit: int = Query(52, ge=1, le=520)):
+    """Trend data from rog_diamond_status_history, oldest -> newest."""
+    try:
+        return JSONResponse(content={
+            "history": _fetch_status_history("rog_diamond_status_history", limit)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
 @app.get("/api/rog/vendor-common/summary")
 async def rog_vendor_common_summary():
     status = _fetch_rog_status()
@@ -1291,6 +1326,18 @@ async def get_diamond_status():
     if not any(db_fd.get(k) for k in ("pc", "loose-grown", "brilliance")):
         data["file_dates"] = _read_file_dates()
     return JSONResponse(content=data)
+
+
+@app.get("/api/status/history")
+async def get_status_history(limit: int = Query(52, ge=1, le=520)):
+    """Trend data: one row per pipeline run (never truncated), oldest -> newest.
+    Powers a match-rate / vendor-total / dataset-count chart over time."""
+    try:
+        return JSONResponse(content={
+            "history": _fetch_status_history("diamond_status_history", limit)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 # Vendor key -> the "vendor" label written into file_status.json by diamond_compare.py
@@ -1823,6 +1870,17 @@ async def uk_get_status():
     return JSONResponse(content=data)
 
 
+@app.get("/api/uk/status/history")
+async def uk_get_status_history(limit: int = Query(52, ge=1, le=520)):
+    """Trend data from uk_diamond_status_history, oldest -> newest."""
+    try:
+        return JSONResponse(content={
+            "history": _fetch_status_history("uk_diamond_status_history", limit)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
 @app.get("/api/uk/vendor-common/summary")
 async def uk_vendor_common_summary():
     """Per-vendor count of rows matched against ROUK (both prices present)."""
@@ -2310,6 +2368,17 @@ async def roa_get_status():
             detail="roa_diamond_status table is empty - run the ROA pipeline first",
         )
     return JSONResponse(content=data)
+
+
+@app.get("/api/roa/status/history")
+async def roa_get_status_history(limit: int = Query(52, ge=1, le=520)):
+    """Trend data from roa_diamond_status_history, oldest -> newest."""
+    try:
+        return JSONResponse(content={
+            "history": _fetch_status_history("roa_diamond_status_history", limit)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
 @app.get("/api/roa/vendor-common/summary")

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,8 +39,12 @@ from dotenv import load_dotenv
 from psycopg2.extensions import cursor as PgCursor
 from psycopg2.extras import execute_values
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+
 # ── Config (DATABASE_URL from .env or Render env) ────────────────────────────
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(REPO_ROOT / ".env")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
     raise SystemExit(
@@ -251,44 +256,12 @@ def insert_rows(cur: PgCursor, table: str, db_cols: list[str], rows: list[tuple]
     return len(rows)
 
 
-# ── Upload all JSON files ─────────────────────────────────────────────────────
-def upload_all_json_files(cur: PgCursor) -> None:
-    """Ensure all tables exist, truncate them, then upload every JSON file."""
-    # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
-    ensure_table_exists(cur, "compare_common",  COMPARE_COLUMNS,  ["certificate_number", "shape"])
-    ensure_table_exists(cur, "compare_all",     COMPARE_COLUMNS,  ["certificate_number", "shape"])
-    ensure_table_exists(cur, "compare_partial", COMPARE_COLUMNS,  ["certificate_number", "shape"])
-    ensure_table_exists(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, ["diamond_id"])
-    ensure_table_exists(cur, "diamond_status",  STATUS_COLUMNS,   ["generated_at"])
-
-    # Step 2 — truncate all tables
-    truncate_all_tables(cur)
-
-    # Step 3 — upload JSON files
-    print("Uploading JSON files…")
-    for table, json_file in [
-        ("compare_common",  "compare.json"),
-        ("compare_all",     "compare_all.json"),
-        ("compare_partial", "compare_partial.json"),
-    ]:
-        path = COMPARE_DIR / json_file
-        if not path.exists():
-            print(f'  SKIP "{table}" — source file missing: {json_file}')
-            continue
-        db_cols, rows = load_compare_rows(path, COMPARE_KEY_MAP)
-        insert_rows(cur, table, db_cols, rows)
-
-    path = COMPARE_DIR / "compare_br_vs_lg.json"
-    if path.exists():
-        db_cols, rows = load_compare_rows(path, BR_VS_LG_KEY_MAP)
-        insert_rows(cur, "compare_br_vs_lg", db_cols, rows)
-    else:
-        print('  SKIP "compare_br_vs_lg" — source file missing')
-
-    path = COMPARE_DIR / "diamond_status.json"
+def _parse_status_row(path: Path) -> tuple | None:
+    """Read diamond_status.json and build the STATUS_COLUMNS row tuple, or
+    None if the file is missing. Shared by the history snapshot (pre-truncate)
+    and the live diamond_status insert (post-truncate) so it's only read once."""
     if not path.exists():
-        print('  SKIP "diamond_status" — source file missing')
-        return
+        return None
 
     with open(path, encoding="utf-8") as f:
         s = json.load(f)
@@ -301,7 +274,7 @@ def upload_all_json_files(cur: PgCursor) -> None:
     br_stats     = pc_vs.get("brilliance", {}) or {}
     fr_stats     = pc_vs.get("friendly", {}) or {}
 
-    status_row = (
+    return (
         s.get("generated_at"),
         s.get("pc_total"),
         vendor_totals.get("loose-grown"),
@@ -322,6 +295,56 @@ def upload_all_json_files(cur: PgCursor) -> None:
         file_dates.get("brilliance"),
         file_dates.get("friendly"),
     )
+
+
+# ── Upload all JSON files ─────────────────────────────────────────────────────
+def upload_all_json_files(cur: PgCursor) -> None:
+    """Ensure all tables exist, snapshot history, truncate, then reload."""
+    # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
+    ensure_table_exists(cur, "compare_common",  COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_all",     COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_partial", COMPARE_COLUMNS,  ["certificate_number", "shape"])
+    ensure_table_exists(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, ["diamond_id"])
+    ensure_table_exists(cur, "diamond_status",  STATUS_COLUMNS,   ["generated_at"])
+    snapshot_history.ensure_status_history_table(cur, "diamond_status_history", STATUS_COLUMNS)
+
+    # Step 2 — historical snapshot, BEFORE truncate: archive the row-level
+    # JSON files to Parquet and append this run's status row to the
+    # never-truncated history table (see snapshot_history.py).
+    status_row = _parse_status_row(COMPARE_DIR / "diamond_status.json")
+    snapshot_history.archive_compare_json("usa", COMPARE_DIR)
+    if status_row is not None:
+        snapshot_history.insert_status_history_row(
+            cur, "diamond_status_history", [c[0] for c in STATUS_COLUMNS], status_row
+        )
+
+    # Step 3 — truncate all tables
+    truncate_all_tables(cur)
+
+    # Step 4 — upload JSON files
+    print("Uploading JSON files…")
+    for table, json_file in [
+        ("compare_common",  "compare.json"),
+        ("compare_all",     "compare_all.json"),
+        ("compare_partial", "compare_partial.json"),
+    ]:
+        path = COMPARE_DIR / json_file
+        if not path.exists():
+            print(f'  SKIP "{table}" — source file missing: {json_file}')
+            continue
+        db_cols, rows = load_compare_rows(path, COMPARE_KEY_MAP)
+        insert_rows(cur, table, db_cols, rows)
+
+    path = COMPARE_DIR / "compare_br_vs_lg.json"
+    if path.exists():
+        db_cols, rows = load_compare_rows(path, BR_VS_LG_KEY_MAP)
+        insert_rows(cur, "compare_br_vs_lg", db_cols, rows)
+    else:
+        print('  SKIP "compare_br_vs_lg" — source file missing')
+
+    if status_row is None:
+        print('  SKIP "diamond_status" — source file missing')
+        return
     insert_rows(cur, "diamond_status", [c[0] for c in STATUS_COLUMNS], [status_row])
 
 

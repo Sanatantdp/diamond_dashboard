@@ -20,8 +20,8 @@ WORKERS   = 20
 SAVE_EVERY = 100
 
 BATCH_SIZE      = 500          # API calls per batch before sleeping
-BATCH_SLEEP_MIN = 30           # was 120s (2 min) — reduced to avoid long gaps
-BATCH_SLEEP_MAX = 60           # was 300s (5 min)
+BATCH_SLEEP_MIN = 120          # was 120s (2 min) — reduced to avoid long gaps
+BATCH_SLEEP_MAX = 200           # was 300s (5 min)
 
 from pathlib import Path
 base_dir   = str(Path(__file__).resolve().parent.parent)

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,6 +39,9 @@ from psycopg2.extras import execute_values
 
 # ── Config (DATABASE_URL from .env or Render env) ────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+
 load_dotenv(REPO_ROOT / ".env")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
@@ -194,36 +198,12 @@ def insert_rows(cur: PgCursor, table: str, db_cols: list[str], rows: list[tuple]
     return len(rows)
 
 
-# ── Upload all JSON files ─────────────────────────────────────────────────────
-def upload_all_uk_json_files(cur: PgCursor) -> None:
-    """Ensure all UK tables exist, truncate them, then upload every JSON file."""
-    # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
-    ensure_table_exists(cur, "uk_compare_common",  UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "uk_compare_all",     UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "uk_compare_partial", UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "uk_diamond_status",  UK_STATUS_COLUMNS,  ["generated_at"])
-
-    # Step 2 — truncate all tables
-    truncate_all_uk_tables(cur)
-
-    # Step 3 — upload JSON files
-    print("Uploading UK JSON files…")
-    for table, json_file in [
-        ("uk_compare_common",  "compare.json"),
-        ("uk_compare_all",     "compare_all.json"),
-        ("uk_compare_partial", "compare_partial.json"),
-    ]:
-        path = COMPARE_DIR / json_file
-        if not path.exists():
-            print(f'  SKIP "{table}" — source file missing: {json_file}')
-            continue
-        db_cols, rows = load_compare_rows(path, UK_COMPARE_KEY_MAP)
-        insert_rows(cur, table, db_cols, rows)
-
-    path = COMPARE_DIR / "diamond_status.json"
+def _parse_uk_status_row(path: Path) -> tuple | None:
+    """Read diamond_status.json and build the UK_STATUS_COLUMNS row tuple, or
+    None if the file is missing. Shared by the history snapshot (pre-truncate)
+    and the live uk_diamond_status insert (post-truncate)."""
     if not path.exists():
-        print('  SKIP "uk_diamond_status" — source file missing')
-        return
+        return None
 
     with open(path, encoding="utf-8") as f:
         s = json.load(f)
@@ -234,7 +214,7 @@ def upload_all_uk_json_files(cur: PgCursor) -> None:
     dh_stats      = rouk_vs.get("diamond-heavon", {}) or {}
     ab_stats      = rouk_vs.get("abelini", {}) or {}
 
-    status_row = (
+    return (
         s.get("generated_at"),
         s.get("rouk_total"),
         vendor_totals.get("diamond-heavon"),
@@ -248,6 +228,46 @@ def upload_all_uk_json_files(cur: PgCursor) -> None:
         counts.get("all_ROUK"),
         json.dumps(s.get("file_dates") or {}),
     )
+
+
+# ── Upload all JSON files ─────────────────────────────────────────────────────
+def upload_all_uk_json_files(cur: PgCursor) -> None:
+    """Ensure all UK tables exist, snapshot history, truncate, then reload."""
+    # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
+    ensure_table_exists(cur, "uk_compare_common",  UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "uk_compare_all",     UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "uk_compare_partial", UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
+    ensure_table_exists(cur, "uk_diamond_status",  UK_STATUS_COLUMNS,  ["generated_at"])
+    snapshot_history.ensure_status_history_table(cur, "uk_diamond_status_history", UK_STATUS_COLUMNS)
+
+    # Step 2 — historical snapshot, BEFORE truncate
+    status_row = _parse_uk_status_row(COMPARE_DIR / "diamond_status.json")
+    snapshot_history.archive_compare_json("uk", COMPARE_DIR)
+    if status_row is not None:
+        snapshot_history.insert_status_history_row(
+            cur, "uk_diamond_status_history", [c[0] for c in UK_STATUS_COLUMNS], status_row
+        )
+
+    # Step 3 — truncate all tables
+    truncate_all_uk_tables(cur)
+
+    # Step 4 — upload JSON files
+    print("Uploading UK JSON files…")
+    for table, json_file in [
+        ("uk_compare_common",  "compare.json"),
+        ("uk_compare_all",     "compare_all.json"),
+        ("uk_compare_partial", "compare_partial.json"),
+    ]:
+        path = COMPARE_DIR / json_file
+        if not path.exists():
+            print(f'  SKIP "{table}" — source file missing: {json_file}')
+            continue
+        db_cols, rows = load_compare_rows(path, UK_COMPARE_KEY_MAP)
+        insert_rows(cur, table, db_cols, rows)
+
+    if status_row is None:
+        print('  SKIP "uk_diamond_status" — source file missing')
+        return
     insert_rows(cur, "uk_diamond_status", [c[0] for c in UK_STATUS_COLUMNS], [status_row])
 
 

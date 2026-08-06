@@ -335,6 +335,60 @@
         gap: 4px;
         flex-wrap: wrap;
       }
+
+      /* History modal + "new update" badge on its trigger button */
+      #historyModal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      #historyModal.open {
+        display: flex;
+      }
+      .history-btn-wrap {
+        position: relative;
+        display: inline-block;
+      }
+      .badge-dot {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--red, #f87171);
+        box-shadow: 0 0 0 2px var(--card, #12121a);
+      }
+      .history-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+      }
+      .history-table thead th {
+        position: sticky;
+        top: 0;
+        background: var(--surface);
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .history-table tbody td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      .history-table tbody tr.latest-run td {
+        color: var(--accent);
+        font-weight: 600;
+      }
       .mpg-btn {
         padding: 4px 10px;
         border-radius: 4px;
@@ -1150,6 +1204,47 @@
       </div>
     </div>
 
+    <!-- HISTORY MODAL -->
+    <div
+      id="historyModal"
+      onclick="if (event.target === this) closeHistoryModal();"
+    >
+      <div class="modal-box" style="max-width: 760px; border-color: var(--accent)">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">🕘 Pipeline Run History</div>
+            <div class="modal-sub" id="historyModalSub">
+              USA · PC vs vendors — one row per completed run
+            </div>
+          </div>
+          <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Run Date</th>
+                <th>PC Total</th>
+                <th>LG Match %</th>
+                <th>BR Match %</th>
+                <th>Friendly Match %</th>
+                <th>Common</th>
+                <th>Partial</th>
+                <th>All PC</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: var(--muted)">
+                  ⏳ Loading…
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- HEADER -->
     <div class="topbar">
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
@@ -1193,6 +1288,21 @@
         >
           ↻ Refresh
         </button>
+        <span class="history-btn-wrap" style="margin-left: 4px">
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick="openHistoryModal()"
+            style="font-size: 0.65rem; padding: 3px 10px"
+          >
+            🕘 History
+          </button>
+          <span
+            id="historyBadgeDot"
+            class="badge-dot"
+            style="display: none"
+            title="New pipeline run recorded"
+          ></span>
+        </span>
       </div>
       <div class="stats-panel" id="statsPanel">
         <div
@@ -2199,8 +2309,83 @@
         document.body.style.overflow = "";
       }
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeBrVsLgModal();
+        if (e.key === "Escape") {
+          closeBrVsLgModal();
+          closeHistoryModal();
+        }
       });
+
+      // ── History modal ("new update" check on the trigger button) ─────────
+      const HISTORY_SEEN_KEY = "usa_history_last_seen_snapshot";
+
+      async function checkHistoryUpdate() {
+        try {
+          const data = await api("GET", "/api/status/history?limit=1");
+          const rows = data.history || [];
+          const dot = document.getElementById("historyBadgeDot");
+          if (!rows.length) {
+            dot.style.display = "none";
+            return;
+          }
+          const latest = rows[rows.length - 1].snapshot_date;
+          const lastSeen = localStorage.getItem(HISTORY_SEEN_KEY);
+          dot.style.display = latest && latest !== lastSeen ? "block" : "none";
+        } catch (e) {
+          // History table may not exist yet (pipeline hasn't run since this
+          // feature shipped) — fail silently, no badge.
+        }
+      }
+
+      async function openHistoryModal() {
+        document.getElementById("historyModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        const tbody = document.getElementById("historyTableBody");
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>`;
+        try {
+          const data = await api("GET", "/api/status/history?limit=52");
+          renderHistoryTable(data.history || []);
+        } catch (e) {
+          tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
+        }
+      }
+
+      function closeHistoryModal() {
+        const modal = document.getElementById("historyModal");
+        if (modal) modal.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function renderHistoryTable(rows) {
+        const tbody = document.getElementById("historyTableBody");
+        if (!rows.length) {
+          tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
+          return;
+        }
+        // rows arrive oldest -> newest from the API; show newest first.
+        const newestFirst = [...rows].reverse();
+        tbody.innerHTML = newestFirst
+          .map((r, i) => {
+            const pct = (v) => (v === null || v === undefined ? "—" : v + "%");
+            const num = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString());
+            return `<tr class="${i === 0 ? "latest-run" : ""}">
+              <td>${r.snapshot_date || "—"}${i === 0 ? " · latest" : ""}</td>
+              <td>${num(r.pc_total)}</td>
+              <td>${pct(r.lg_match_rate_pct)}</td>
+              <td>${pct(r.brilliance_match_rate_pct)}</td>
+              <td>${pct(r.friendly_match_rate_pct)}</td>
+              <td>${num(r.common_count)}</td>
+              <td>${num(r.partial_count)}</td>
+              <td>${num(r.all_pc_count)}</td>
+            </tr>`;
+          })
+          .join("");
+
+        // Mark as seen — clears the "new update" dot on the History button.
+        const latest = rows[rows.length - 1].snapshot_date;
+        if (latest) localStorage.setItem(HISTORY_SEEN_KEY, latest);
+        const dot = document.getElementById("historyBadgeDot");
+        if (dot) dot.style.display = "none";
+      }
       async function loadModalPage() {
         try {
           const p = new URLSearchParams();
@@ -2382,6 +2567,7 @@
         try {
           const health = await api("GET", "/api/health");
           loadStats();
+          checkHistoryUpdate();
           if (health.default_dataset) {
             currentDataset = "compare.json";
             showLoading("Loading paginated data from PostgreSQL…");
