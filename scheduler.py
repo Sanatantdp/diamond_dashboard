@@ -90,7 +90,7 @@ PIPELINES: dict[str, list[Path]] = {
     "uk": [
         BASE / "uk_scrapping" / "rouk_diamonds.py",        # 1. baseline (ROUK)
         BASE / "uk_scrapping" / "diamond-heavon.py",       # 2. vendor 1 – Diamond Heaven
-        BASE / "uk_scrapping" / "abelini.py",              # 3. vendor 2 – Abelini
+        BASE / "uk_scrapping" / "abelini_v2.py",           # 3. vendor 2 – Abelini (v2 replaced abelini.py)
         BASE / "uk_scrapping" / "diamond_compare_uk.py",   # 4. compare
         BASE / "uk_scrapping" / "uk_compare_to_db.py",     # 5. DB upload
     ],

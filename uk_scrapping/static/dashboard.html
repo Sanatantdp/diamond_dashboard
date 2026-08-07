@@ -284,6 +284,45 @@
       .stats-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
       .badge-pct { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 0.62rem; font-weight: 600; }
 
+      /* History modal + "new update" badge on its trigger button */
+      #historyModal {
+        position: fixed; inset: 0; z-index: 10000;
+        background: rgba(5, 5, 10, 0.88); backdrop-filter: blur(12px);
+        display: none; align-items: center; justify-content: center; padding: 24px;
+      }
+      #historyModal.open { display: flex; }
+      #historyModal .modal-box {
+        background: var(--card); border: 1px solid var(--accent); border-radius: 16px;
+        width: 100%; max-width: 760px; max-height: 88vh;
+        display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7); overflow: hidden;
+      }
+      #historyModal .modal-header {
+        padding: 22px 28px 18px; border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      }
+      #historyModal .modal-header-left { display: flex; flex-direction: column; gap: 4px; }
+      #historyModal .modal-title { font-family: var(--font-display); font-size: 1.25rem; display: flex; align-items: center; gap: 10px; color: var(--accent); }
+      #historyModal .modal-sub { font-size: 0.68rem; color: var(--muted); }
+      #historyModal .modal-close {
+        background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+        border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center;
+        justify-content: center; cursor: pointer; font-size: 1.1rem; transition: all 0.18s;
+      }
+      #historyModal .modal-close:hover { border-color: var(--red); color: var(--red); }
+      #historyModal .modal-body { flex: 1; overflow: auto; }
+      .history-btn-wrap { position: relative; display: inline-block; }
+      .badge-dot {
+        position: absolute; top: -3px; right: -3px; width: 8px; height: 8px;
+        border-radius: 50%; background: var(--red, #f87171); box-shadow: 0 0 0 2px var(--card, #12121a);
+      }
+      .history-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+      .history-table thead th {
+        position: sticky; top: 0; background: var(--surface); text-align: left; padding: 8px 10px;
+        border-bottom: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+      }
+      .history-table tbody td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+      .history-table tbody tr.latest-run td { color: var(--accent); font-weight: 600; }
+
       @media (max-width: 768px) {
         .header, .controls, .main, .topbar { padding: 14px 16px; }
         .controls { flex-direction: column; }
@@ -297,6 +336,37 @@
       <div class="loading-sub" id="loadingMsg">Starting up…</div>
     </div>
     <div id="toast"></div>
+
+    <!-- HISTORY MODAL -->
+    <div id="historyModal" onclick="if (event.target === this) closeHistoryModal();">
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">🕘 Pipeline Run History</div>
+            <div class="modal-sub" id="historyModalSub">UK · ROUK vs vendors — one row per completed run</div>
+          </div>
+          <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Run Date</th>
+                <th>ROUK Total</th>
+                <th>Abelini Match %</th>
+                <th>Diamond-Heavon Match %</th>
+                <th>Common</th>
+                <th>Partial</th>
+                <th>All ROUK</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <!-- TOPBAR -->
     <div class="topbar">
@@ -324,6 +394,10 @@
         Vendor Statistics
         <span style="font-size:0.68rem;color:var(--muted)" id="statsLastRun"></span>
         <button class="btn btn-ghost btn-sm" onclick="loadStats()" style="font-size:0.65rem;padding:3px 10px;margin-left:4px">↻ Refresh</button>
+        <span class="history-btn-wrap" style="margin-left:4px">
+          <button class="btn btn-ghost btn-sm" onclick="openHistoryModal()" style="font-size:0.65rem;padding:3px 10px">🕘 History</button>
+          <span id="historyBadgeDot" class="badge-dot" style="display:none" title="New pipeline run recorded"></span>
+        </span>
       </div>
       <div class="stats-panel" id="statsPanel">
         <div class="stats-card" style="--card-color:var(--muted);opacity:0.5">
@@ -1160,6 +1234,74 @@
         panel.innerHTML = html;
       }
 
+      // ── History modal ("new update" check on the trigger button) ─────────
+      const HISTORY_SEEN_KEY = "uk_history_last_seen_snapshot";
+
+      async function checkHistoryUpdate() {
+        try {
+          const data = await api("GET", "/status/history?limit=1");
+          const rows = data.history || [];
+          const dot = document.getElementById("historyBadgeDot");
+          if (!rows.length) { dot.style.display = "none"; return; }
+          const latest = rows[rows.length - 1].snapshot_date;
+          const lastSeen = localStorage.getItem(HISTORY_SEEN_KEY);
+          dot.style.display = latest && latest !== lastSeen ? "block" : "none";
+        } catch (e) {
+          // History table may not exist yet — fail silently, no badge.
+        }
+      }
+
+      async function openHistoryModal() {
+        document.getElementById("historyModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        const tbody = document.getElementById("historyTableBody");
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>`;
+        try {
+          const data = await api("GET", "/status/history?limit=52");
+          renderHistoryTable(data.history || []);
+        } catch (e) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
+        }
+      }
+
+      function closeHistoryModal() {
+        const modal = document.getElementById("historyModal");
+        if (modal) modal.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function renderHistoryTable(rows) {
+        const tbody = document.getElementById("historyTableBody");
+        if (!rows.length) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
+          return;
+        }
+        const newestFirst = [...rows].reverse();
+        tbody.innerHTML = newestFirst
+          .map((r, i) => {
+            const pct = (v) => (v === null || v === undefined ? "—" : v + "%");
+            const num = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString());
+            return `<tr class="${i === 0 ? "latest-run" : ""}">
+              <td>${r.snapshot_date || "—"}${i === 0 ? " · latest" : ""}</td>
+              <td>${num(r.rouk_total)}</td>
+              <td>${pct(r.ab_match_rate_pct)}</td>
+              <td>${pct(r.dh_match_rate_pct)}</td>
+              <td>${num(r.common_count)}</td>
+              <td>${num(r.partial_count)}</td>
+              <td>${num(r.all_rouk_count)}</td>
+            </tr>`;
+          })
+          .join("");
+
+        const latest = rows[rows.length - 1].snapshot_date;
+        if (latest) localStorage.setItem(HISTORY_SEEN_KEY, latest);
+        const dot = document.getElementById("historyBadgeDot");
+        if (dot) dot.style.display = "none";
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeHistoryModal();
+      });
+
       // ── Startup ───────────────────────────────────────────────────
       async function startDashboard() {
         renderShapeChips();
@@ -1168,6 +1310,7 @@
         try {
           const health = await api("GET", "/health");
           loadStats();
+          checkHistoryUpdate();
 
           if (health.default_dataset) {
             showLoading("Loading paginated data from PostgreSQL…");
