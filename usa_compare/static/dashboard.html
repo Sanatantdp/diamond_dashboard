@@ -571,6 +571,102 @@
       .anom-cert-link:hover {
         text-decoration: underline;
       }
+
+      /* ── Settings modal (database usage) ─────────────────────────────── */
+      #settingsModal {
+        position: fixed;
+        inset: 0;
+        z-index: 10002;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      #settingsModal.open {
+        display: flex;
+      }
+      .btn-settings {
+        background: color-mix(in srgb, var(--accent2) 12%, var(--card));
+        color: var(--accent2);
+        border: 1px solid color-mix(in srgb, var(--accent2) 30%, transparent);
+      }
+      .btn-settings:hover {
+        background: color-mix(in srgb, var(--accent2) 22%, var(--card));
+        border-color: var(--accent2);
+      }
+      .usage-wrap {
+        padding: 20px 28px 4px;
+      }
+      .usage-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .usage-num {
+        font-family: var(--font-display);
+        font-size: 1.9rem;
+        color: var(--usage-color, var(--accent));
+        line-height: 1;
+      }
+      .usage-num small {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--muted);
+        margin-left: 6px;
+      }
+      .usage-pct {
+        font-size: 0.78rem;
+        color: var(--usage-color, var(--accent));
+        font-weight: 600;
+      }
+      .usage-bar {
+        height: 12px;
+        border-radius: 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      .usage-fill {
+        height: 100%;
+        background: var(--usage-color, var(--accent));
+        border-radius: 20px;
+        transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .usage-legend {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.6rem;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .set-kv {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 14px;
+        font-size: 0.68rem;
+      }
+      .set-kv dt {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .set-kv dd {
+        margin: 0;
+        color: var(--text);
+        word-break: break-all;
+      }
+      .region-chip {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 20px;
+        font-size: 0.58rem;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
       .mpg-btn {
         padding: 4px 10px;
         border-radius: 4px;
@@ -1529,7 +1625,38 @@
     <!-- HEADER -->
     <div class="topbar">
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
+      <button class="btn btn-sm btn-settings" onclick="openSettingsModal()" title="Database storage usage & connection info">⚙ Settings</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
+    <!-- SETTINGS / DB USAGE MODAL -->
+    <div
+      id="settingsModal"
+      onclick="if (event.target === this) closeSettingsModal();"
+    >
+      <div class="modal-box" style="max-width: 880px; border-color: var(--accent2)">
+        <div class="modal-header" style="background: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 8%, var(--card)), var(--card))">
+          <div class="modal-header-left">
+            <div class="modal-title" style="color: var(--accent2)">⚙ Settings</div>
+            <div class="modal-sub" id="settingsSub">Database storage usage &amp; connection</div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <button
+              class="btn btn-ghost btn-sm"
+              style="font-size: 0.65rem; padding: 4px 12px"
+              onclick="loadSettings()"
+            >
+              ↻ Refresh
+            </button>
+            <button class="modal-close" onclick="closeSettingsModal()">✕</button>
+          </div>
+        </div>
+        <div class="modal-body" id="settingsBody">
+          <div style="text-align: center; padding: 60px; color: var(--muted)">
+            ⏳ Reading database usage…
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="header">
@@ -2610,8 +2737,149 @@
           closeBrVsLgModal();
           closeHistoryModal();
           closeAnomalyModal();
+          closeSettingsModal();
         }
       });
+
+      // ══════════════════════════════════════════════════════════════════
+      //  SETTINGS — database storage usage against the plan quota.
+      //  The quota can't be read from inside Postgres, so the server takes
+      //  it from DB_STORAGE_LIMIT_MB (.env) and tells us which it used.
+      // ══════════════════════════════════════════════════════════════════
+      async function openSettingsModal() {
+        document.getElementById("settingsModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        await loadSettings();
+      }
+
+      function closeSettingsModal() {
+        const m = document.getElementById("settingsModal");
+        if (m) m.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      async function loadSettings() {
+        const body = document.getElementById("settingsBody");
+        body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">⏳ Reading database usage…</div>`;
+        let d;
+        try {
+          d = await api("GET", "/api/db-usage");
+        } catch (e) {
+          body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--red)">✗ ${e.message}</div>`;
+          return;
+        }
+        renderSettings(d);
+      }
+
+      function renderSettings(d) {
+        const body = document.getElementById("settingsBody");
+        document.getElementById("settingsSub").textContent =
+          `${d.provider} · ${d.database} · checked ${d.checked_at ? d.checked_at.replace("T", " ") : "just now"}`;
+
+        if (!d.ok) {
+          body.innerHTML = `<div class="anom-note warn" style="margin:28px">Could not read database usage — ${d.error || "unknown error"}</div>`;
+          return;
+        }
+
+        const pct = d.used_pct ?? 0;
+        // Green under 60%, amber to 85%, red past it — the point at which a
+        // free-tier plan starts refusing writes.
+        const color =
+          pct >= 85 ? "var(--red)" : pct >= 60 ? "var(--accent)" : "var(--green)";
+
+        let html = `
+          <div class="usage-wrap" style="--usage-color:${color}">
+            <div class="usage-head">
+              <div class="usage-num">${d.size_pretty}<small>of ${d.limit_mb} MB</small></div>
+              <div class="usage-pct">${pct}% used · ${d.free_pretty} free</div>
+            </div>
+            <div class="usage-bar">
+              <div class="usage-fill" style="width:${Math.min(pct, 100)}%"></div>
+            </div>
+            <div class="usage-legend"><span>0</span><span>${d.limit_mb} MB</span></div>
+          </div>`;
+
+        if (pct >= 85) {
+          html += `<div class="anom-note warn">⚠ Storage is nearly full. Writes may start failing — free space up or raise the plan limit before the next pipeline run.</div>`;
+        }
+
+        // ── Connection + quota source ────────────────────────────────
+        html += `<div class="anom-cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+          <div class="anom-card" style="--card-color:var(--accent2)">
+            <div class="anom-card-title"><span>Connection</span><span class="anom-card-tag">${d.provider}</span></div>
+            <dl class="set-kv" style="margin-top:8px">
+              <dt>Host</dt><dd>${d.host}</dd>
+              <dt>Database</dt><dd>${d.database}</dd>
+              <dt>Postgres</dt><dd>${d.postgres_version || "—"}</dd>
+              <dt>Connections</dt><dd>${d.connections ? d.connections.active + " active / " + d.connections.max + " max" : "—"}</dd>
+            </dl>
+          </div>
+          <div class="anom-card" style="--card-color:var(--accent)">
+            <div class="anom-card-title"><span>Parquet archive</span><span class="anom-card-tag">on disk</span></div>
+            <div class="anom-card-metric">${d.archive ? d.archive.size_pretty : "—"}</div>
+            <div class="anom-card-sub">
+              ${d.archive ? d.archive.files : 0} snapshot files in <code>history/</code><br />
+              ${Object.entries((d.archive && d.archive.regions) || {})
+                .map(([r, v]) => `${r}: ${v.size_pretty}`)
+                .join(" · ") || "no snapshots yet"}<br />
+              This holds <code>compare_all</code>, which is no longer stored in the database.
+            </div>
+          </div>
+        </div>`;
+
+        // ── Per-region rollup ────────────────────────────────────────
+        const regions = Object.entries(d.by_region || {}).sort(
+          (a, b) => b[1].size_bytes - a[1].size_bytes,
+        );
+        if (regions.length) {
+          html += `<div class="anom-section-head">Storage by region</div>
+            <div class="anom-cards" style="padding-top:0">`;
+          for (const [name, r] of regions) {
+            const share = d.size_bytes
+              ? ((r.size_bytes / d.size_bytes) * 100).toFixed(1)
+              : "0.0";
+            html += `<div class="anom-card" style="--card-color:var(--accent2)">
+              <div class="anom-card-title"><span>${name}</span><span class="anom-card-tag">${share}% of DB</span></div>
+              <div class="anom-card-metric">${r.size_pretty}</div>
+              <div class="anom-card-sub">${r.tables} tables · ${r.rows.toLocaleString()} rows</div>
+            </div>`;
+          }
+          html += `</div>`;
+        }
+
+        // ── Table breakdown ──────────────────────────────────────────
+        html += `<div class="anom-section-head">
+          Tables
+          <span class="hint">largest first · bar shows share of total database size</span>
+        </div>
+        <table class="anom-table"><thead><tr>
+          <th>Table</th><th>Region</th><th class="num">Rows</th>
+          <th class="num">Size</th><th style="width:180px">Share</th>
+        </tr></thead><tbody>`;
+        for (const t of d.tables || []) {
+          const share = d.size_bytes ? (t.size_bytes / d.size_bytes) * 100 : 0;
+          html += `<tr>
+            <td>${t.table}</td>
+            <td><span class="region-chip">${t.region}</span></td>
+            <td class="num">${t.rows < 0 ? "—" : t.rows.toLocaleString()}</td>
+            <td class="num">${t.size_pretty}</td>
+            <td>
+              <div class="usage-bar" style="height:7px;--usage-color:var(--accent2)">
+                <div class="usage-fill" style="width:${share.toFixed(1)}%;background:var(--accent2)"></div>
+              </div>
+            </td>
+          </tr>`;
+        }
+        html += `</tbody></table>`;
+
+        html += `<div class="anom-note" style="margin-bottom:22px">
+          <b>Storage limit:</b> ${d.limit_source}.
+          Set <code>DB_STORAGE_LIMIT_MB</code> in <code>.env</code> to match your plan so this
+          percentage is accurate.
+        </div>`;
+
+        body.innerHTML = html;
+      }
 
       // ══════════════════════════════════════════════════════════════════
       //  PRICE ANOMALIES

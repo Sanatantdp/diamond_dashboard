@@ -1543,6 +1543,163 @@ async def health():
 
 
 # ============================================================================
+# Database usage / storage quota  —  powers the Settings panel
+# ============================================================================
+# Managed Postgres plans bill on storage, and there is no way to read the plan's
+# limit from inside Postgres, so the ceiling is configurable. Default is 512 MB
+# (the common free-tier size); override with DB_STORAGE_LIMIT_MB in .env.
+DB_STORAGE_LIMIT_MB = float(os.environ.get("DB_STORAGE_LIMIT_MB", "512") or 512)
+_DB_LIMIT_FROM_ENV = "DB_STORAGE_LIMIT_MB" in os.environ
+
+# Table-name prefix -> region label, for grouping the breakdown.
+_TABLE_REGION_PREFIX = (("uk_", "UK"), ("roa_", "AUS"), ("rog_", "Germany"))
+
+
+def _region_for_table(table: str) -> str:
+    for prefix, label in _TABLE_REGION_PREFIX:
+        if table.startswith(prefix):
+            return label
+    return "USA"
+
+
+def _human_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def _archive_usage() -> dict:
+    """Size of the Parquet snapshot archive on disk. This is where compare_all
+    now lives for USA/UK/AUS, so the Settings panel shows it next to the DB
+    figure — otherwise it looks like that data simply vanished."""
+    root = BASE_DIR / "history"
+    if not root.exists():
+        return {"exists": False, "files": 0, "size_bytes": 0, "size_pretty": "0 B", "regions": {}}
+    total = 0
+    files = 0
+    regions: dict[str, dict] = {}
+    for path in root.glob("*/*/*.parquet"):
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        total += size
+        files += 1
+        region = path.parts[-3].upper()
+        slot = regions.setdefault(region, {"files": 0, "size_bytes": 0})
+        slot["files"] += 1
+        slot["size_bytes"] += size
+    for slot in regions.values():
+        slot["size_pretty"] = _human_bytes(slot["size_bytes"])
+    return {
+        "exists": True,
+        "files": files,
+        "size_bytes": total,
+        "size_pretty": _human_bytes(total),
+        "regions": regions,
+    }
+
+
+@app.get("/api/db-usage")
+async def get_db_usage():
+    """Storage usage for the connected database: total size against the
+    configured quota, plus a per-table breakdown grouped by region."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(DATABASE_URL)
+    host = parsed.hostname or "unknown"
+    provider = (
+        "Neon" if "neon.tech" in host
+        else "Render" if "render.com" in host
+        else "Supabase" if "supabase" in host
+        else "PostgreSQL"
+    )
+
+    info: dict[str, Any] = {
+        "provider": provider,
+        "host": host,
+        "database": (parsed.path or "/").lstrip("/") or "unknown",
+        "limit_mb": DB_STORAGE_LIMIT_MB,
+        "limit_source": (
+            "DB_STORAGE_LIMIT_MB in .env" if _DB_LIMIT_FROM_ENV
+            else "default assumption — set DB_STORAGE_LIMIT_MB in .env to match your plan"
+        ),
+        "archive": _archive_usage(),
+    }
+
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT pg_database_size(current_database()) AS b")
+            size_bytes = int(cur.fetchone()["b"])
+
+            cur.execute("SHOW server_version")
+            info["postgres_version"] = cur.fetchone()["server_version"]
+
+            cur.execute(
+                "SELECT count(*) AS active, "
+                "current_setting('max_connections')::int AS max "
+                "FROM pg_stat_activity"
+            )
+            row = cur.fetchone()
+            info["connections"] = {"active": int(row["active"]), "max": int(row["max"])}
+
+            cur.execute(
+                "SELECT tablename, "
+                "  pg_total_relation_size(quote_ident(tablename)::regclass) AS bytes "
+                "FROM pg_tables WHERE schemaname = 'public' "
+                "ORDER BY bytes DESC"
+            )
+            raw_tables = cur.fetchall()
+
+            # Exact counts: these tables top out around 250K rows, so COUNT(*)
+            # is cheap enough and honest, unlike pg_class.reltuples which is
+            # stale (or -1) until something ANALYZEs after the bulk load.
+            tables = []
+            for t in raw_tables:
+                name = t["tablename"]
+                try:
+                    cur.execute(f'SELECT COUNT(*) AS c FROM "{name}"')
+                    rows = int(cur.fetchone()["c"])
+                except Exception:
+                    rows = -1
+                tables.append({
+                    "table": name,
+                    "region": _region_for_table(name),
+                    "rows": rows,
+                    "size_bytes": int(t["bytes"]),
+                    "size_pretty": _human_bytes(int(t["bytes"])),
+                })
+    except Exception as e:
+        return JSONResponse(content={**info, "ok": False, "error": str(e)})
+
+    limit_bytes = DB_STORAGE_LIMIT_MB * 1024 * 1024
+    by_region: dict[str, dict] = {}
+    for t in tables:
+        slot = by_region.setdefault(t["region"], {"tables": 0, "rows": 0, "size_bytes": 0})
+        slot["tables"] += 1
+        slot["rows"] += max(t["rows"], 0)
+        slot["size_bytes"] += t["size_bytes"]
+    for slot in by_region.values():
+        slot["size_pretty"] = _human_bytes(slot["size_bytes"])
+
+    return JSONResponse(content={
+        **info,
+        "ok": True,
+        "size_bytes": size_bytes,
+        "size_pretty": _human_bytes(size_bytes),
+        "limit_bytes": limit_bytes,
+        "used_pct": round(size_bytes / limit_bytes * 100, 1) if limit_bytes else None,
+        "free_bytes": max(limit_bytes - size_bytes, 0),
+        "free_pretty": _human_bytes(max(limit_bytes - size_bytes, 0)),
+        "tables": tables,
+        "by_region": by_region,
+        "checked_at": datetime.datetime.now().isoformat(timespec="seconds"),
+    })
+
+
+# ============================================================================
 # ============================================================================
 # UK SIDE  —  /api/uk/*   (ROUK baseline vs diamond-heavon & abelini, GBP)
 # ============================================================================
