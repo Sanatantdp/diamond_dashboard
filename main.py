@@ -266,9 +266,11 @@ def _add_diamond_attr_clauses(params: dict, clauses: list[str], args: list) -> N
 
 # Tables exposed via /api/data/{filename}
 FILENAME_TO_TABLE = {
+    # compare_all is intentionally absent: nothing in the USA dashboard read it,
+    # and the loaders no longer create the table. Its data is served from the
+    # Parquet snapshot archive instead (see /api/anomalies + price_anomaly.py).
     "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
     "compare_partial.json":  ("compare_partial",  COMPARE_DB_TO_JSON),
-    "compare_all.json":      ("compare_all",      COMPARE_DB_TO_JSON),
     "compare_br_vs_lg.json": ("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON),
 }
 
@@ -1340,6 +1342,67 @@ async def get_status_history(limit: int = Query(52, ge=1, le=520)):
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
 
 
+@app.get("/api/anomalies")
+async def get_price_anomalies(
+    days: int = Query(14, ge=2, le=180),
+    compare_mode: str = Query("window", pattern="^(window|prev)$"),
+    dataset: str = Query("compare_all", pattern="^(compare_all|compare_partial|compare)$"),
+    z: float = Query(3.5, ge=1.0, le=20.0),
+    min_pct: float = Query(5.0, ge=0.0, le=100.0),
+    min_segment_stones: int = Query(20, ge=1, le=10000),
+    vendor: str | None = Query(None),
+    direction: str = Query("all", pattern="^(all|up|down)$"),
+    limit: int = Query(300, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    refresh: int = Query(0, ge=0, le=1),
+):
+    """Unusual price moves across the trailing `days`-day Parquet snapshot
+    archive (history/usa/…), written by snapshot_history.py before each run
+    truncates the live tables.
+
+    Detection is a robust z-score (median/MAD) over each vendor's own
+    distribution of non-zero moves for the compared span — see price_anomaly.py.
+    The heavy work is cached on the snapshot files' signature, so repeat calls
+    are free until the next pipeline run.
+    """
+    try:
+        from price_anomaly import detect_price_anomalies
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"price_anomaly module unavailable ({e}) — pandas/pyarrow required",
+        )
+
+    try:
+        result = detect_price_anomalies(
+            region="usa",
+            dataset=dataset,
+            days=days,
+            compare_mode=compare_mode,
+            z_thresh=z,
+            min_pct=min_pct,
+            min_segment_stones=min_segment_stones,
+            use_cache=not refresh,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"anomaly detection failed: {e}")
+
+    rows = result.get("anomalies", [])
+    if vendor:
+        rows = [r for r in rows if r["vendor"] == vendor]
+    if direction != "all":
+        rows = [r for r in rows if r["direction"] == direction]
+
+    # Slice the (already ranked) list rather than shipping thousands of rows to
+    # the browser; the counts in `summary`/`vendors` stay unfiltered totals.
+    payload = {k: v for k, v in result.items() if k != "anomalies"}
+    payload["anomalies"] = rows[offset: offset + limit]
+    payload["filtered_total"] = len(rows)
+    payload["offset"] = offset
+    payload["limit"] = limit
+    return JSONResponse(content=payload)
+
+
 # Vendor key -> the "vendor" label written into file_status.json by diamond_compare.py
 _FILE_DATE_VENDOR_MAP = {
     "PC":          "pc",
@@ -1449,7 +1512,7 @@ async def health():
             cur.execute("SELECT 1 AS ok")
             cur.fetchone()
             db_ok = True
-            for table in ("compare_common", "compare_partial", "compare_all",
+            for table in ("compare_common", "compare_partial",
                           "compare_br_vs_lg", "diamond_status"):
                 try:
                     cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
@@ -1510,7 +1573,6 @@ UK_DB_TO_JSON = {
 UK_FILENAME_TO_TABLE = {
     "compare.json":         "uk_compare_common",
     "compare_partial.json": "uk_compare_partial",
-    "compare_all.json":     "uk_compare_all",
 }
 UK_ALLOWED_TABLES = set(UK_FILENAME_TO_TABLE.values())
 
@@ -1784,7 +1846,7 @@ async def uk_health():
             cur.fetchone()
             db_ok = True
             for table in ("uk_compare_common", "uk_compare_partial",
-                          "uk_compare_all", "uk_diamond_status"):
+                          "uk_diamond_status"):
                 try:
                     cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
                     row = cur.fetchone()
@@ -1892,7 +1954,11 @@ async def uk_vendor_common_summary():
                  f'AND "rouk_price_gbp" IS NOT NULL AND "rouk_price_gbp" > 0')
         try:
             with _get_conn() as conn, conn.cursor() as cur:
-                cur.execute(f'SELECT COUNT(*) AS c FROM "uk_compare_all" {where}')
+                # Reads compare_partial, not compare_all: the WHERE clause
+                # requires the vendor to have a price, so every matching row is
+                # by definition matched by >=1 vendor and therefore present in
+                # compare_partial. Verified identical cert sets per vendor.
+                cur.execute(f'SELECT COUNT(*) AS c FROM "uk_compare_partial" {where}')
                 row = cur.fetchone()
                 vendors[name] = {"rows": int(row["c"]) if row else 0}
         except Exception:
@@ -1913,7 +1979,7 @@ async def uk_vendor_common_rows(vendor: str, request: Request):
     ]
     try:
         return JSONResponse(content=_fetch_uk_rows_paginated(
-            "uk_compare_all", UK_DB_TO_JSON, _params_dict(request), extra_clauses=extra
+            "uk_compare_partial", UK_DB_TO_JSON, _params_dict(request), extra_clauses=extra
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
@@ -2006,7 +2072,6 @@ ROA_OVERLAP_DB_TO_JSON = {
 ROA_FILENAME_TO_TABLE = {
     "compare.json":         "roa_compare_common",
     "compare_partial.json": "roa_compare_partial",
-    "compare_all.json":     "roa_compare_all",
 }
 # roa_compare_vendor_overlap isn't one of the JSON-filename datasets, but it's a
 # real paginated-fetch target (see roa_vendor_overlap below), so it must be
@@ -2284,7 +2349,7 @@ async def roa_health():
             cur.fetchone()
             db_ok = True
             for table in ("roa_compare_common", "roa_compare_partial",
-                          "roa_compare_all", "roa_diamond_status"):
+                          "roa_diamond_status"):
                 try:
                     cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
                     row = cur.fetchone()
@@ -2393,7 +2458,8 @@ async def roa_vendor_common_summary():
         )
         try:
             with _get_conn() as conn, conn.cursor() as cur:
-                cur.execute(f'SELECT COUNT(*) AS c FROM "roa_compare_all" {where}')
+                # compare_partial rather than compare_all — see the UK note above.
+                cur.execute(f'SELECT COUNT(*) AS c FROM "roa_compare_partial" {where}')
                 row = cur.fetchone()
                 vendors[name] = {"rows": int(row["c"]) if row else 0}
         except Exception:
@@ -2413,7 +2479,7 @@ async def roa_vendor_common_rows(vendor: str, request: Request):
     ]
     try:
         return JSONResponse(content=_fetch_roa_rows_paginated(
-            "roa_compare_all", ROA_DB_TO_JSON, _params_dict(request), extra_clauses=extra
+            "roa_compare_partial", ROA_DB_TO_JSON, _params_dict(request), extra_clauses=extra
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")

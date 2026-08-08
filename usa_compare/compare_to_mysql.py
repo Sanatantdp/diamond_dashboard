@@ -17,7 +17,7 @@ Behaviour
 Tables managed
 --------------
 - compare_common      from compare.json          (~318 rows, 3-vendor matches)
-- compare_all         from compare_all.json      (~107K rows, every PC diamond)
+  (compare_all is deliberately NOT loaded — see truncate_all_tables)
 - compare_partial     from compare_partial.json  (~92K rows, partial matches)
 - compare_br_vs_lg    from compare_br_vs_lg.json (~2.5K rows, brilliance vs LG)
 - diamond_status      from diamond_status.json   (1 snapshot row per import)
@@ -217,10 +217,9 @@ def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]
 
 
 def truncate_all_tables(cur: PgCursor) -> None:
-    """Truncate all 5 diamond tables and reset their serial IDs."""
+    """Truncate the diamond tables and reset their serial IDs."""
     tables = [
         "compare_common",
-        "compare_all",
         "compare_partial",
         "compare_br_vs_lg",
         "diamond_status",
@@ -229,6 +228,14 @@ def truncate_all_tables(cur: PgCursor) -> None:
     for table in tables:
         cur.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
         print(f'  truncated "{table}"')
+
+    # compare_all is no longer loaded — nothing in the USA dashboard or API
+    # reads it, and at ~210K rows it was the largest table in the database.
+    # The data is not lost: snapshot_history.py archives compare_all.json to
+    # Parquet on every run, and that archive is what price_anomaly.py reads.
+    # Dropped rather than truncated so the storage is actually released.
+    cur.execute('DROP TABLE IF EXISTS "compare_all"')
+    print('  dropped "compare_all" (unused — served from the Parquet archive)')
 
 
 def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[str], list[tuple]]:
@@ -302,7 +309,6 @@ def upload_all_json_files(cur: PgCursor) -> None:
     """Ensure all tables exist, snapshot history, truncate, then reload."""
     # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
     ensure_table_exists(cur, "compare_common",  COMPARE_COLUMNS,  ["certificate_number", "shape"])
-    ensure_table_exists(cur, "compare_all",     COMPARE_COLUMNS,  ["certificate_number", "shape"])
     ensure_table_exists(cur, "compare_partial", COMPARE_COLUMNS,  ["certificate_number", "shape"])
     ensure_table_exists(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, ["diamond_id"])
     ensure_table_exists(cur, "diamond_status",  STATUS_COLUMNS,   ["generated_at"])
@@ -325,7 +331,6 @@ def upload_all_json_files(cur: PgCursor) -> None:
     print("Uploading JSON files…")
     for table, json_file in [
         ("compare_common",  "compare.json"),
-        ("compare_all",     "compare_all.json"),
         ("compare_partial", "compare_partial.json"),
     ]:
         path = COMPARE_DIR / json_file
@@ -361,7 +366,7 @@ def main() -> None:
 
     # Guard: if ALL main compare files are missing, abort before touching the DB.
     # Without this, the script would truncate all tables to empty and exit 0.
-    main_files = ["compare.json", "compare_all.json", "compare_partial.json"]
+    main_files = ["compare.json", "compare_partial.json"]
     present = [f for f in main_files if (COMPARE_DIR / f).exists()]
     if not present:
         raise SystemExit(

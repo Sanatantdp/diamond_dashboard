@@ -13,7 +13,7 @@ it: diamond-heavon and abelini. All prices are in GBP (£).
 Tables managed
 --------------
 - uk_compare_common    from compare.json          (rows matched by all 3 vendors)
-- uk_compare_all       from compare_all.json       (every ROUK diamond)
+  (uk_compare_all is deliberately NOT loaded — see truncate_all_uk_tables)
 - uk_compare_partial   from compare_partial.json   (rows matched by 2+ vendors)
 - uk_diamond_status    from diamond_status.json    (1 snapshot row per import)
 
@@ -163,10 +163,9 @@ def ensure_table_exists(cur: PgCursor, table: str, columns: list[tuple[str, str]
 
 
 def truncate_all_uk_tables(cur: PgCursor) -> None:
-    """Truncate all 4 UK diamond tables and reset their serial IDs."""
+    """Truncate the UK diamond tables and reset their serial IDs."""
     tables = [
         "uk_compare_common",
-        "uk_compare_all",
         "uk_compare_partial",
         "uk_diamond_status",
     ]
@@ -174,6 +173,13 @@ def truncate_all_uk_tables(cur: PgCursor) -> None:
     for table in tables:
         cur.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
         print(f'  truncated "{table}"')
+
+    # uk_compare_all is no longer loaded — the UK dashboard never reads it, and
+    # at ~222K rows / 64 MB it was the largest table in the database. The data
+    # is not lost: snapshot_history.py archives compare_all.json to Parquet on
+    # every run. Dropped rather than truncated so the storage is released.
+    cur.execute('DROP TABLE IF EXISTS "uk_compare_all"')
+    print('  dropped "uk_compare_all" (unused — served from the Parquet archive)')
 
 
 def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[str], list[tuple]]:
@@ -235,7 +241,6 @@ def upload_all_uk_json_files(cur: PgCursor) -> None:
     """Ensure all UK tables exist, snapshot history, truncate, then reload."""
     # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
     ensure_table_exists(cur, "uk_compare_common",  UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "uk_compare_all",     UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table_exists(cur, "uk_compare_partial", UK_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table_exists(cur, "uk_diamond_status",  UK_STATUS_COLUMNS,  ["generated_at"])
     snapshot_history.ensure_status_history_table(cur, "uk_diamond_status_history", UK_STATUS_COLUMNS)
@@ -255,7 +260,6 @@ def upload_all_uk_json_files(cur: PgCursor) -> None:
     print("Uploading UK JSON files…")
     for table, json_file in [
         ("uk_compare_common",  "compare.json"),
-        ("uk_compare_all",     "compare_all.json"),
         ("uk_compare_partial", "compare_partial.json"),
     ]:
         path = COMPARE_DIR / json_file
@@ -284,7 +288,7 @@ def main() -> None:
 
     # Guard: if ALL main compare files are missing, abort before touching the DB.
     # Without this, the script would truncate all tables to empty and exit 0.
-    main_files = ["compare.json", "compare_all.json", "compare_partial.json"]
+    main_files = ["compare.json", "compare_partial.json"]
     present = [f for f in main_files if (COMPARE_DIR / f).exists()]
     if not present:
         raise SystemExit(

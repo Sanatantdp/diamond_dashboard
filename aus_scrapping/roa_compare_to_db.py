@@ -14,7 +14,7 @@ ROA, GS, and Cullen prices are all AUD. DB columns keep their historical
 Tables managed
 --------------
 - roa_compare_common          from compare.json               (rows matched by all 3)
-- roa_compare_all             from compare_all.json           (every ROA diamond)
+  (roa_compare_all is deliberately NOT loaded — see truncate_all_roa_tables)
 - roa_compare_partial         from compare_partial.json       (rows matched by 2+)
 - roa_compare_vendor_overlap  from compare_vendor_overlap.json (cullen ∩ gs certs)
 - roa_diamond_status          from diamond_status.json        (1 snapshot per import)
@@ -185,7 +185,6 @@ def ensure_table_exists(
 def truncate_all_roa_tables(cur: PgCursor) -> None:
     tables = [
         "roa_compare_common",
-        "roa_compare_all",
         "roa_compare_partial",
         "roa_compare_vendor_overlap",
         "roa_diamond_status",
@@ -194,6 +193,13 @@ def truncate_all_roa_tables(cur: PgCursor) -> None:
     for table in tables:
         cur.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
         print(f'  truncated "{table}"')
+
+    # roa_compare_all is no longer loaded — the AUS dashboard never reads it,
+    # and it was the largest table in the database. The data is not lost:
+    # snapshot_history.py archives compare_all.json to Parquet on every run.
+    # Dropped rather than truncated so the storage is actually released.
+    cur.execute('DROP TABLE IF EXISTS "roa_compare_all"')
+    print('  dropped "roa_compare_all" (unused — served from the Parquet archive)')
 
 
 def load_compare_rows(
@@ -256,7 +262,6 @@ def _parse_roa_status_row(status_path: Path) -> tuple | None:
 def upload_all_roa_json_files(cur: PgCursor) -> None:
     # Step 1 — create tables on first run (no-op thereafter)
     ensure_table_exists(cur, "roa_compare_common",         ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table_exists(cur, "roa_compare_all",            ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table_exists(cur, "roa_compare_partial",        ROA_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table_exists(cur, "roa_compare_vendor_overlap", ROA_OVERLAP_COLUMNS, ["certificate_number"])
     ensure_table_exists(cur, "roa_diamond_status",         ROA_STATUS_COLUMNS,  ["generated_at"])
@@ -277,7 +282,6 @@ def upload_all_roa_json_files(cur: PgCursor) -> None:
     print("Uploading ROA JSON files…")
     for table, json_file in [
         ("roa_compare_common",  "compare.json"),
-        ("roa_compare_all",     "compare_all.json"),
         ("roa_compare_partial", "compare_partial.json"),
     ]:
         path = COMPARE_DIR / json_file
@@ -315,7 +319,7 @@ def main() -> None:
 
     # Guard: if ALL main compare files are missing, abort before touching the DB.
     # Without this, the script would truncate all tables to empty and exit 0.
-    main_files = ["compare.json", "compare_all.json", "compare_partial.json"]
+    main_files = ["compare.json", "compare_partial.json"]
     present = [f for f in main_files if (COMPARE_DIR / f).exists()]
     if not present:
         raise SystemExit(
