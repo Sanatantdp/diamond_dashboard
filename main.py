@@ -1068,7 +1068,7 @@ ROG_DB_TO_JSON = {
     "cut":                 "cut",
     "carat_weight":        "caratWeight",
     "rog_price_eur":       "ROG Price EUR",
-    "rog_minus_30_eur":    "ROG -30% EUR",
+    "rog_minus_10_eur":    "ROG -10% EUR",
     "renesim_price_eur":   "renesim Price EUR",
     "renesim_minus_eur":   "renesim -0% EUR",
     "renesim_vs_rog_eur":  "renesim vs ROG EUR",

@@ -196,7 +196,7 @@ def load_vendors_from_env():
 
     rog_csv_name = get_env("ROG_CSV", "rog_diamonds.csv")
     rog_csv      = os.path.join(DIAMOND_FILES_DIR, rog_csv_name)
-    rog_discount = float(get_env("ROG_DISCOUNT", "0.70"))
+    rog_discount = float(get_env("ROG_DISCOUNT", "0.90"))
     return vendors, rog_csv, rog_discount
 
 
@@ -251,14 +251,22 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     partial_count = combined["_some_matched"].sum()
     log.info(f"  Common ({'+'.join(core_present)}): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROG: {len(combined):,}")
 
-    # Discounted price columns
+    # Discounted price columns.
+    # ROG is a tiered discount, not a flat one: the discount only kicks in
+    # above ROG_DISCOUNT_THRESHOLD (default 300 EUR); at or below that price
+    # it sells at full price (no discount).
+    rog_discount_threshold = float(get_env("ROG_DISCOUNT_THRESHOLD", "300"))
     for name, disc in discounts.items():
         price_col = f"{name} Price Pound"
         label     = f"-{round((1 - disc) * 100)}%"
         disc_col  = f"{name} {label} Pound"
         if price_col in combined.columns:
             combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
-            combined[disc_col]  = (combined[price_col] * disc).round(0)
+            if name == "ROG":
+                price = combined[price_col]
+                combined[disc_col] = price.where(price <= rog_discount_threshold, price * disc).round(0)
+            else:
+                combined[disc_col]  = (combined[price_col] * disc).round(0)
 
     # % diff vs ROG
     if "ROG" in discounts and "ROG Price Pound" in combined.columns:
@@ -478,7 +486,7 @@ def compare_all_three_from_combined(combined: pd.DataFrame, discounts: dict, nam
     return True
 
 
-def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.70, default_discount=0.70):
+def compare_all_vendors(vendors, PC_csv=None, PC_discount=0.90, default_discount=0.70):
     log.info("=" * 50)
     log.info("Starting vendor comparison pipeline")
 
