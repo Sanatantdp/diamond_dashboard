@@ -404,6 +404,10 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
     # A vendor with discount >= 1.0 has no real markdown (e.g. loose-grown,
     # friendly — their scraped price is already the real listed price), so
     # skip creating a redundant "-0%" column for it.
+    # PC is a tiered discount, not a flat one: the discount only kicks in
+    # above PC_DISCOUNT_THRESHOLD (default 400 USD); at or below that price
+    # it sells at full price (no discount).
+    pc_discount_threshold = float(get_env("PC_DISCOUNT_THRESHOLD", "400"))
     for name, disc in discounts.items():
         price_col = f"{name} Price USD"
         if price_col not in combined.columns:
@@ -412,7 +416,11 @@ def build_compare_files(loaded: dict, discounts: dict) -> pd.DataFrame:
         if disc < 1.0:
             label    = f"-{round((1 - disc) * 100)}%"
             disc_col = f"{name} {label} USD"
-            combined[disc_col] = (combined[price_col] * disc).round(0)
+            if name == "PC":
+                price = combined[price_col]
+                combined[disc_col] = price.where(price <= pc_discount_threshold, price * disc).round(0)
+            else:
+                combined[disc_col] = (combined[price_col] * disc).round(0)
             log.info(f"Added discount col: {disc_col}")
 
     def _vendor_compare_col(name: str) -> str | None:

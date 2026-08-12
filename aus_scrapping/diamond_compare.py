@@ -275,7 +275,11 @@ def build_compare_files(loaded: dict, discounts: dict) -> tuple:
     partial_count = combined["_some_matched"].sum()
     log.info(f"  Common ({'+'.join(core_present)}): {common_count:,}  |  Partial (2+): {partial_count:,}  |  All ROA: {len(combined):,}")
 
-    # Discounted price columns
+    # Discounted price columns.
+    # ROA is a tiered discount, not a flat one: the discount only kicks in
+    # above ROA_DISCOUNT_THRESHOLD (default 500 AUD); at or below that price
+    # it sells at full price (no discount).
+    roa_discount_threshold = float(get_env("ROA_DISCOUNT_THRESHOLD", "500"))
     for name, disc in discounts.items():
         price_col = price_col_map.get(name)
         if price_col is None:
@@ -284,7 +288,11 @@ def build_compare_files(loaded: dict, discounts: dict) -> tuple:
         label     = f"-{round((1 - disc) * 100)}%"
         disc_col  = f"{name} {label} {currency}"
         combined[price_col] = pd.to_numeric(combined[price_col], errors="coerce").round(0)
-        combined[disc_col]  = (combined[price_col] * disc).round(0)
+        if name == "ROA":
+            price = combined[price_col]
+            combined[disc_col] = price.where(price <= roa_discount_threshold, price * disc).round(0)
+        else:
+            combined[disc_col] = (combined[price_col] * disc).round(0)
 
     # vendor vs ROA (compared against ROA's discounted baseline, e.g. "ROA -30% AUD")
     roa_price_col = price_col_map.get("ROA")
