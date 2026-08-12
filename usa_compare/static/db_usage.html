@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Database Usage — Diamond Dashboard</title>
+    <style>
+      :root {
+        --bg: #08080c;
+        --card: #12121a;
+        --surface: #171722;
+        --border: #262633;
+        --text: #e8e8f0;
+        --muted: #8a8a9e;
+        --accent: #f0b429;
+        --accent2: #4fc3f7;
+        --green: #4ade80;
+        --red: #f87171;
+        --font-display: "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+        --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        padding: 0 0 60px;
+      }
+      .topbar {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      .btn {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 5px 13px;
+        font-size: 0.7rem;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn {
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn:hover {
+        border-color: var(--accent);
+      }
+      .btn-logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .header {
+        padding: 26px 28px 6px;
+      }
+      .header h1 {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        margin: 0 0 4px;
+      }
+      .header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      /* ── Quota meter ─────────────────────────────────────────────────── */
+      .usage-wrap {
+        padding: 22px 28px 4px;
+      }
+      .usage-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 9px;
+      }
+      .usage-num {
+        font-family: var(--font-display);
+        font-size: 2rem;
+        color: var(--usage-color, var(--accent));
+        line-height: 1;
+      }
+      .usage-num small {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-left: 8px;
+      }
+      .usage-pct {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        color: var(--usage-color, var(--accent));
+      }
+      .usage-bar {
+        height: 12px;
+        border-radius: 6px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      .usage-fill {
+        height: 100%;
+        background: var(--usage-color, var(--accent));
+      }
+      .usage-legend {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.62rem;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        padding: 20px 28px 4px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--card-color, var(--accent));
+        border-radius: 10px;
+        padding: 12px 15px;
+      }
+      .card-label {
+        font-size: 0.55rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .card-metric {
+        font-family: var(--font-display);
+        font-size: 1.4rem;
+        color: var(--card-color, var(--text));
+        line-height: 1.15;
+        margin-top: 4px;
+        word-break: break-all;
+      }
+      .card-sub {
+        font-size: 0.6rem;
+        color: var(--muted);
+        margin-top: 5px;
+        line-height: 1.6;
+      }
+
+      .sec-head {
+        padding: 26px 28px 8px;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .sec-head .hint {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.65rem;
+        opacity: 0.75;
+      }
+      .table-wrap {
+        padding: 0 28px;
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+      }
+      thead th {
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 0.57rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      tbody td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .key {
+        font-weight: 600;
+      }
+      .bar {
+        display: block;
+        position: relative;
+        height: 9px;
+        min-width: 140px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: var(--accent2);
+      }
+      .region-chip {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 20px;
+        font-size: 0.58rem;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .note {
+        margin: 22px 28px 0;
+        padding: 11px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.68rem;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .note.warn {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+        color: var(--accent2);
+      }
+      .empty {
+        text-align: center;
+        padding: 70px 28px;
+        color: var(--muted);
+      }
+
+      /* ── Sidebar ─────────────────────────────────────────────────────── */
+      /* Fixed rail; the body is padded by its width so the sticky topbar and
+         all content start clear of it. */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 226px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        z-index: 40;
+      }
+      .side-head {
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .side-title {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        color: var(--accent);
+      }
+      .side-sub {
+        font-size: 0.58rem;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .side-nav {
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .side-label {
+        font-size: 0.53rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        padding: 8px 10px 4px;
+      }
+      .side-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 11px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        color: var(--text);
+        text-decoration: none;
+        transition: all 0.15s ease;
+      }
+      .side-item:hover {
+        background: var(--surface);
+        border-color: var(--border);
+      }
+      .side-item.active {
+        background: var(--surface);
+        border-color: var(--accent);
+      }
+      .side-item.active .side-item-name {
+        color: var(--accent);
+      }
+      .side-icon {
+        font-size: 0.95rem;
+        line-height: 1.35;
+      }
+      .side-item-name {
+        font-size: 0.76rem;
+        font-weight: 600;
+        display: block;
+      }
+      .side-item-sub {
+        font-size: 0.57rem;
+        color: var(--muted);
+        line-height: 1.45;
+        margin-top: 2px;
+        display: block;
+      }
+      .side-foot {
+        padding: 12px 10px 14px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .side-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 8px;
+        padding: 7px 11px;
+        font-size: 0.65rem;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .side-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .side-btn.logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      body {
+        padding-left: 226px;
+      }
+      /* Narrow screens: the rail becomes a normal block at the top. */
+      @media (max-width: 900px) {
+        body {
+          padding-left: 0;
+        }
+        .sidebar {
+          position: static;
+          width: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .side-nav {
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+        .side-label {
+          display: none;
+        }
+      }
+      .btn-back {
+        background: color-mix(in srgb, var(--accent) 10%, var(--card));
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      }
+      .btn-back:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="side-head">
+        <div class="side-title">⚙ Settings</div>
+        <div class="side-sub">Cross-region tools</div>
+      </div>
+      <nav class="side-nav">
+        <div class="side-label">Dashboards</div>
+        <a class="side-item" href="/dashboard/usage">
+          <span class="side-icon">↑↓</span>
+          <span>
+            <span class="side-item-name">Bandwidth Usage</span>
+            <span class="side-item-sub">Internet used per scraper &amp; API call</span>
+          </span>
+        </a>
+        <a class="side-item" href="/dashboard/coverage">
+          <span class="side-icon">⚙</span>
+          <span>
+            <span class="side-item-name">Data Coverage</span>
+            <span class="side-item-sub">Which vendor publishes which grading data</span>
+          </span>
+        </a>
+        <a class="side-item active" href="/dashboard/db-usage">
+          <span class="side-icon">🗄</span>
+          <span>
+            <span class="side-item-name">Database Usage</span>
+            <span class="side-item-sub">Storage against the plan quota</span>
+          </span>
+        </a>
+      </nav>
+      <div class="side-foot">
+        <a class="side-btn" href="/dashboard">← Dashboards</a>
+        <button class="side-btn logout" onclick="logout()">⏏ Logout</button>
+      </div>
+    </div>
+
+    <div class="topbar">
+      <a class="btn btn-back" href="/dashboard">← Back to Dashboards</a>
+      <button class="btn" onclick="load()">↻ Refresh</button>
+      <button class="btn btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
+    <div class="header">
+      <h1>🗄 Database Usage</h1>
+      <p>Storage against the plan quota, and what is taking up the space.</p>
+    </div>
+
+    <div id="body">
+      <div class="empty">⏳ Reading database usage…</div>
+    </div>
+
+    <script>
+      let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+      if (!AUTH_TOKEN) window.location.href = "/";
+
+      function logout() {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
+      }
+
+      function bytes(n) {
+        if (n === null || n === undefined) return "—";
+        let v = Number(n);
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        while (Math.abs(v) >= 1024 && i < units.length - 1) {
+          v /= 1024;
+          i++;
+        }
+        return i === 0 ? `${Math.round(v)} B` : `${v.toFixed(1)} ${units[i]}`;
+      }
+
+      async function load() {
+        const body = document.getElementById("body");
+        body.innerHTML = `<div class="empty">⏳ Reading database usage…</div>`;
+        let d;
+        try {
+          const res = await fetch("/api/db-usage", {
+            headers: { Authorization: "Bearer " + AUTH_TOKEN },
+          });
+          if (res.status === 401) {
+            sessionStorage.removeItem("diamond_token");
+            window.location.href = "/";
+            return;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          d = await res.json();
+        } catch (e) {
+          body.innerHTML = `<div class="note warn">Could not read database usage — ${e.message}</div>`;
+          return;
+        }
+        if (d.ok === false) {
+          body.innerHTML = `<div class="note warn">Could not read database usage — ${
+            d.error || "unknown error"
+          }</div>`;
+          return;
+        }
+        render(d);
+      }
+
+      function render(d) {
+        const pct = Number(d.used_pct || 0);
+        // Colour tracks headroom, so a full disk is obvious without reading.
+        const colour =
+          pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--accent)" : "var(--green)";
+
+        let html = `<div class="usage-wrap" style="--usage-color:${colour}">
+          <div class="usage-head">
+            <div class="usage-num">${d.size_pretty}<small>of ${bytes(d.limit_bytes)} quota</small></div>
+            <div class="usage-pct">${pct}% used · ${d.free_pretty} free</div>
+          </div>
+          <div class="usage-bar"><div class="usage-fill" style="width:${Math.min(100, pct)}%"></div></div>
+          <div class="usage-legend"><span>0</span><span>${bytes(d.limit_bytes)}</span></div>
+        </div>`;
+
+        if (pct >= 90) {
+          html += `<div class="note warn">⚠ Storage is nearly full. Writes may start failing — free space up or raise the plan limit before the next pipeline run.</div>`;
+        }
+
+        html += `<div class="cards">
+          <div class="card" style="--card-color:var(--accent2)">
+            <div class="card-label">Connection</div>
+            <div class="card-metric" style="font-size:1rem">${d.provider}</div>
+            <div class="card-sub">
+              ${d.host}<br />database <code>${d.database}</code><br />
+              PostgreSQL ${d.postgres_version || "—"}
+            </div>
+          </div>
+          <div class="card" style="--card-color:var(--green)">
+            <div class="card-label">Connections</div>
+            <div class="card-metric">${d.connections ? d.connections.active : "—"}<small style="font-size:0.7rem;color:var(--muted)"> / ${
+              d.connections ? d.connections.max : "—"
+            }</small></div>
+            <div class="card-sub">active right now, against the server maximum</div>
+          </div>
+          <div class="card" style="--card-color:var(--muted)">
+            <div class="card-label">Tables</div>
+            <div class="card-metric">${(d.tables || []).length}</div>
+            <div class="card-sub">${(d.tables || [])
+              .reduce((a, t) => a + Math.max(t.rows, 0), 0)
+              .toLocaleString()} rows in total</div>
+          </div>
+        </div>`;
+
+        // ── By region ────────────────────────────────────────────────────
+        const regions = Object.entries(d.by_region || {}).sort(
+          (a, b) => b[1].size_bytes - a[1].size_bytes
+        );
+        if (regions.length) {
+          const peak = regions[0][1].size_bytes || 1;
+          html += `<div class="sec-head">Storage by region</div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Region</th><th class="num">Size</th><th>Share</th>
+              <th class="num">Tables</th><th class="num">Rows</th>
+            </tr></thead><tbody>`;
+          for (const [name, r] of regions) {
+            const share = d.size_bytes
+              ? ((r.size_bytes / d.size_bytes) * 100).toFixed(1)
+              : "0.0";
+            html += `<tr>
+              <td class="key">${name}</td>
+              <td class="num">${r.size_pretty}</td>
+              <td><span class="bar"><i style="width:${(r.size_bytes / peak) * 100}%"></i></span> <span style="color:var(--muted);font-size:0.62rem">${share}%</span></td>
+              <td class="num">${r.tables}</td>
+              <td class="num">${r.rows.toLocaleString()}</td>
+            </tr>`;
+          }
+          html += `</tbody></table></div>`;
+        }
+
+        // ── By table ─────────────────────────────────────────────────────
+        const tables = d.tables || [];
+        if (tables.length) {
+          const tpeak = tables[0].size_bytes || 1;
+          html += `<div class="sec-head">By table <span class="hint">— largest first</span></div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Table</th><th>Region</th><th class="num">Size</th>
+              <th>Share</th><th class="num">Rows</th>
+            </tr></thead><tbody>`;
+          for (const t of tables) {
+            html += `<tr>
+              <td class="key">${t.table}</td>
+              <td><span class="region-chip">${t.region}</span></td>
+              <td class="num">${t.size_pretty}</td>
+              <td><span class="bar"><i style="width:${(t.size_bytes / tpeak) * 100}%"></i></span></td>
+              <td class="num">${t.rows < 0 ? "—" : t.rows.toLocaleString()}</td>
+            </tr>`;
+          }
+          html += `</tbody></table></div>`;
+        }
+
+        html += `<div class="note"><b>Storage limit:</b> ${d.limit_source}. Set <code>DB_STORAGE_LIMIT_MB</code> in <code>.env</code> to match your plan so the percentage is accurate. Checked ${
+          d.checked_at || "—"
+        }.</div>`;
+
+        document.getElementById("body").innerHTML = html;
+      }
+
+      load();
+    </script>
+  </body>
+</html>

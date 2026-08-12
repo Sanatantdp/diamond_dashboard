@@ -74,7 +74,8 @@ app.add_middleware(
 # Any new dashboard page must be listed here or the navigation 401s.
 PUBLIC_PATHS = {
     "/", "/dashboard", "/dashboard/usa", "/dashboard/uk", "/dashboard/aus",
-    "/dashboard/germany", "/dashboard/usage",
+    "/dashboard/germany", "/dashboard/usage", "/dashboard/db-usage",
+    "/dashboard/coverage",
     "/favicon.ico",
     "/api/login", "/api/login/config", "/api/health", "/api/file-dates",
     "/api/uk/health", "/api/roa/health", "/api/rog/health",
@@ -963,6 +964,30 @@ async def serve_select():
         raise HTTPException(status_code=404, detail="select.html not found")
     return HTMLResponse(
         content=SELECT_PAGE.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/dashboard/coverage", response_class=HTMLResponse)
+async def serve_dashboard_coverage():
+    """Standalone vendor data-coverage dashboard, with its own region picker."""
+    html_path = STATIC_DIR / "coverage.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="coverage.html not found")
+    return HTMLResponse(
+        content=html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/dashboard/db-usage", response_class=HTMLResponse)
+async def serve_dashboard_db_usage():
+    """Standalone database-storage dashboard, reading /api/db-usage."""
+    html_path = STATIC_DIR / "db_usage.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="db_usage.html not found")
+    return HTMLResponse(
+        content=html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

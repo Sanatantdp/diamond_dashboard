@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data Coverage — Diamond Dashboard</title>
+    <style>
+      :root {
+        --bg: #08080c;
+        --card: #12121a;
+        --surface: #171722;
+        --border: #262633;
+        --text: #e8e8f0;
+        --muted: #8a8a9e;
+        --accent: #f0b429;
+        --accent2: #4fc3f7;
+        --green: #4ade80;
+        --red: #f87171;
+        --font-display: "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+        --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        padding: 0 0 60px;
+      }
+      .topbar {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      .btn {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 5px 13px;
+        font-size: 0.7rem;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn:hover {
+        border-color: var(--accent);
+      }
+      .btn-back {
+        background: color-mix(in srgb, var(--accent) 10%, var(--card));
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      }
+      .btn-back:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+        border-color: var(--accent);
+      }
+      .btn-logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .header {
+        padding: 26px 28px 6px;
+      }
+      .header h1 {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        margin: 0 0 4px;
+      }
+      .header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 16px 28px 4px;
+      }
+      .controls label {
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .sel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-size: 0.7rem;
+        font-family: var(--font-mono);
+        cursor: pointer;
+      }
+      .sel:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .sec-head {
+        padding: 26px 28px 8px;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .sec-head .hint {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.65rem;
+        opacity: 0.75;
+      }
+      .table-wrap {
+        padding: 0 28px;
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+      }
+      thead th {
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 0.57rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      tbody td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .key {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .sub {
+        display: block;
+        font-size: 0.55rem;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .yes {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .part {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .no {
+        color: var(--red);
+        font-weight: 600;
+      }
+      /* Thin meter under each cell so partial coverage reads at a glance. */
+      .cov-bar {
+        display: block;
+        position: relative;
+        height: 3px;
+        margin-top: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .cov-bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: currentColor;
+      }
+      .note {
+        margin: 20px 28px 0;
+        padding: 11px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.68rem;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+        color: var(--accent2);
+      }
+      .empty {
+        text-align: center;
+        padding: 70px 28px;
+        color: var(--muted);
+      }
+
+      /* ── Sidebar ─────────────────────────────────────────────────────── */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 226px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        z-index: 40;
+      }
+      .side-head {
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .side-title {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        color: var(--accent);
+      }
+      .side-sub {
+        font-size: 0.58rem;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .side-nav {
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .side-label {
+        font-size: 0.53rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        padding: 8px 10px 4px;
+      }
+      .side-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 11px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        color: var(--text);
+        text-decoration: none;
+        transition: all 0.15s ease;
+      }
+      .side-item:hover {
+        background: var(--surface);
+        border-color: var(--border);
+      }
+      .side-item.active {
+        background: var(--surface);
+        border-color: var(--accent);
+      }
+      .side-item.active .side-item-name {
+        color: var(--accent);
+      }
+      .side-icon {
+        font-size: 0.95rem;
+        line-height: 1.35;
+      }
+      .side-item-name {
+        font-size: 0.76rem;
+        font-weight: 600;
+        display: block;
+      }
+      .side-item-sub {
+        font-size: 0.57rem;
+        color: var(--muted);
+        line-height: 1.45;
+        margin-top: 2px;
+        display: block;
+      }
+      .side-foot {
+        padding: 12px 10px 14px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .side-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 8px;
+        padding: 7px 11px;
+        font-size: 0.65rem;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .side-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .side-btn.logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      body {
+        padding-left: 226px;
+      }
+      @media (max-width: 900px) {
+        body {
+          padding-left: 0;
+        }
+        .sidebar {
+          position: static;
+          width: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .side-nav {
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+        .side-label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="side-head">
+        <div class="side-title">⚙ Settings</div>
+        <div class="side-sub">Cross-region tools</div>
+      </div>
+      <nav class="side-nav">
+        <div class="side-label">Dashboards</div>
+        <a class="side-item" href="/dashboard/usage">
+          <span class="side-icon">↑↓</span>
+          <span>
+            <span class="side-item-name">Bandwidth Usage</span>
+            <span class="side-item-sub">Internet used per scraper &amp; API call</span>
+          </span>
+        </a>
+        <a class="side-item active" href="/dashboard/coverage">
+          <span class="side-icon">⚙</span>
+          <span>
+            <span class="side-item-name">Data Coverage</span>
+            <span class="side-item-sub">Which vendor publishes which grading data</span>
+          </span>
+        </a>
+        <a class="side-item" href="/dashboard/db-usage">
+          <span class="side-icon">🗄</span>
+          <span>
+            <span class="side-item-name">Database Usage</span>
+            <span class="side-item-sub">Storage against the plan quota</span>
+          </span>
+        </a>
+      </nav>
+      <div class="side-foot">
+        <a class="side-btn" href="/dashboard">← Dashboards</a>
+        <button class="side-btn logout" onclick="logout()">⏏ Logout</button>
+      </div>
+    </div>
+
+    <div class="topbar">
+      <a class="btn btn-back" href="/dashboard">← Back to Dashboards</a>
+      <button class="btn" onclick="load()">↻ Refresh</button>
+      <button class="btn btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
+    <div class="header">
+      <h1>⚙ Vendor Data Coverage</h1>
+      <p>Which vendor actually publishes which grading data, per region.</p>
+    </div>
+
+    <div class="controls">
+      <label for="region">Region</label>
+      <select class="sel" id="region" onchange="load()">
+        <option value="usa" selected>USA</option>
+        <option value="uk">UK</option>
+        <option value="aus">AUS</option>
+        <option value="germany">Germany</option>
+      </select>
+      <label for="attr" style="margin-left: 10px">Breakdown</label>
+      <select class="sel" id="attr" onchange="renderDetail()">
+        <option value="carat">Carat</option>
+        <option value="color">Color</option>
+        <option value="cut">Cut</option>
+        <option value="clarity">Clarity</option>
+      </select>
+    </div>
+
+    <div id="body">
+      <div class="empty">⏳ Loading…</div>
+    </div>
+
+    <script>
+      let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+      if (!AUTH_TOKEN) window.location.href = "/";
+
+      function logout() {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
+      }
+
+      let data = null;
+
+      const num = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toLocaleString();
+      const pct = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toFixed(1) + "%";
+
+      async function load() {
+        const body = document.getElementById("body");
+        body.innerHTML = `<div class="empty">⏳ Loading…</div>`;
+        const region = document.getElementById("region").value;
+        try {
+          const res = await fetch(`/api/vendor-coverage?origin=${region}`, {
+            headers: { Authorization: "Bearer " + AUTH_TOKEN },
+          });
+          if (res.status === 401) {
+            sessionStorage.removeItem("diamond_token");
+            window.location.href = "/";
+            return;
+          }
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.detail || `HTTP ${res.status}`);
+          }
+          data = await res.json();
+        } catch (e) {
+          data = null;
+          body.innerHTML = `<div class="note">Could not load coverage for <b>${region}</b> — ${e.message}.<br /><br />It is built by <code>vendor_coverage.py</code> during the pipeline's database-upload step. Run the pipeline for that region, or <code>python vendor_coverage.py --upload ${region}</code>, to populate it.</div>`;
+          return;
+        }
+        render();
+      }
+
+      function render() {
+        const body = document.getElementById("body");
+        if (!data || !(data.vendors || []).length) {
+          body.innerHTML = `<div class="empty">No coverage recorded for this region yet.</div>`;
+          return;
+        }
+        const attrs = data.attributes || ["carat", "color", "cut", "clarity"];
+
+        let html = `<div class="sec-head">Coverage matrix <span class="hint">— share of each vendor's stones carrying a usable grade · built ${
+          data.generated_at || "—"
+        }</span></div>
+          <div class="table-wrap"><table><thead><tr>
+            <th>Vendor</th><th class="num">Stones</th>`;
+        for (const a of attrs) html += `<th class="num">${a}</th>`;
+        html += `</tr></thead><tbody>`;
+
+        for (const v of data.vendors) {
+          html += `<tr>
+            <td class="key">${v.vendor}<span class="sub">${v.source_file || ""}</span></td>
+            <td class="num">${num(v.total_rows)}</td>`;
+          for (const a of attrs) {
+            const info = v.attributes[a] || {};
+            const p = Number(info.coverage_pct || 0);
+            const cls = !info.has_data ? "no" : p >= 99.5 ? "yes" : "part";
+            const label = !info.has_data ? "✗ none" : (p >= 99.5 ? "✓ " : "◑ ") + pct(p);
+            html += `<td class="num ${cls}">${label}
+              <span class="cov-bar"><i style="width:${Math.max(0, Math.min(100, p))}%"></i></span>
+            </td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div>`;
+
+        const gaps = [];
+        for (const v of data.vendors)
+          for (const a of attrs)
+            if (!(v.attributes[a] || {}).has_data)
+              gaps.push(`<b>${v.vendor}</b> publishes no ${a}`);
+        html += `<div class="note">${
+          gaps.length
+            ? gaps.join(" · ")
+            : "Every vendor in this region publishes all four attributes for at least part of its stock."
+        }</div>`;
+
+        html += `<div class="sec-head" id="detailHead"></div><div id="detail"></div>`;
+        body.innerHTML = html;
+        renderDetail();
+      }
+
+      function renderDetail() {
+        if (!data) return;
+        const host = document.getElementById("detail");
+        if (!host) return;
+        const attr = document.getElementById("attr").value;
+        const head = document.getElementById("detailHead");
+        if (head)
+          head.innerHTML = `${attr} distribution by vendor <span class="hint">— stones per bucket, and that bucket's share of the vendor</span>`;
+
+        // Vendors don't all carry the same buckets, so union them and sort by
+        // the server's grading rank rather than by whoever was read first.
+        const order = new Map();
+        for (const v of data.vendors)
+          for (const b of (v.attributes[attr] || {}).buckets || [])
+            if (!order.has(b.bucket)) order.set(b.bucket, b.order);
+        const buckets = [...order.keys()].sort((a, b) => order.get(a) - order.get(b));
+
+        let html = `<div class="table-wrap"><table><thead><tr><th>${attr}</th>`;
+        for (const v of data.vendors) html += `<th class="num">${v.vendor}</th>`;
+        html += `</tr></thead><tbody>`;
+        for (const bk of buckets) {
+          html += `<tr><td class="key">${bk}</td>`;
+          for (const v of data.vendors) {
+            const b = ((v.attributes[attr] || {}).buckets || []).find(
+              (x) => x.bucket === bk
+            );
+            html += b
+              ? `<td class="num">${num(b.count)}<span class="sub">${pct(b.pct)}</span></td>`
+              : `<td class="num" style="color:var(--muted)">—</td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div>`;
+        host.innerHTML = html;
+      }
+
+      load();
+    </script>
+  </body>
+</html>

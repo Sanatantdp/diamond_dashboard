@@ -55,6 +55,10 @@
         font-family: inherit;
         cursor: pointer;
       }
+      .btn {
+        text-decoration: none;
+        display: inline-block;
+      }
       .btn:hover {
         border-color: var(--accent);
       }
@@ -241,12 +245,190 @@
         border: 1px solid var(--border);
         color: var(--muted);
       }
+
+      /* ── Sidebar ─────────────────────────────────────────────────────── */
+      /* Fixed rail; the body is padded by its width so the sticky topbar and
+         all content start clear of it. */
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 226px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        z-index: 40;
+      }
+      .side-head {
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .side-title {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        color: var(--accent);
+      }
+      .side-sub {
+        font-size: 0.58rem;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .side-nav {
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .side-label {
+        font-size: 0.53rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        padding: 8px 10px 4px;
+      }
+      .side-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 11px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        color: var(--text);
+        text-decoration: none;
+        transition: all 0.15s ease;
+      }
+      .side-item:hover {
+        background: var(--surface);
+        border-color: var(--border);
+      }
+      .side-item.active {
+        background: var(--surface);
+        border-color: var(--accent);
+      }
+      .side-item.active .side-item-name {
+        color: var(--accent);
+      }
+      .side-icon {
+        font-size: 0.95rem;
+        line-height: 1.35;
+      }
+      .side-item-name {
+        font-size: 0.76rem;
+        font-weight: 600;
+        display: block;
+      }
+      .side-item-sub {
+        font-size: 0.57rem;
+        color: var(--muted);
+        line-height: 1.45;
+        margin-top: 2px;
+        display: block;
+      }
+      .side-foot {
+        padding: 12px 10px 14px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .side-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 8px;
+        padding: 7px 11px;
+        font-size: 0.65rem;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .side-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .side-btn.logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      body {
+        padding-left: 226px;
+      }
+      /* Narrow screens: the rail becomes a normal block at the top. */
+      @media (max-width: 900px) {
+        body {
+          padding-left: 0;
+        }
+        .sidebar {
+          position: static;
+          width: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .side-nav {
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+        .side-label {
+          display: none;
+        }
+      }
+      .btn-back {
+        background: color-mix(in srgb, var(--accent) 10%, var(--card));
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      }
+      .btn-back:hover {
+        background: color-mix(in srgb, var(--accent) 20%, var(--card));
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body>
 
+    <div class="sidebar">
+      <div class="side-head">
+        <div class="side-title">⚙ Settings</div>
+        <div class="side-sub">Cross-region tools</div>
+      </div>
+      <nav class="side-nav">
+        <div class="side-label">Dashboards</div>
+        <a class="side-item active" href="/dashboard/usage">
+          <span class="side-icon">↑↓</span>
+          <span>
+            <span class="side-item-name">Bandwidth Usage</span>
+            <span class="side-item-sub">Internet used per scraper &amp; API call</span>
+          </span>
+        </a>
+        <a class="side-item" href="/dashboard/coverage">
+          <span class="side-icon">⚙</span>
+          <span>
+            <span class="side-item-name">Data Coverage</span>
+            <span class="side-item-sub">Which vendor publishes which grading data</span>
+          </span>
+        </a>
+        <a class="side-item" href="/dashboard/db-usage">
+          <span class="side-icon">🗄</span>
+          <span>
+            <span class="side-item-name">Database Usage</span>
+            <span class="side-item-sub">Storage against the plan quota</span>
+          </span>
+        </a>
+      </nav>
+      <div class="side-foot">
+        <a class="side-btn" href="/dashboard">← Dashboards</a>
+        <button class="side-btn logout" onclick="logout()">⏏ Logout</button>
+      </div>
+    </div>
+
     <div class="topbar">
-      <button class="btn" onclick="window.location.href='/dashboard'">← Dashboards</button>
+      <a class="btn btn-back" href="/dashboard">← Back to Dashboards</a>
       <button class="btn" onclick="load()">↻ Refresh</button>
       <button class="btn btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
