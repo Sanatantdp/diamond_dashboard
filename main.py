@@ -1446,15 +1446,9 @@ async def rog_get_status():
     return JSONResponse(content=data)
 
 
-@app.get("/api/rog/status/history")
-async def rog_get_status_history(limit: int = Query(52, ge=1, le=520)):
-    """Trend data from rog_diamond_status_history, oldest -> newest."""
-    try:
-        return JSONResponse(content={
-            "history": _fetch_status_history("rog_diamond_status_history", limit)
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+# NOTE: /api/rog/status/history used to live here. History is a Germany/ROG-
+# only removal (UK and AUS still expose their own /status/history routes via
+# _fetch_status_history()); see germany_compare_to_db.py for the loader side.
 
 
 @app.get("/api/rog/vendor-common/summary")

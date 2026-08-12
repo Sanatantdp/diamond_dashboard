@@ -258,15 +258,11 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
     ensure_table(cur, "rog_compare_common",  ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table(cur, "rog_compare_partial", ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table(cur, "rog_diamond_status",  ROG_STATUS_COLUMNS,  ["generated_at"])
-    snapshot_history.ensure_status_history_table(cur, "rog_diamond_status_history", ROG_STATUS_COLUMNS)
 
-    # Step 2 – historical snapshot, BEFORE truncate
+    # Step 2 – snapshot archive, BEFORE truncate (history table is no longer
+    # written — see main.py's /api/rog/status/history removal note)
     status_row = _parse_rog_status_row(COMPARE_DIR / "diamond_status.json")
     snapshot_history.archive_compare_json("germany", COMPARE_DIR)
-    if status_row is not None:
-        snapshot_history.insert_status_history_row(
-            cur, "rog_diamond_status_history", [c[0] for c in ROG_STATUS_COLUMNS], status_row
-        )
 
     # Step 3 – truncate
     truncate_tables(cur)
