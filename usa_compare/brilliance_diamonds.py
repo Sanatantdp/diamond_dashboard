@@ -1,3 +1,13 @@
+# ── Bandwidth accounting ─────────────────────────────────────────────────────
+# Counts every byte this scraper downloads, per day, into bandwidth/ and then
+# the dashboards. Underscore aliases so nothing here shadows the module's own
+# imports further down. See bandwidth.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+import bandwidth as _bandwidth
+_bandwidth.track('brilliance', 'usa')
+
 from curl_cffi import requests
 from fake_useragent import UserAgent
 import time

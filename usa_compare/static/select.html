@@ -204,11 +204,44 @@
         border-color: var(--red);
         color: var(--red);
       }
+
+      /* ── Settings ─────────────────────────────────────────────────────── */
+      /* The body is a centred flex container, so the button is pinned to the
+         viewport corner rather than placed in the flow. */
+      .settings-btn {
+        position: fixed;
+        top: 22px;
+        right: 24px;
+        z-index: 50;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.18s ease;
+      }
+      .settings-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
     </style>
   </head>
   <body>
     <div class="bg-grid"></div>
     <div class="bg-glow"></div>
+
+    <!-- Goes straight to the bandwidth dashboard — no intermediate dialog. -->
+    <a
+      class="settings-btn"
+      href="/dashboard/usage"
+      title="Bandwidth usage — how much internet each scraper used, per day"
+      >⚙ Settings</a
+    >
 
     <div class="wrap">
       <div class="eyebrow">Diamond Price Intelligence</div>

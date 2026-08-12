@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Internet Usage — Diamond Dashboard</title>
+    <style>
+      :root {
+        --bg: #08080c;
+        --card: #12121a;
+        --surface: #171722;
+        --border: #262633;
+        --text: #e8e8f0;
+        --muted: #8a8a9e;
+        --accent: #f0b429;
+        --accent2: #4fc3f7;
+        --green: #4ade80;
+        --red: #f87171;
+        --font-display: "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+        --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        padding: 0 0 60px;
+      }
+      a {
+        color: var(--accent2);
+      }
+
+      .topbar {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      .btn {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 5px 13px;
+        font-size: 0.7rem;
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .btn:hover {
+        border-color: var(--accent);
+      }
+      .btn-logout:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+
+      .header {
+        padding: 26px 28px 6px;
+      }
+      .header h1 {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        margin: 0 0 4px;
+      }
+      .header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 16px 28px 4px;
+      }
+      .controls label {
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .sel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-size: 0.7rem;
+        font-family: var(--font-mono);
+        cursor: pointer;
+      }
+      .sel:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .net-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        padding: 18px 28px 4px;
+      }
+      .net-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--card-color, var(--accent));
+        border-radius: 10px;
+        padding: 12px 15px;
+      }
+      .net-card-label {
+        font-size: 0.55rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .net-card-metric {
+        font-family: var(--font-display);
+        font-size: 1.6rem;
+        color: var(--card-color, var(--text));
+        line-height: 1.15;
+        margin-top: 4px;
+      }
+      .net-card-sub {
+        font-size: 0.6rem;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+
+      .sec-head {
+        padding: 26px 28px 8px;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .sec-head .hint {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.65rem;
+        opacity: 0.75;
+      }
+
+      .table-wrap {
+        padding: 0 28px;
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+      }
+      thead th {
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 0.57rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      tbody td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .key {
+        font-weight: 600;
+      }
+      .sub {
+        display: block;
+        font-size: 0.55rem;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      /* Bars are scaled to the busiest row, so the shape of the period reads
+         at a glance without pulling in a charting library. */
+      .bar {
+        display: block;
+        position: relative;
+        height: 9px;
+        min-width: 140px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: var(--accent);
+      }
+      .bar.alt i {
+        background: var(--accent2);
+      }
+
+      .note {
+        margin: 20px 28px 0;
+        padding: 11px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.68rem;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+        color: var(--accent2);
+      }
+      .empty {
+        text-align: center;
+        padding: 70px 28px;
+        color: var(--muted);
+      }
+      .origin-tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 20px;
+        font-size: 0.58rem;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="topbar">
+      <button class="btn" onclick="window.location.href='/dashboard'">← Dashboards</button>
+      <button class="btn" onclick="load()">↻ Refresh</button>
+      <button class="btn btn-logout" onclick="logout()">⎋ Logout</button>
+    </div>
+
+    <div class="header">
+      <h1>↑↓ Internet Usage</h1>
+      <p>
+        How much the scrapers downloaded, day by day, across every region.
+      </p>
+    </div>
+
+    <div class="controls">
+      <label for="scope">Region</label>
+      <select class="sel" id="scope" onchange="load()">
+        <option value="all" selected>All regions</option>
+        <option value="usa">USA</option>
+        <option value="uk">UK</option>
+        <option value="aus">AUS</option>
+        <option value="germany">Germany</option>
+      </select>
+      <label for="days" style="margin-left: 10px">Window</label>
+      <select class="sel" id="days" onchange="load()">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+      </select>
+    </div>
+
+    <div id="body">
+      <div class="empty">⏳ Loading…</div>
+    </div>
+
+    <script>
+      let AUTH_TOKEN = sessionStorage.getItem("diamond_token") || "";
+      if (!AUTH_TOKEN) window.location.href = "/";
+
+      function logout() {
+        sessionStorage.removeItem("diamond_token");
+        window.location.href = "/";
+      }
+
+      let data = null;
+
+      function bytes(n) {
+        if (n === null || n === undefined) return "—";
+        let v = Number(n);
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        while (Math.abs(v) >= 1024 && i < units.length - 1) {
+          v /= 1024;
+          i++;
+        }
+        return i === 0 ? `${Math.round(v)} B` : `${v.toFixed(1)} ${units[i]}`;
+      }
+
+      async function load() {
+        const body = document.getElementById("body");
+        body.innerHTML = `<div class="empty">⏳ Loading…</div>`;
+        const scope = document.getElementById("scope").value;
+        const days = document.getElementById("days").value;
+        try {
+          const res = await fetch(`/api/bandwidth?origin=${scope}&days=${days}`, {
+            headers: { Authorization: "Bearer " + AUTH_TOKEN },
+          });
+          if (res.status === 401) {
+            sessionStorage.removeItem("diamond_token");
+            window.location.href = "/";
+            return;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          data = await res.json();
+        } catch (e) {
+          body.innerHTML = `<div class="note">Could not load usage — ${e.message}.<br /><br />Figures are recorded by <code>bandwidth.py</code> while the scrapers run and written to the database during the pipeline's upload step, so they appear after the next run.</div>`;
+          return;
+        }
+        render();
+      }
+
+      function render() {
+        const body = document.getElementById("body");
+        if (!data || !(data.daily || []).length) {
+          body.innerHTML = `<div class="empty">No usage recorded for this window yet.<br /><br />The scrapers write it as they run.</div>`;
+          return;
+        }
+        const t = data.totals || {};
+
+        let html = `<div class="net-cards">
+          <div class="net-card" style="--card-color:var(--accent)">
+            <div class="net-card-label">Downloaded</div>
+            <div class="net-card-metric">${t.bytes_down_pretty || bytes(t.bytes_down)}</div>
+            <div class="net-card-sub">over ${data.days_with_data} active day(s)</div>
+          </div>
+          <div class="net-card" style="--card-color:var(--accent2)">
+            <div class="net-card-label">Average / day</div>
+            <div class="net-card-metric">${t.avg_per_day_pretty || bytes(t.avg_per_day)}</div>
+            <div class="net-card-sub">across days with activity</div>
+          </div>
+          <div class="net-card" style="--card-color:var(--green)">
+            <div class="net-card-label">Requests</div>
+            <div class="net-card-metric">${Number(t.requests || 0).toLocaleString()}</div>
+            <div class="net-card-sub">${bytes(t.requests ? t.bytes_down / t.requests : 0)} average each</div>
+          </div>
+          <div class="net-card" style="--card-color:var(--muted)">
+            <div class="net-card-label">Uploaded</div>
+            <div class="net-card-metric">${t.bytes_up_pretty || bytes(t.bytes_up)}</div>
+            <div class="net-card-sub">request headers &amp; bodies</div>
+          </div>
+        </div>`;
+
+        // ── By day ───────────────────────────────────────────────────────
+        const peak = Math.max(...data.daily.map((d) => d.bytes_down)) || 1;
+        html += `<div class="sec-head">By day <span class="hint">— newest last, bar scaled to the busiest day</span></div>
+          <div class="table-wrap"><table><thead><tr>
+            <th>Day</th><th class="num">Downloaded</th><th>Share of peak</th>
+            <th class="num">Requests</th><th>Scrapers that ran</th>
+          </tr></thead><tbody>`;
+        for (const d of data.daily) {
+          const names = Object.keys(d.scrapers || {}).sort();
+          html += `<tr>
+            <td class="key">${d.day}</td>
+            <td class="num">${d.bytes_down_pretty || bytes(d.bytes_down)}</td>
+            <td><span class="bar"><i style="width:${(d.bytes_down / peak) * 100}%"></i></span></td>
+            <td class="num">${Number(d.requests || 0).toLocaleString()}</td>
+            <td style="white-space:normal;color:var(--muted);font-size:0.64rem">${
+              names.join(", ") || "—"
+            }</td>
+          </tr>`;
+        }
+        html += `</tbody></table></div>`;
+
+        // ── By scraper ───────────────────────────────────────────────────
+        const speak = Math.max(...data.scrapers.map((s) => s.bytes_down)) || 1;
+        html += `<div class="sec-head">By scraper <span class="hint">— totals across the selected window</span></div>
+          <div class="table-wrap"><table><thead><tr>
+            <th>Scraper</th><th>Region</th><th class="num">Downloaded</th>
+            <th>Share</th><th class="num">Requests</th><th class="num">Days active</th>
+          </tr></thead><tbody>`;
+        for (const s of data.scrapers) {
+          html += `<tr>
+            <td class="key">${s.scraper}</td>
+            <td><span class="origin-tag">${s.origin}</span></td>
+            <td class="num">${s.bytes_down_pretty || bytes(s.bytes_down)}</td>
+            <td><span class="bar alt"><i style="width:${(s.bytes_down / speak) * 100}%"></i></span></td>
+            <td class="num">${Number(s.requests || 0).toLocaleString()}</td>
+            <td class="num">${s.days}</td>
+          </tr>`;
+        }
+        html += `</tbody></table></div>`;
+
+        // ── By API endpoint — what one call actually costs ───────────────
+        const eps = data.endpoints || [];
+        if (eps.length) {
+          const epeak = Math.max(...eps.map((e) => e.bytes_down)) || 1;
+          html += `<div class="sec-head">By API endpoint <span class="hint">— which call is consuming the bandwidth, and what one call costs</span></div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Endpoint</th><th>Scraper</th><th class="num">Calls</th>
+              <th class="num">Downloaded</th><th>Share</th><th class="num">Per call</th>
+            </tr></thead><tbody>`;
+          for (const e of eps) {
+            html += `<tr>
+              <td class="key" style="white-space:normal;word-break:break-all;max-width:420px">${e.endpoint}</td>
+              <td><span class="origin-tag">${e.scraper}</span></td>
+              <td class="num">${Number(e.requests || 0).toLocaleString()}</td>
+              <td class="num">${e.bytes_down_pretty || bytes(e.bytes_down)}</td>
+              <td><span class="bar"><i style="width:${(e.bytes_down / epeak) * 100}%"></i></span></td>
+              <td class="num">${e.avg_per_call_pretty || bytes(e.avg_bytes_per_call)}</td>
+            </tr>`;
+          }
+          html += `</tbody></table></div>`;
+        }
+
+        // ── By region (only meaningful when several are in view) ─────────
+        const byOrigin = {};
+        for (const s of data.scrapers) {
+          const o = (byOrigin[s.origin] = byOrigin[s.origin] || {
+            bytes_down: 0,
+            requests: 0,
+            scrapers: 0,
+          });
+          o.bytes_down += s.bytes_down;
+          o.requests += s.requests;
+          o.scrapers += 1;
+        }
+        const origins = Object.keys(byOrigin).sort(
+          (a, b) => byOrigin[b].bytes_down - byOrigin[a].bytes_down
+        );
+        if (origins.length > 1) {
+          const opeak = byOrigin[origins[0]].bytes_down || 1;
+          html += `<div class="sec-head">By region</div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Region</th><th class="num">Downloaded</th><th>Share</th>
+              <th class="num">Requests</th><th class="num">Scrapers</th>
+            </tr></thead><tbody>`;
+          for (const o of origins) {
+            const r = byOrigin[o];
+            html += `<tr>
+              <td class="key">${o}</td>
+              <td class="num">${bytes(r.bytes_down)}</td>
+              <td><span class="bar"><i style="width:${(r.bytes_down / opeak) * 100}%"></i></span></td>
+              <td class="num">${r.requests.toLocaleString()}</td>
+              <td class="num">${r.scrapers}</td>
+            </tr>`;
+          }
+          html += `</tbody></table></div>`;
+        }
+
+        const live = Number(data.live_rows || 0);
+        if (live) {
+          html += `<div class="note" style="border-color:var(--green);color:var(--green)">● ${live} entr${
+            live === 1 ? "y is" : "ies are"
+          } from a scraper that is still running — the figures update as it goes. They are written to the database when that region's loader runs at the end of the pipeline.</div>`;
+        }
+
+        const est = Number(data.estimated_from_body || 0);
+        html += `<div class="note">Counted from HTTP responses inside the scrapers: body bytes (taken from <code>Content-Length</code> where the server sends one) plus headers. TLS handshakes and TCP/IP overhead are not visible from inside the process, so the figure your router reports will be somewhat higher.${
+          est
+            ? ` ${est.toLocaleString()} response(s) arrived without a <code>Content-Length</code> and were measured after decompression, which over-states them.`
+            : ""
+        }</div>`;
+
+        body.innerHTML = html;
+      }
+
+      load();
+    </script>
+  </body>
+</html>

@@ -41,6 +41,8 @@ from psycopg2.extras import execute_values
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+import vendor_coverage   # noqa: E402
+import bandwidth         # noqa: E402
 
 load_dotenv(REPO_ROOT / ".env")
 
@@ -284,11 +286,21 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
     if status_row is None:
         print('  SKIP "rog_diamond_status" — diamond_status.json not found')
         counts["rog_diamond_status"] = 0
-        return counts
-    status_cols = [c[0] for c in ROG_STATUS_COLUMNS]
-    counts["rog_diamond_status"] = insert_rows(
-        cur, "rog_diamond_status", status_cols, [status_row]
+    else:
+        status_cols = [c[0] for c in ROG_STATUS_COLUMNS]
+        counts["rog_diamond_status"] = insert_rows(
+            cur, "rog_diamond_status", status_cols, [status_row]
+        )
+
+    # Step 6 – vendor attribute coverage (carat/color/cut/clarity per vendor).
+    # Built from the raw vendor CSVs, into the shared cross-origin table;
+    # only the origin='germany' rows are replaced.
+    counts["vendor_coverage"] = len(
+        vendor_coverage.coverage_rows(vendor_coverage.refresh_origin("germany", cur))
     )
+
+    # Daily download volume recorded by the scrapers (see bandwidth.py).
+    counts["bandwidth_usage"] = len(bandwidth.refresh_origin("germany", cur))
     return counts
 
 

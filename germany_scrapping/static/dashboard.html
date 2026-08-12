@@ -1395,6 +1395,145 @@
       .avg-info-val {
         font-weight: 500;
       }
+
+      /* ── Vendor data-coverage modal ──────────────────────────────────── */
+      #coverageModal {
+        position: fixed;
+        inset: 0;
+        z-index: 10001;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      #coverageModal.open {
+        display: flex;
+      }
+      .cov-controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        flex-shrink: 0;
+      }
+      .cov-controls label {
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .cov-select {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.68rem;
+        font-family: var(--font-mono);
+        cursor: pointer;
+      }
+      .cov-select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .cov-head {
+        padding: 18px 28px 7px;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .cov-head .hint {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.62rem;
+        opacity: 0.75;
+      }
+      .cov-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.7rem;
+      }
+      .cov-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--surface);
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 0.57rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      .cov-table tbody td {
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      .cov-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .cov-table .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .cov-vendor {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .cov-sub {
+        display: block;
+        font-size: 0.55rem;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .cov-yes {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .cov-part {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .cov-no {
+        color: var(--red);
+        font-weight: 600;
+      }
+      .cov-bar {
+        display: block;
+        position: relative;
+        height: 3px;
+        margin-top: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .cov-bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: currentColor;
+      }
+      .cov-note {
+        margin: 14px 28px 0;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.66rem;
+        color: var(--muted);
+        line-height: 1.55;
+      }
     </style>
   </head>
   <body>
@@ -1650,6 +1789,14 @@
             title="New pipeline run recorded"
           ></span>
         </span>
+        <button
+          class="btn btn-ghost btn-sm"
+          onclick="openCoverageModal()"
+          style="font-size: 0.65rem; padding: 3px 10px; margin-left: 4px"
+          title="Which vendor publishes carat / color / cut / clarity"
+        >
+          ⚙ Data Coverage
+        </button>
       </div>
       <div class="stats-panel" id="statsPanel">
         <div
@@ -1848,6 +1995,37 @@
       </div>
       <div class="pagination" id="pagination"></div>
     </div>
+
+
+    <!-- VENDOR DATA COVERAGE MODAL -->
+    <div
+      id="coverageModal"
+      onclick="if (event.target === this) closeCoverageModal();"
+    >
+      <div class="modal-box" style="max-width: 1100px; border-color: var(--accent2)">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">⚙ Vendor Data Coverage</div>
+            <div class="modal-sub" id="coverageModalSub">
+              Which vendor publishes which grading data
+            </div>
+          </div>
+          <button class="modal-close" onclick="closeCoverageModal()">✕</button>
+        </div>
+        <div class="cov-controls">
+          <label for="covAttr">Breakdown</label>
+          <select class="cov-select" id="covAttr" onchange="renderCoverageDetail()">
+            <option value="carat">Carat</option>
+            <option value="color">Color</option>
+            <option value="cut">Cut</option>
+            <option value="clarity">Clarity</option>
+          </select>
+        </div>
+        <div class="modal-body" id="coverageBody"></div>
+      </div>
+    </div>
+
+
 
     <script>
       const API_BASE = "/api/rog";
@@ -3237,6 +3415,140 @@
         }
       }
       startDashboard();
+
+      // ══════════════════════════════════════════════════════════════════
+      //  VENDOR DATA COVERAGE
+      //  Reads /vendor-coverage, built by vendor_coverage.py straight from the raw
+      //  vendor CSVs. Vendors differ a lot in what they actually publish —
+      //  some list no cut grade at all, others grade only a third of stock —
+      //  so this is the "who has what" view over carat/color/cut/clarity.
+      // ══════════════════════════════════════════════════════════════════
+      let covData = null;
+
+      const covNum = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toLocaleString();
+      const covPct = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toFixed(1) + "%";
+
+      async function openCoverageModal() {
+        document.getElementById("coverageModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        const body = document.getElementById("coverageBody");
+        if (covData) {
+          renderCoverage();
+          return;
+        }
+        body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">⏳ Loading vendor coverage…</div>`;
+        try {
+          covData = await api("GET", "/vendor-coverage");
+        } catch (e) {
+          covData = null;
+          body.innerHTML = `<div class="cov-note">Could not load vendor coverage — ${e.message}.<br /><br />It is built by <code>vendor_coverage.py</code> during the pipeline's database-upload step. Run the pipeline once, or <code>python vendor_coverage.py --upload germany</code>, to populate it.</div>`;
+          return;
+        }
+        renderCoverage();
+      }
+
+      function closeCoverageModal() {
+        const m = document.getElementById("coverageModal");
+        if (m) m.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function renderCoverage() {
+        const body = document.getElementById("coverageBody");
+        if (!covData || !(covData.vendors || []).length) {
+          body.innerHTML = `<div class="cov-note">No vendor coverage recorded yet.</div>`;
+          return;
+        }
+        const attrs = covData.attributes || ["carat", "color", "cut", "clarity"];
+        const sub = document.getElementById("coverageModalSub");
+        if (sub)
+          sub.textContent =
+            `${covData.vendor_count} vendor(s) · built ${covData.generated_at || "—"} ` +
+            `from the raw vendor CSVs`;
+
+        let html = `<div class="cov-head">Coverage matrix <span class="hint">— share of each vendor's stones carrying a usable grade</span></div>`;
+        html += `<table class="cov-table"><thead><tr><th>Vendor</th><th class="num">Stones</th>`;
+        for (const a of attrs) html += `<th class="num">${a}</th>`;
+        html += `</tr></thead><tbody>`;
+
+        for (const v of covData.vendors) {
+          html += `<tr>
+            <td class="cov-vendor">${v.vendor}<span class="cov-sub">${v.source_file || ""}</span></td>
+            <td class="num">${covNum(v.total_rows)}</td>`;
+          for (const a of attrs) {
+            const info = v.attributes[a] || {};
+            const pct = Number(info.coverage_pct || 0);
+            const cls = !info.has_data ? "cov-no" : pct >= 99.5 ? "cov-yes" : "cov-part";
+            const label = !info.has_data
+              ? "✗ none"
+              : (pct >= 99.5 ? "✓ " : "◑ ") + covPct(pct);
+            html += `<td class="num ${cls}">${label}
+              <span class="cov-bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>
+            </td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+
+        const gaps = [];
+        for (const v of covData.vendors)
+          for (const a of attrs)
+            if (!(v.attributes[a] || {}).has_data)
+              gaps.push(`<b>${v.vendor}</b> publishes no ${a}`);
+        html += `<div class="cov-note">${
+          gaps.length
+            ? gaps.join(" · ")
+            : "Every vendor publishes all four attributes for at least part of its stock."
+        }</div>`;
+
+        html += `<div class="cov-head" id="covDetailHead"></div><div id="covDetail"></div>`;
+        body.innerHTML = html;
+        renderCoverageDetail();
+      }
+
+      function renderCoverageDetail() {
+        if (!covData) return;
+        const host = document.getElementById("covDetail");
+        if (!host) return;
+        const sel = document.getElementById("covAttr");
+        const attr = sel ? sel.value : "carat";
+        const head = document.getElementById("covDetailHead");
+        if (head)
+          head.innerHTML = `${attr} distribution by vendor <span class="hint">— stones per bucket, and that bucket's share of the vendor</span>`;
+
+        // Vendors don't all carry the same buckets, so union them and sort by
+        // the server's grading rank (D before E, IF before VS1, …) rather than
+        // by whichever vendor happened to be read first.
+        const order = new Map();
+        for (const v of covData.vendors)
+          for (const b of (v.attributes[attr] || {}).buckets || [])
+            if (!order.has(b.bucket)) order.set(b.bucket, b.order);
+        const buckets = [...order.keys()].sort((a, b) => order.get(a) - order.get(b));
+
+        let html = `<table class="cov-table"><thead><tr><th>${attr}</th>`;
+        for (const v of covData.vendors) html += `<th class="num">${v.vendor}</th>`;
+        html += `</tr></thead><tbody>`;
+        for (const bk of buckets) {
+          html += `<tr><td class="cov-vendor">${bk}</td>`;
+          for (const v of covData.vendors) {
+            const b = ((v.attributes[attr] || {}).buckets || []).find(
+              (x) => x.bucket === bk
+            );
+            html += b
+              ? `<td class="num">${covNum(b.count)}<span class="cov-sub">${covPct(b.pct)}</span></td>`
+              : `<td class="num" style="color:var(--muted)">—</td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+        host.innerHTML = html;
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeCoverageModal();
+      });
     </script>
   </body>
 </html>

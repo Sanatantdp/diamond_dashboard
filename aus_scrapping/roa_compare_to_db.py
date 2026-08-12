@@ -43,6 +43,8 @@ from psycopg2.extras import execute_values
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+import vendor_coverage   # noqa: E402
+import bandwidth         # noqa: E402
 
 load_dotenv(REPO_ROOT / ".env")
 
@@ -302,8 +304,18 @@ def upload_all_roa_json_files(cur: PgCursor) -> None:
     # Step 6 — status snapshot (live table)
     if status_row is None:
         print('  SKIP "roa_diamond_status" — file missing')
-        return
-    insert_rows(cur, "roa_diamond_status", [c[0] for c in ROA_STATUS_COLUMNS], [status_row])
+    else:
+        insert_rows(cur, "roa_diamond_status", [c[0] for c in ROA_STATUS_COLUMNS], [status_row])
+
+    # Step 7 — vendor attribute coverage (carat/color/cut/clarity per vendor).
+    # Built from the raw vendor CSVs, into the shared cross-origin table;
+    # only the origin='aus' rows are replaced.
+    vendor_coverage.refresh_origin("aus", cur)
+
+    # Daily download volume recorded by the scrapers (see bandwidth.py).
+    # Only the days still held locally are replaced, so the table keeps
+    # history after the local files are pruned.
+    bandwidth.refresh_origin('aus', cur)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

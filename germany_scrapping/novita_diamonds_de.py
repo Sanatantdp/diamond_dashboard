@@ -1,3 +1,13 @@
+# ── Bandwidth accounting ─────────────────────────────────────────────────────
+# Counts every byte this scraper downloads, per day, into bandwidth/ and then
+# the dashboards. Underscore aliases so nothing here shadows the module's own
+# imports further down. See bandwidth.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+import bandwidth as _bandwidth
+_bandwidth.track('novita', 'germany')
+
 from curl_cffi import requests as curl_requests
 import csv, os, time, random, json, logging, re
 import datetime
@@ -16,6 +26,13 @@ VPN_CONFIG_SUBDIR      = "novita"
 # concurrency modest — this is not a fast site to hammer.
 WORKERS         = int(os.environ.get("NOVITA_WORKERS", "3"))
 REQUEST_TIMEOUT = int(os.environ.get("NOVITA_REQUEST_TIMEOUT", "45"))
+
+# HTTP codes that mean "your session/token is burned", not "the network broke".
+# Backing off exponentially on these is pure waste — the same dead PHPSESSID/token
+# will keep failing. The only cure is a fresh session, so refresh and retry at once.
+BLOCK_STATUSES        = {401, 403, 405, 429}
+MAX_SESSION_REFRESHES = 3   # per page, before declaring the exit IP burned
+MAX_NET_ATTEMPTS      = 4   # per page, for genuine network/parse errors
 
 
 class VPNRotateNeeded(Exception):
@@ -278,22 +295,39 @@ def make_session() -> curl_requests.Session:
     return s
 
 
-# ── Thread-safe session refresh (multiple workers can hit 405 at once —
+# ── Thread-safe session refresh (multiple workers can hit 403/405 at once —
 #    only one of them should actually pay for a fresh token/cookies) ──────────
 _refresh_lock       = threading.Lock()
 _last_refresh_time  = 0.0
+_refresh_generation = 0     # bumped on every SUCCESSFUL refresh
 
-def maybe_refresh_session(cooldown: float = 15.0) -> None:
-    global _last_refresh_time
+def maybe_refresh_session(seen_generation: int = -1, cooldown: float = 10.0) -> int:
+    """
+    Get live credentials, at most one refresh per `cooldown` across all workers.
+
+    Pass the generation you last saw; if another worker already refreshed since
+    then, this returns immediately with the new generation (your creds are
+    already fixed — just retry). Returns the current generation.
+    """
+    global _last_refresh_time, _refresh_generation
     with _refresh_lock:
-        if time.time() - _last_refresh_time < cooldown:
-            return  # another worker refreshed moments ago — reuse it
+        if _refresh_generation > seen_generation:
+            return _refresh_generation      # someone beat us to it — reuse theirs
+
+        # Hold the lock through the pause so the other workers queue up behind
+        # one refresh instead of stampeding the site while it is blocking us.
+        wait = cooldown - (time.time() - _last_refresh_time)
+        if wait > 0:
+            time.sleep(wait)
+
         try:
             refresh_session()
+            _refresh_generation += 1
         except Exception as e:
             log.warning(f"maybe_refresh_session() failed: {e}")
         finally:
             _last_refresh_time = time.time()
+        return _refresh_generation
 
 
 def load_progress() -> dict:
@@ -346,7 +380,18 @@ def load_existing_certs(csv_path: str) -> set:
 
 
 def fetch_page(page: int, session: curl_requests.Session) -> tuple:
-    for attempt in range(1, 5):
+    """
+    Fetch one page. Two failure budgets, kept separate on purpose:
+
+      * block statuses (403/405/…) → refresh the session and retry straight
+        away. Backing off here only wastes minutes; the creds are the problem.
+      * network/parse errors       → real exponential backoff.
+    """
+    net_attempt = 0
+    refreshes   = 0
+    gen         = _refresh_generation
+
+    while True:
         # re-read the live token/cookies each attempt — another worker may have
         # refreshed them since this page started retrying
         payload = {
@@ -364,26 +409,35 @@ def fetch_page(page: int, session: curl_requests.Session) -> tuple:
                 verify=False,
             )
 
-            if resp.status_code == 405:
+            if resp.status_code in BLOCK_STATUSES:
                 # Server-side soft block (WAF/rate-limit) — same token/cookies
-                # won't recover on their own. Refresh and retry.
-                log.warning(f"[page {page}] 405 — session looks blocked, "
-                            f"refreshing session/token (attempt {attempt}/4)")
-                time.sleep(random.uniform(5, 10))
-                maybe_refresh_session()
+                # won't recover on their own. Refresh and retry immediately.
+                if refreshes >= MAX_SESSION_REFRESHES:
+                    log.error(f"[page {page}] still HTTP {resp.status_code} after "
+                              f"{refreshes} session refreshes — exit IP looks burned")
+                    return page, None
+                refreshes += 1
+                log.warning(f"[page {page}] HTTP {resp.status_code} — session blocked, "
+                            f"refreshing credentials ({refreshes}/{MAX_SESSION_REFRESHES})")
+                gen     = maybe_refresh_session(gen)
+                session = make_session()      # rebuild with the new cookies
+                time.sleep(random.uniform(0.5, 1.5))
                 continue
 
             resp.raise_for_status()
             diamonds = resp.json().get("response", {}).get("items", [])
             time.sleep(random.uniform(2.0, 4.0))
             return page, diamonds
-        except Exception as e:
-            wait = 2 ** attempt
-            log.warning(f"[page {page}] attempt {attempt}/4 failed: {e} — retry in {wait}s")
-            time.sleep(wait)
 
-    log.error(f"[page {page}] all retries exhausted — skipping")
-    return page, None
+        except Exception as e:
+            net_attempt += 1
+            if net_attempt >= MAX_NET_ATTEMPTS:
+                log.error(f"[page {page}] all retries exhausted — skipping ({e})")
+                return page, None
+            wait = 2 ** net_attempt
+            log.warning(f"[page {page}] attempt {net_attempt}/{MAX_NET_ATTEMPTS} "
+                        f"failed: {e} — retry in {wait}s")
+            time.sleep(wait)
 
 
 def get_total_pages(session: curl_requests.Session) -> int:
@@ -407,6 +461,11 @@ def get_total_pages(session: curl_requests.Session) -> int:
                 data=json.dumps(payload),
                 timeout=REQUEST_TIMEOUT,
             )
+            if resp.status_code in BLOCK_STATUSES:
+                log.warning(f"get_total_pages HTTP {resp.status_code} — refreshing session")
+                maybe_refresh_session()
+                session = make_session()
+                continue
             resp.raise_for_status()
             body  = resp.json().get("response", {})
             total = int(
@@ -510,12 +569,13 @@ def scrape():
     if write_mode == "w":
         writer_main.writeheader()
 
-    saved_count = 0
-    skip_count  = 0
-    fail_count  = 0
-    fail_streak = 0
-    last_page   = len(done_pages)
-    total_rem   = len(remaining)
+    saved_count  = 0
+    skip_count   = 0
+    fail_count   = 0
+    fail_streak  = 0
+    last_page    = len(done_pages)
+    total_rem    = len(remaining)
+    failed_pages: set = set()   # retried in-run before we give up on them
 
     # Thread-safety primitives
     csv_lock      = threading.Lock()
@@ -536,6 +596,7 @@ def scrape():
             if diamonds is None:
                 fail_count  += 1
                 fail_streak += 1
+                failed_pages.add(page)
                 log.error(f"[{idx:>6}/{total_rem}] page {page:>5} FAILED (streak {fail_streak})")
                 write_status(
                     SCRAPER_NAME, state="running",
@@ -551,6 +612,7 @@ def scrape():
             if not diamonds:
                 log.info(f"[{idx:>6}/{total_rem}] page {page:>5} EMPTY")
                 done_pages.add(page)
+                failed_pages.discard(page)
                 return
 
             fail_streak = 0
@@ -573,6 +635,7 @@ def scrape():
             skip_count  += dup_this_page
             saved_count += len(new_rows)
             done_pages.add(page)
+            failed_pages.discard(page)
             last_page = max(last_page, page)
             total_saved_now = total_saved + saved_count
 
@@ -612,6 +675,30 @@ def scrape():
                         raise exc
                     log.error(f"Unexpected worker error: {exc}")
 
+        # ── Step 4b: second pass over pages that failed ──────────────────────
+        # A page usually fails because the session was blocked mid-flight. By
+        # now another worker has refreshed the credentials, so retry the
+        # stragglers here — sequentially, one worker — instead of paying for a
+        # full scrape() restart (session + CSV reload) just to pick them up.
+        retry_pages = sorted(failed_pages)
+        if retry_pages:
+            log.info(f"Retry pass — {len(retry_pages)} failed page(s) with a fresh session")
+            maybe_refresh_session()
+            fail_streak = 0
+            recovered   = 0
+            for p in retry_pages:
+                try:
+                    _process_page(p)
+                    if p in done_pages:
+                        recovered += 1
+                except VPNRotateNeeded:
+                    log.warning("Retry pass still blocked — leaving the rest for the next run")
+                    break
+                except Exception as exc:
+                    log.error(f"Retry pass error on page {p}: {exc}")
+            log.info(f"Retry pass recovered {recovered}/{len(retry_pages)} page(s)")
+            fail_count = len(failed_pages)
+
     except Exception as e:
         write_status(
             SCRAPER_NAME, state="failed",
@@ -626,7 +713,16 @@ def scrape():
 
     # ── Step 5: finalise ──────────────────────────────────────────────────────
     final_saved = total_saved + saved_count
-    save_progress(done_pages, final_saved, total_pages, status="done")
+
+    # Only mark "done" if nothing is still outstanding — load_progress() wipes
+    # done_pages on a "done" file, so declaring it early would re-scrape all
+    # 2,800 pages next run just to pick up a handful of stragglers.
+    if failed_pages:
+        log.warning(f"{len(failed_pages)} page(s) still unfetched — leaving progress "
+                    f"resumable: {sorted(failed_pages)[:20]}")
+        save_progress(done_pages, final_saved, total_pages, status="running")
+    else:
+        save_progress(done_pages, final_saved, total_pages, status="done")
 
     write_status(
         SCRAPER_NAME, state="done",

@@ -336,110 +336,8 @@
         flex-wrap: wrap;
       }
 
-      /* History modal + "new update" badge on its trigger button */
-      #historyModal {
-        position: fixed;
-        inset: 0;
-        z-index: 10000;
-        background: rgba(5, 5, 10, 0.88);
-        backdrop-filter: blur(12px);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-      }
-      #historyModal.open {
-        display: flex;
-      }
-      .history-btn-wrap {
-        position: relative;
-        display: inline-block;
-      }
-      .badge-dot {
-        position: absolute;
-        top: -3px;
-        right: -3px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--red, #f87171);
-        box-shadow: 0 0 0 2px var(--card, #12121a);
-      }
-      .history-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.72rem;
-      }
-      .history-table thead th {
-        position: sticky;
-        top: 0;
-        background: var(--surface);
-        text-align: left;
-        padding: 8px 10px;
-        border-bottom: 1px solid var(--border);
-        color: var(--muted);
-        white-space: nowrap;
-      }
-      .history-table tbody td {
-        padding: 7px 10px;
-        border-bottom: 1px solid var(--border);
-        white-space: nowrap;
-      }
-      .history-table tbody tr.latest-run td {
-        color: var(--accent);
-        font-weight: 600;
-      }
-
-      /* ── Price-anomaly modal ─────────────────────────────────────────── */
-      #anomalyModal {
-        position: fixed;
-        inset: 0;
-        z-index: 10001;
-        background: rgba(5, 5, 10, 0.88);
-        backdrop-filter: blur(12px);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-      }
-      #anomalyModal.open {
-        display: flex;
-      }
-      .anom-controls {
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        align-items: center;
-        padding: 12px 28px;
-        border-bottom: 1px solid var(--border);
-        background: var(--surface);
-        flex-shrink: 0;
-      }
-      .anom-ctl {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .anom-ctl label {
-        font-size: 0.58rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-      }
-      .anom-select {
-        background: var(--card);
-        border: 1px solid var(--border);
-        color: var(--text);
-        border-radius: 6px;
-        padding: 4px 8px;
-        font-size: 0.68rem;
-        font-family: var(--font-mono);
-        cursor: pointer;
-      }
-      .anom-select:focus {
-        outline: none;
-        border-color: var(--accent);
-      }
+      /* ── Panel styles below are shared by the settings/DB-usage modal ──
+         (they outlived the price-anomaly modal they were written for) */
       .anom-note {
         margin: 14px 28px 0;
         padding: 9px 12px;
@@ -542,34 +440,6 @@
       .anom-table .num {
         text-align: right;
         font-variant-numeric: tabular-nums;
-      }
-      .dir-up {
-        color: var(--green);
-        font-weight: 600;
-      }
-      .dir-down {
-        color: var(--red);
-        font-weight: 600;
-      }
-      .z-pill {
-        display: inline-block;
-        padding: 1px 7px;
-        border-radius: 20px;
-        font-size: 0.6rem;
-        border: 1px solid var(--border);
-        color: var(--muted);
-        font-variant-numeric: tabular-nums;
-      }
-      .z-pill.hot {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .anom-cert-link {
-        color: var(--accent2);
-        text-decoration: none;
-      }
-      .anom-cert-link:hover {
-        text-decoration: underline;
       }
 
       /* ── Settings modal (database usage) ─────────────────────────────── */
@@ -1400,6 +1270,151 @@
           padding: 14px 16px;
         }
       }
+
+      /* ── Vendor data-coverage modal ──────────────────────────────────── */
+      #coverageModal {
+        position: fixed;
+        inset: 0;
+        z-index: 10001;
+        background: rgba(5, 5, 10, 0.88);
+        backdrop-filter: blur(12px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      #coverageModal.open {
+        display: flex;
+      }
+      .cov-controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 12px 28px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        flex-shrink: 0;
+      }
+      .cov-controls label {
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .cov-select {
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.68rem;
+        font-family: var(--font-mono);
+        cursor: pointer;
+      }
+      .cov-select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .cov-head {
+        padding: 18px 28px 7px;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .cov-head .hint {
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 0.62rem;
+        opacity: 0.75;
+      }
+      .cov-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.7rem;
+      }
+      .cov-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--surface);
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 0.57rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      .cov-table tbody td {
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      .cov-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .cov-table .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .cov-vendor {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .cov-sub {
+        display: block;
+        font-size: 0.55rem;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .cov-yes {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .cov-part {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .cov-no {
+        color: var(--red);
+        font-weight: 600;
+      }
+      .cov-bar {
+        display: block;
+        position: relative;
+        height: 3px;
+        margin-top: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .cov-bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        background: currentColor;
+      }
+      .cov-note {
+        margin: 14px 28px 0;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 0.66rem;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      /* Settings sits at the far left of the topbar; the auto right margin
+         absorbs the free space so Back/Logout stay pinned to the right. */
+      .btn-settings-left {
+        margin-right: auto;
+      }
     </style>
   </head>
   <body>
@@ -1482,150 +1497,11 @@
       </div>
     </div>
 
-    <!-- HISTORY MODAL -->
-    <div
-      id="historyModal"
-      onclick="if (event.target === this) closeHistoryModal();"
-    >
-      <div class="modal-box" style="max-width: 760px; border-color: var(--accent)">
-        <div class="modal-header">
-          <div class="modal-header-left">
-            <div class="modal-title">🕘 Pipeline Run History</div>
-            <div class="modal-sub" id="historyModalSub">
-              USA · PC vs vendors — one row per completed run
-            </div>
-          </div>
-          <button class="modal-close" onclick="closeHistoryModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>Run Date</th>
-                <th>PC Total</th>
-                <th>LG Match %</th>
-                <th>BR Match %</th>
-                <th>Friendly Match %</th>
-                <th>Common</th>
-                <th>Partial</th>
-                <th>All PC</th>
-              </tr>
-            </thead>
-            <tbody id="historyTableBody">
-              <tr>
-                <td colspan="8" style="text-align: center; padding: 40px; color: var(--muted)">
-                  ⏳ Loading…
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- PRICE ANOMALY MODAL -->
-    <div
-      id="anomalyModal"
-      onclick="if (event.target === this) closeAnomalyModal();"
-    >
-      <div class="modal-box" style="max-width: 1240px; border-color: var(--red)">
-        <div class="modal-header" style="background: linear-gradient(135deg, color-mix(in srgb, var(--red) 8%, var(--card)), var(--card))">
-          <div class="modal-header-left">
-            <div class="modal-title" style="color: var(--red)">
-              ⚠ Price Move Anomalies
-            </div>
-            <div class="modal-sub" id="anomModalSub">
-              Robust z-score (median/MAD) over the snapshot archive — flags
-              stones that repriced far more than their peers did
-            </div>
-          </div>
-          <button class="modal-close" onclick="closeAnomalyModal()">✕</button>
-        </div>
-
-        <div class="anom-controls">
-          <div class="anom-ctl">
-            <label for="anomDays">Window</label>
-            <select class="anom-select" id="anomDays" onchange="reloadAnomalies()">
-              <option value="7">Last 7 days</option>
-              <option value="14" selected>Last 14 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-            </select>
-          </div>
-          <div class="anom-ctl">
-            <label for="anomMode">Compare</label>
-            <select class="anom-select" id="anomMode" onchange="reloadAnomalies()">
-              <option value="window" selected>Across full window</option>
-              <option value="prev">Vs previous run</option>
-            </select>
-          </div>
-          <div class="anom-ctl">
-            <label for="anomVendor">Vendor</label>
-            <select class="anom-select" id="anomVendor" onchange="renderAnomalyRows()">
-              <option value="">All vendors</option>
-            </select>
-          </div>
-          <div class="anom-ctl">
-            <label for="anomDirection">Direction</label>
-            <select class="anom-select" id="anomDirection" onchange="renderAnomalyRows()">
-              <option value="all" selected>Up &amp; down</option>
-              <option value="up">▲ Price up</option>
-              <option value="down">▼ Price down</option>
-            </select>
-          </div>
-          <div class="anom-ctl">
-            <label for="anomZ">Sensitivity</label>
-            <select class="anom-select" id="anomZ" onchange="reloadAnomalies()">
-              <option value="2.5">High · z ≥ 2.5</option>
-              <option value="3.5" selected>Normal · z ≥ 3.5</option>
-              <option value="5">Strict · z ≥ 5</option>
-              <option value="8">Extreme · z ≥ 8</option>
-            </select>
-          </div>
-          <div class="anom-ctl">
-            <label for="anomMinPct">Min move</label>
-            <select class="anom-select" id="anomMinPct" onchange="reloadAnomalies()">
-              <option value="2">≥ 2%</option>
-              <option value="5" selected>≥ 5%</option>
-              <option value="10">≥ 10%</option>
-              <option value="25">≥ 25%</option>
-            </select>
-          </div>
-          <button
-            class="btn btn-ghost btn-sm"
-            style="font-size: 0.65rem; padding: 4px 12px"
-            onclick="reloadAnomalies(true)"
-          >
-            ↻ Recompute
-          </button>
-        </div>
-
-        <div class="modal-body" id="anomalyBody">
-          <div style="text-align: center; padding: 60px; color: var(--muted)">
-            ⏳ Scanning snapshot archive…
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <div class="modal-footer-info" id="anomFooterInfo"></div>
-          <div class="modal-pagination">
-            <button
-              class="mpg-btn"
-              id="anomMoreBtn"
-              style="display: none"
-              onclick="showMoreAnomalies()"
-            >
-              Show more
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- HEADER -->
     <div class="topbar">
+      <button class="btn btn-sm btn-settings-left btn-settings" onclick="openSettingsModal()" title="Database storage usage & connection info">⚙ Settings</button>
       <button class="btn btn-sm btn-back" onclick="window.location.href='/dashboard'">← Back</button>
-      <button class="btn btn-sm btn-settings" onclick="openSettingsModal()" title="Database storage usage & connection info">⚙ Settings</button>
       <button class="btn btn-sm btn-logout" onclick="logout()">⎋ Logout</button>
     </div>
 
@@ -1696,37 +1572,14 @@
         >
           ↻ Refresh
         </button>
-        <span class="history-btn-wrap" style="margin-left: 4px">
-          <button
-            class="btn btn-ghost btn-sm"
-            onclick="openHistoryModal()"
-            style="font-size: 0.65rem; padding: 3px 10px"
-          >
-            🕘 History
-          </button>
-          <span
-            id="historyBadgeDot"
-            class="badge-dot"
-            style="display: none"
-            title="New pipeline run recorded"
-          ></span>
-        </span>
-        <span class="history-btn-wrap" style="margin-left: 4px">
-          <button
-            class="btn btn-ghost btn-sm"
-            onclick="openAnomalyModal()"
-            style="font-size: 0.65rem; padding: 3px 10px"
-            title="Unusual price moves across the last 2 weeks of snapshots"
-          >
-            ⚠ Price Anomalies
-          </button>
-          <span
-            id="anomalyBadgeDot"
-            class="badge-dot"
-            style="display: none"
-            title="Unusual price moves detected"
-          ></span>
-        </span>
+        <button
+          class="btn btn-ghost btn-sm"
+          onclick="openCoverageModal()"
+          style="font-size: 0.65rem; padding: 3px 10px; margin-left: 4px"
+          title="Which vendor publishes carat / color / cut / clarity"
+        >
+          ⚙ Data Coverage
+        </button>
       </div>
       <div class="stats-panel" id="statsPanel">
         <div
@@ -1953,6 +1806,36 @@
       </div>
       <div class="pagination" id="pagination"></div>
     </div>
+
+
+    <!-- VENDOR DATA COVERAGE MODAL -->
+    <div
+      id="coverageModal"
+      onclick="if (event.target === this) closeCoverageModal();"
+    >
+      <div class="modal-box" style="max-width: 1100px; border-color: var(--accent2)">
+        <div class="modal-header">
+          <div class="modal-header-left">
+            <div class="modal-title">⚙ Vendor Data Coverage</div>
+            <div class="modal-sub" id="coverageModalSub">
+              Which vendor publishes which grading data
+            </div>
+          </div>
+          <button class="modal-close" onclick="closeCoverageModal()">✕</button>
+        </div>
+        <div class="cov-controls">
+          <label for="covAttr">Breakdown</label>
+          <select class="cov-select" id="covAttr" onchange="renderCoverageDetail()">
+            <option value="carat">Carat</option>
+            <option value="color">Color</option>
+            <option value="cut">Cut</option>
+            <option value="clarity">Clarity</option>
+          </select>
+        </div>
+        <div class="modal-body" id="coverageBody"></div>
+      </div>
+    </div>
+
 
     <script>
       const API_BASE = "";
@@ -2735,8 +2618,6 @@
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           closeBrVsLgModal();
-          closeHistoryModal();
-          closeAnomalyModal();
           closeSettingsModal();
         }
       });
@@ -2881,352 +2762,6 @@
         body.innerHTML = html;
       }
 
-      // ══════════════════════════════════════════════════════════════════
-      //  PRICE ANOMALIES
-      //  Reads /api/anomalies, which robust-z-scores every stone's price
-      //  move across the Parquet snapshot archive. The API returns the full
-      //  ranked list once; vendor/direction filtering and paging happen
-      //  client-side so changing a filter costs no round trip.
-      // ══════════════════════════════════════════════════════════════════
-      const ANOM_PAGE = 200;
-      const ANOM_SEEN_KEY = "usa_anomaly_last_seen";
-      let anomData = null;
-      let anomShown = ANOM_PAGE;
-
-      const anomUsd = (v) =>
-        v === null || v === undefined
-          ? "—"
-          : "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
-      const anomNum = (v) =>
-        v === null || v === undefined ? "—" : Number(v).toLocaleString();
-      const anomPct = (v) =>
-        v === null || v === undefined
-          ? "—"
-          : (v > 0 ? "+" : "") + Number(v).toFixed(2) + "%";
-
-      function anomCtlValues() {
-        const g = (id) => document.getElementById(id);
-        return {
-          days: g("anomDays").value,
-          mode: g("anomMode").value,
-          z: g("anomZ").value,
-          minPct: g("anomMinPct").value,
-          vendor: g("anomVendor") ? g("anomVendor").value : "",
-          direction: g("anomDirection") ? g("anomDirection").value : "all",
-        };
-      }
-
-      async function openAnomalyModal() {
-        document.getElementById("anomalyModal").classList.add("open");
-        document.body.style.overflow = "hidden";
-        await reloadAnomalies();
-      }
-
-      function closeAnomalyModal() {
-        const modal = document.getElementById("anomalyModal");
-        if (modal) modal.classList.remove("open");
-        document.body.style.overflow = "";
-      }
-
-      async function reloadAnomalies(forceRecompute = false) {
-        const body = document.getElementById("anomalyBody");
-        const c = anomCtlValues();
-        body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">⏳ Scanning snapshot archive…<div style="font-size:.65rem;margin-top:8px">Comparing up to ${c.days} days of Parquet snapshots</div></div>`;
-        document.getElementById("anomMoreBtn").style.display = "none";
-        document.getElementById("anomFooterInfo").textContent = "";
-        anomShown = ANOM_PAGE;
-
-        const p = new URLSearchParams({
-          days: c.days,
-          compare_mode: c.mode,
-          z: c.z,
-          min_pct: c.minPct,
-          limit: 5000,
-        });
-        if (forceRecompute) p.set("refresh", "1");
-
-        try {
-          anomData = await api("GET", `/api/anomalies?${p.toString()}`);
-        } catch (e) {
-          body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--red)">✗ ${e.message}</div>`;
-          return;
-        }
-        syncAnomVendorOptions();
-        renderAnomalies();
-      }
-
-      function syncAnomVendorOptions() {
-        const sel = document.getElementById("anomVendor");
-        const keep = sel.value;
-        const vendors = (anomData.vendors || []).map((v) => v.vendor);
-        sel.innerHTML =
-          `<option value="">All vendors</option>` +
-          vendors.map((v) => `<option value="${v}">${v}</option>`).join("");
-        if (vendors.includes(keep)) sel.value = keep;
-      }
-
-      function renderAnomalies() {
-        const body = document.getElementById("anomalyBody");
-        const sub = document.getElementById("anomModalSub");
-
-        if (!anomData || anomData.available === false) {
-          const why =
-            (anomData && anomData.reason) ||
-            "No snapshot archive found for this window.";
-          body.innerHTML = `<div class="anom-note" style="margin:28px">${why}<br /><br />Snapshots are written by <code>snapshot_history.py</code> at the start of every pipeline run, so the archive fills in one file per run.</div>`;
-          sub.textContent = "Not enough snapshots to compare yet";
-          document.getElementById("anomFooterInfo").textContent = "";
-          return;
-        }
-
-        const s = anomData.summary || {};
-        sub.innerHTML =
-          `Comparing <b>${anomData.compared_from}</b> → <b>${anomData.compared_to}</b> · ` +
-          `${anomData.snapshot_count} snapshots in window · dataset <b>${anomData.dataset}</b> · ` +
-          `flagged when |z| ≥ ${anomData.z_threshold} <i>and</i> move ≥ ${anomData.min_move_pct}%`;
-
-        let html = "";
-
-        if (anomData.identical_snapshots) {
-          html += `<div class="anom-note warn">⚠ The two snapshots being compared are identical — no price changed anywhere. That usually means the pipeline archived the same compare files twice (a re-run that didn't re-scrape), not that the market was flat. Switch <b>Compare</b> to “Across full window”, or widen the window.</div>`;
-        }
-
-        // ── Vendor summary cards ───────────────────────────────────────
-        html += `<div class="anom-cards">`;
-        for (const v of anomData.vendors || []) {
-          const color =
-            v.anomalies > 0 ? "var(--red)" : "var(--green)";
-          const movedPctOfTracked = v.tracked
-            ? ((v.moved / v.tracked) * 100).toFixed(1)
-            : "0.0";
-          html += `<div class="anom-card" style="--card-color:${color}">
-            <div class="anom-card-title">
-              <span>${v.vendor}</span>
-              <span class="anom-card-tag">${v.is_baseline ? "baseline" : "vendor"}</span>
-            </div>
-            <div class="anom-card-metric">${anomNum(v.anomalies)}</div>
-            <div class="anom-card-sub">
-              anomalies · <span class="dir-up">▲${anomNum(v.anomalies_up)}</span>
-              <span class="dir-down">▼${anomNum(v.anomalies_down)}</span><br />
-              ${anomNum(v.moved)} of ${anomNum(v.tracked)} repriced (${movedPctOfTracked}%)<br />
-              typical move ${anomPct(v.median_move_pct)} · spread ±${anomPct(v.baseline_scale_pct).replace("+", "")}<br />
-              +${anomNum(v.new_listings)} new · −${anomNum(v.delisted)} delisted
-            </div>
-          </div>`;
-        }
-        html += `</div>`;
-
-        // ── Segment movers ─────────────────────────────────────────────
-        const segs = anomData.segments || [];
-        html += `<div class="anom-section-head">
-          Segment movers
-          <span class="hint">median price per shape × carat band moved abnormally — a whole-band reprice, which individual stones rarely flag on their own</span>
-        </div>`;
-        if (!segs.length) {
-          html += `<div class="anom-note">No segment-level anomalies — no shape/carat band repriced abnormally as a group.</div>`;
-        } else {
-          html += `<table class="anom-table"><thead><tr>
-            <th>Vendor</th><th>Shape</th><th>Carat band</th>
-            <th class="num">Stones</th><th class="num">Median before</th>
-            <th class="num">Median after</th><th class="num">Move</th><th class="num">z</th>
-          </tr></thead><tbody>`;
-          for (const g of segs) {
-            const cls = g.direction === "up" ? "dir-up" : "dir-down";
-            const arrow = g.direction === "up" ? "▲" : "▼";
-            html += `<tr>
-              <td>${g.vendor}</td><td>${g.shape}</td><td>${g.carat_band}</td>
-              <td class="num">${anomNum(g.stones)}</td>
-              <td class="num">${anomUsd(g.prev_median)}</td>
-              <td class="num">${anomUsd(g.curr_median)}</td>
-              <td class="num ${cls}">${arrow} ${anomPct(g.move_pct)}</td>
-              <td class="num"><span class="z-pill hot">${g.z_score}</span></td>
-            </tr>`;
-          }
-          html += `</tbody></table>`;
-        }
-
-        // ── Stone-level table (filled by renderAnomalyRows) ────────────
-        html += `<div class="anom-section-head">
-          Stone-level anomalies
-          <span class="hint">individual certificates whose reprice is a statistical outlier against their own vendor's move distribution</span>
-        </div>
-        <table class="anom-table"><thead><tr>
-          <th>Vendor</th><th>Certificate</th><th>Shape</th><th>Carat</th>
-          <th>Colour</th><th>Clarity</th>
-          <th class="num">Before</th><th class="num">After</th>
-          <th class="num">Δ $</th><th class="num">Δ %</th><th class="num">z</th>
-        </tr></thead><tbody id="anomRowsBody"></tbody></table>`;
-
-        body.innerHTML = html;
-        renderAnomalyRows();
-        markAnomaliesSeen();
-      }
-
-      function filteredAnomalies() {
-        if (!anomData) return [];
-        const c = anomCtlValues();
-        return (anomData.anomalies || []).filter(
-          (a) =>
-            (!c.vendor || a.vendor === c.vendor) &&
-            (c.direction === "all" || a.direction === c.direction),
-        );
-      }
-
-      function renderAnomalyRows() {
-        const tbody = document.getElementById("anomRowsBody");
-        if (!tbody) return;
-        const rows = filteredAnomalies();
-        const slice = rows.slice(0, anomShown);
-
-        if (!slice.length) {
-          tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">No stone-level anomalies at this sensitivity — try High sensitivity or a smaller minimum move.</td></tr>`;
-        } else {
-          tbody.innerHTML = slice
-            .map((a) => {
-              const cls = a.direction === "up" ? "dir-up" : "dir-down";
-              const arrow = a.direction === "up" ? "▲" : "▼";
-              const cert = a.link
-                ? `<a class="anom-cert-link" href="${a.link}" target="_blank" rel="noopener">${a.certificate_number} ↗</a>`
-                : a.certificate_number;
-              const zc = Math.abs(a.z_score) >= 10 ? "z-pill hot" : "z-pill";
-              return `<tr>
-                <td>${a.vendor}</td>
-                <td>${cert}</td>
-                <td>${a.shape || "—"}</td>
-                <td class="num">${a.carat ?? "—"}</td>
-                <td>${a.color || "—"}</td>
-                <td>${a.clarity || "—"}</td>
-                <td class="num">${anomUsd(a.prev_price)}</td>
-                <td class="num">${anomUsd(a.curr_price)}</td>
-                <td class="num ${cls}">${anomUsd(a.move_usd)}</td>
-                <td class="num ${cls}">${arrow} ${anomPct(a.move_pct)}</td>
-                <td class="num"><span class="${zc}">${a.z_score}</span></td>
-              </tr>`;
-            })
-            .join("");
-        }
-
-        const more = document.getElementById("anomMoreBtn");
-        more.style.display = rows.length > slice.length ? "inline-block" : "none";
-        const s = anomData.summary || {};
-        // Say so when the detector found more than it is allowed to list —
-        // otherwise the row count reads as the full picture when it isn't.
-        const capped = s.truncated
-          ? ` · ⚠ ${(s.total_flagged || 0).toLocaleString()} flagged in total, listing capped at ${(s.per_vendor_cap || 0).toLocaleString()} per vendor`
-          : "";
-        document.getElementById("anomFooterInfo").textContent =
-          `Showing ${slice.length.toLocaleString()} of ${rows.length.toLocaleString()} stone anomalies · ` +
-          `${(s.tracked || 0).toLocaleString()} stone-prices tracked across ${anomData.snapshot_count} snapshots${capped}`;
-      }
-
-      function showMoreAnomalies() {
-        anomShown += ANOM_PAGE;
-        renderAnomalyRows();
-      }
-
-      // Badge on the trigger button: lit when the newest snapshot has
-      // anomalies the user hasn't opened the modal for yet.
-      async function checkAnomalyUpdate() {
-        try {
-          const data = await api(
-            "GET",
-            "/api/anomalies?days=14&compare_mode=window&limit=1",
-          );
-          const dot = document.getElementById("anomalyBadgeDot");
-          if (!dot) return;
-          const total = (data.summary && data.summary.total_anomalies) || 0;
-          const stamp = `${data.compared_from}->${data.compared_to}:${total}`;
-          dot.style.display =
-            data.available && total > 0 && stamp !== localStorage.getItem(ANOM_SEEN_KEY)
-              ? "block"
-              : "none";
-        } catch (e) {
-          // No archive yet, or pandas/pyarrow missing on the host — no badge.
-        }
-      }
-
-      function markAnomaliesSeen() {
-        if (!anomData || !anomData.available) return;
-        const total = (anomData.summary && anomData.summary.total_anomalies) || 0;
-        localStorage.setItem(
-          ANOM_SEEN_KEY,
-          `${anomData.compared_from}->${anomData.compared_to}:${total}`,
-        );
-        const dot = document.getElementById("anomalyBadgeDot");
-        if (dot) dot.style.display = "none";
-      }
-
-      // ── History modal ("new update" check on the trigger button) ─────────
-      const HISTORY_SEEN_KEY = "usa_history_last_seen_snapshot";
-
-      async function checkHistoryUpdate() {
-        try {
-          const data = await api("GET", "/api/status/history?limit=1");
-          const rows = data.history || [];
-          const dot = document.getElementById("historyBadgeDot");
-          if (!rows.length) {
-            dot.style.display = "none";
-            return;
-          }
-          const latest = rows[rows.length - 1].snapshot_date;
-          const lastSeen = localStorage.getItem(HISTORY_SEEN_KEY);
-          dot.style.display = latest && latest !== lastSeen ? "block" : "none";
-        } catch (e) {
-          // History table may not exist yet (pipeline hasn't run since this
-          // feature shipped) — fail silently, no badge.
-        }
-      }
-
-      async function openHistoryModal() {
-        document.getElementById("historyModal").classList.add("open");
-        document.body.style.overflow = "hidden";
-        const tbody = document.getElementById("historyTableBody");
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">⏳ Loading…</td></tr>`;
-        try {
-          const data = await api("GET", "/api/status/history?limit=52");
-          renderHistoryTable(data.history || []);
-        } catch (e) {
-          tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
-        }
-      }
-
-      function closeHistoryModal() {
-        const modal = document.getElementById("historyModal");
-        if (modal) modal.classList.remove("open");
-        document.body.style.overflow = "";
-      }
-
-      function renderHistoryTable(rows) {
-        const tbody = document.getElementById("historyTableBody");
-        if (!rows.length) {
-          tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--muted)">No history yet — run the pipeline at least once to start recording trend data.</td></tr>`;
-          return;
-        }
-        // rows arrive oldest -> newest from the API; show newest first.
-        const newestFirst = [...rows].reverse();
-        tbody.innerHTML = newestFirst
-          .map((r, i) => {
-            const pct = (v) => (v === null || v === undefined ? "—" : v + "%");
-            const num = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString());
-            return `<tr class="${i === 0 ? "latest-run" : ""}">
-              <td>${r.snapshot_date || "—"}${i === 0 ? " · latest" : ""}</td>
-              <td>${num(r.pc_total)}</td>
-              <td>${pct(r.lg_match_rate_pct)}</td>
-              <td>${pct(r.brilliance_match_rate_pct)}</td>
-              <td>${pct(r.friendly_match_rate_pct)}</td>
-              <td>${num(r.common_count)}</td>
-              <td>${num(r.partial_count)}</td>
-              <td>${num(r.all_pc_count)}</td>
-            </tr>`;
-          })
-          .join("");
-
-        // Mark as seen — clears the "new update" dot on the History button.
-        const latest = rows[rows.length - 1].snapshot_date;
-        if (latest) localStorage.setItem(HISTORY_SEEN_KEY, latest);
-        const dot = document.getElementById("historyBadgeDot");
-        if (dot) dot.style.display = "none";
-      }
       async function loadModalPage() {
         try {
           const p = new URLSearchParams();
@@ -3408,8 +2943,6 @@
         try {
           const health = await api("GET", "/api/health");
           loadStats();
-          checkHistoryUpdate();
-          checkAnomalyUpdate();
           if (health.default_dataset) {
             currentDataset = "compare.json";
             showLoading("Loading paginated data from PostgreSQL…");
@@ -3446,6 +2979,140 @@
         }
       }
       startDashboard();
+
+      // ══════════════════════════════════════════════════════════════════
+      //  VENDOR DATA COVERAGE
+      //  Reads /api/vendor-coverage?origin=usa, built by vendor_coverage.py straight from the raw
+      //  vendor CSVs. Vendors differ a lot in what they actually publish —
+      //  some list no cut grade at all, others grade only a third of stock —
+      //  so this is the "who has what" view over carat/color/cut/clarity.
+      // ══════════════════════════════════════════════════════════════════
+      let covData = null;
+
+      const covNum = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toLocaleString();
+      const covPct = (v) =>
+        v === null || v === undefined ? "—" : Number(v).toFixed(1) + "%";
+
+      async function openCoverageModal() {
+        document.getElementById("coverageModal").classList.add("open");
+        document.body.style.overflow = "hidden";
+        const body = document.getElementById("coverageBody");
+        if (covData) {
+          renderCoverage();
+          return;
+        }
+        body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">⏳ Loading vendor coverage…</div>`;
+        try {
+          covData = await api("GET", "/api/vendor-coverage?origin=usa");
+        } catch (e) {
+          covData = null;
+          body.innerHTML = `<div class="cov-note">Could not load vendor coverage — ${e.message}.<br /><br />It is built by <code>vendor_coverage.py</code> during the pipeline's database-upload step. Run the pipeline once, or <code>python vendor_coverage.py --upload usa</code>, to populate it.</div>`;
+          return;
+        }
+        renderCoverage();
+      }
+
+      function closeCoverageModal() {
+        const m = document.getElementById("coverageModal");
+        if (m) m.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function renderCoverage() {
+        const body = document.getElementById("coverageBody");
+        if (!covData || !(covData.vendors || []).length) {
+          body.innerHTML = `<div class="cov-note">No vendor coverage recorded yet.</div>`;
+          return;
+        }
+        const attrs = covData.attributes || ["carat", "color", "cut", "clarity"];
+        const sub = document.getElementById("coverageModalSub");
+        if (sub)
+          sub.textContent =
+            `${covData.vendor_count} vendor(s) · built ${covData.generated_at || "—"} ` +
+            `from the raw vendor CSVs`;
+
+        let html = `<div class="cov-head">Coverage matrix <span class="hint">— share of each vendor's stones carrying a usable grade</span></div>`;
+        html += `<table class="cov-table"><thead><tr><th>Vendor</th><th class="num">Stones</th>`;
+        for (const a of attrs) html += `<th class="num">${a}</th>`;
+        html += `</tr></thead><tbody>`;
+
+        for (const v of covData.vendors) {
+          html += `<tr>
+            <td class="cov-vendor">${v.vendor}<span class="cov-sub">${v.source_file || ""}</span></td>
+            <td class="num">${covNum(v.total_rows)}</td>`;
+          for (const a of attrs) {
+            const info = v.attributes[a] || {};
+            const pct = Number(info.coverage_pct || 0);
+            const cls = !info.has_data ? "cov-no" : pct >= 99.5 ? "cov-yes" : "cov-part";
+            const label = !info.has_data
+              ? "✗ none"
+              : (pct >= 99.5 ? "✓ " : "◑ ") + covPct(pct);
+            html += `<td class="num ${cls}">${label}
+              <span class="cov-bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>
+            </td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+
+        const gaps = [];
+        for (const v of covData.vendors)
+          for (const a of attrs)
+            if (!(v.attributes[a] || {}).has_data)
+              gaps.push(`<b>${v.vendor}</b> publishes no ${a}`);
+        html += `<div class="cov-note">${
+          gaps.length
+            ? gaps.join(" · ")
+            : "Every vendor publishes all four attributes for at least part of its stock."
+        }</div>`;
+
+        html += `<div class="cov-head" id="covDetailHead"></div><div id="covDetail"></div>`;
+        body.innerHTML = html;
+        renderCoverageDetail();
+      }
+
+      function renderCoverageDetail() {
+        if (!covData) return;
+        const host = document.getElementById("covDetail");
+        if (!host) return;
+        const sel = document.getElementById("covAttr");
+        const attr = sel ? sel.value : "carat";
+        const head = document.getElementById("covDetailHead");
+        if (head)
+          head.innerHTML = `${attr} distribution by vendor <span class="hint">— stones per bucket, and that bucket's share of the vendor</span>`;
+
+        // Vendors don't all carry the same buckets, so union them and sort by
+        // the server's grading rank (D before E, IF before VS1, …) rather than
+        // by whichever vendor happened to be read first.
+        const order = new Map();
+        for (const v of covData.vendors)
+          for (const b of (v.attributes[attr] || {}).buckets || [])
+            if (!order.has(b.bucket)) order.set(b.bucket, b.order);
+        const buckets = [...order.keys()].sort((a, b) => order.get(a) - order.get(b));
+
+        let html = `<table class="cov-table"><thead><tr><th>${attr}</th>`;
+        for (const v of covData.vendors) html += `<th class="num">${v.vendor}</th>`;
+        html += `</tr></thead><tbody>`;
+        for (const bk of buckets) {
+          html += `<tr><td class="cov-vendor">${bk}</td>`;
+          for (const v of covData.vendors) {
+            const b = ((v.attributes[attr] || {}).buckets || []).find(
+              (x) => x.bucket === bk
+            );
+            html += b
+              ? `<td class="num">${covNum(b.count)}<span class="cov-sub">${covPct(b.pct)}</span></td>`
+              : `<td class="num" style="color:var(--muted)">—</td>`;
+          }
+          html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+        host.innerHTML = html;
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeCoverageModal();
+      });
     </script>
   </body>
 </html>

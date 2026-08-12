@@ -21,6 +21,8 @@ Tables managed
 - compare_partial     from compare_partial.json  (~92K rows, partial matches)
 - compare_br_vs_lg    from compare_br_vs_lg.json (~2.5K rows, brilliance vs LG)
 - diamond_status      from diamond_status.json   (1 snapshot row per import)
+- vendor_coverage     built from the raw vendor CSVs by vendor_coverage.py
+  (shared with the other 3 origins — only the origin='usa' rows are replaced)
 
 Note: filename kept as compare_to_mysql.py for backwards compatibility with
 scheduler.py and any external automation that calls it by path.
@@ -41,7 +43,8 @@ from psycopg2.extras import execute_values
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-import snapshot_history  # noqa: E402  (needs REPO_ROOT on sys.path first)
+import vendor_coverage  # noqa: E402  (needs REPO_ROOT on sys.path first)
+import bandwidth       # noqa: E402
 
 # ── Config (DATABASE_URL from .env or Render env) ────────────────────────────
 load_dotenv(REPO_ROOT / ".env")
@@ -231,9 +234,9 @@ def truncate_all_tables(cur: PgCursor) -> None:
 
     # compare_all is no longer loaded — nothing in the USA dashboard or API
     # reads it, and at ~210K rows it was the largest table in the database.
-    # The data is not lost: snapshot_history.py archives compare_all.json to
-    # Parquet on every run, and that archive is what price_anomaly.py reads.
     # Dropped rather than truncated so the storage is actually released.
+    # (It used to be archived to Parquet for the price-anomaly feature; that
+    # feature is gone, so compare_all.json on disk is now the only copy.)
     cur.execute('DROP TABLE IF EXISTS "compare_all"')
     print('  dropped "compare_all" (unused — served from the Parquet archive)')
 
@@ -306,23 +309,15 @@ def _parse_status_row(path: Path) -> tuple | None:
 
 # ── Upload all JSON files ─────────────────────────────────────────────────────
 def upload_all_json_files(cur: PgCursor) -> None:
-    """Ensure all tables exist, snapshot history, truncate, then reload."""
+    """Ensure all tables exist, truncate, then reload."""
     # Step 1 — ensure tables exist (creates them on first run, no-op thereafter)
     ensure_table_exists(cur, "compare_common",  COMPARE_COLUMNS,  ["certificate_number", "shape"])
     ensure_table_exists(cur, "compare_partial", COMPARE_COLUMNS,  ["certificate_number", "shape"])
     ensure_table_exists(cur, "compare_br_vs_lg", BR_VS_LG_COLUMNS, ["diamond_id"])
     ensure_table_exists(cur, "diamond_status",  STATUS_COLUMNS,   ["generated_at"])
-    snapshot_history.ensure_status_history_table(cur, "diamond_status_history", STATUS_COLUMNS)
 
-    # Step 2 — historical snapshot, BEFORE truncate: archive the row-level
-    # JSON files to Parquet and append this run's status row to the
-    # never-truncated history table (see snapshot_history.py).
+    # Step 2 — read the status snapshot before the truncate below clears the table
     status_row = _parse_status_row(COMPARE_DIR / "diamond_status.json")
-    snapshot_history.archive_compare_json("usa", COMPARE_DIR)
-    if status_row is not None:
-        snapshot_history.insert_status_history_row(
-            cur, "diamond_status_history", [c[0] for c in STATUS_COLUMNS], status_row
-        )
 
     # Step 3 — truncate all tables
     truncate_all_tables(cur)
@@ -349,8 +344,18 @@ def upload_all_json_files(cur: PgCursor) -> None:
 
     if status_row is None:
         print('  SKIP "diamond_status" — source file missing')
-        return
-    insert_rows(cur, "diamond_status", [c[0] for c in STATUS_COLUMNS], [status_row])
+    else:
+        insert_rows(cur, "diamond_status", [c[0] for c in STATUS_COLUMNS], [status_row])
+
+    # Step 5 — vendor attribute coverage (carat/color/cut/clarity per vendor).
+    # Built straight from the raw vendor CSVs, so it is independent of the
+    # compare files above and only replaces this origin's rows.
+    vendor_coverage.refresh_origin("usa", cur)
+
+    # Daily download volume recorded by the scrapers (see bandwidth.py).
+    # Only the days still held locally are replaced, so the table keeps
+    # history after the local files are pruned.
+    bandwidth.refresh_origin('usa', cur)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

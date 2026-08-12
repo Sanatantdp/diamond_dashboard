@@ -69,8 +69,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Page shells are public: the browser navigates to them with no Authorization
+# header, and their JS then calls the API with the token from sessionStorage.
+# Any new dashboard page must be listed here or the navigation 401s.
 PUBLIC_PATHS = {
-    "/", "/dashboard", "/dashboard/usa", "/dashboard/uk", "/dashboard/aus", "/dashboard/germany",
+    "/", "/dashboard", "/dashboard/usa", "/dashboard/uk", "/dashboard/aus",
+    "/dashboard/germany", "/dashboard/usage",
+    "/favicon.ico",
     "/api/login", "/api/login/config", "/api/health", "/api/file-dates",
     "/api/uk/health", "/api/roa/health", "/api/rog/health",
 }
@@ -267,8 +272,7 @@ def _add_diamond_attr_clauses(params: dict, clauses: list[str], args: list) -> N
 # Tables exposed via /api/data/{filename}
 FILENAME_TO_TABLE = {
     # compare_all is intentionally absent: nothing in the USA dashboard read it,
-    # and the loaders no longer create the table. Its data is served from the
-    # Parquet snapshot archive instead (see /api/anomalies + price_anomaly.py).
+    # and the loaders no longer create the table.
     "compare.json":          ("compare_common",   COMPARE_DB_TO_JSON),
     "compare_partial.json":  ("compare_partial",  COMPARE_DB_TO_JSON),
     "compare_br_vs_lg.json": ("compare_br_vs_lg", BR_VS_LG_DB_TO_JSON),
@@ -539,9 +543,14 @@ def _compute_aggregates(table: str, params: dict) -> dict:
 # ============================================================================
 def _fetch_status() -> dict | None:
     sql = 'SELECT * FROM "diamond_status" ORDER BY "id" DESC LIMIT 1'
-    with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        r = cur.fetchone()
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            r = cur.fetchone()
+    except Exception:
+        # Table absent until the USA loader has run at least once — same
+        # treatment as the other regions: 404 "no data", not a 500.
+        return None
     if not r:
         return None
     return {
@@ -616,6 +625,321 @@ def _fetch_status_history(history_table: str, limit: int) -> list[dict]:
 
 
 # ============================================================================
+# Vendor attribute coverage — shared across all 4 origins.
+# One "vendor_coverage" table holds every origin (each loader replaces only its
+# own rows), so a single reader serves usa/uk/aus/germany. Rows are tidy/long:
+# one per origin x vendor x attribute x bucket. See vendor_coverage.py.
+# ============================================================================
+COVERAGE_ORIGINS = {"usa", "uk", "aus", "germany"}
+COVERAGE_ATTRIBUTES = ["carat", "color", "cut", "clarity"]
+
+
+def _fetch_vendor_coverage(origin: str) -> dict:
+    """Re-nest the flat coverage rows into {vendor: {attribute: [buckets]}}."""
+    sql = (
+        'SELECT * FROM "vendor_coverage" WHERE "origin" = %s '
+        'ORDER BY "vendor", "attribute", "bucket_order"'
+    )
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, [origin])
+        raw = [dict(r) for r in cur.fetchall()]
+
+    vendors: dict[str, dict] = {}
+    generated_at = None
+    for r in raw:
+        generated_at = generated_at or _jsonify_value(r.get("generated_at"))
+        v = vendors.setdefault(r["vendor"], {
+            "vendor":      r["vendor"],
+            "source_file": r.get("source_file"),
+            "total_rows":  int(r.get("vendor_total") or 0),
+            "attributes":  {},
+        })
+        attr = v["attributes"].setdefault(r["attribute"], {
+            "has_data":     bool(r.get("has_data")),
+            "graded":       int(r.get("attribute_graded") or 0),
+            "coverage_pct": _jsonify_value(r.get("attribute_coverage_pct")),
+            "buckets":      [],
+        })
+        attr["buckets"].append({
+            "bucket": r["bucket"],
+            # bucket_order is the grading rank (D before E, IF before VS1, …).
+            # The UI needs it to merge every vendor's buckets into one ordered
+            # cross-tab, since vendors don't all carry the same buckets.
+            "order":  int(r.get("bucket_order") or 0),
+            "count":  int(r.get("diamond_count") or 0),
+            "pct":    _jsonify_value(r.get("pct_of_vendor")),
+        })
+
+    return {
+        "origin":       origin,
+        "generated_at": generated_at,
+        "attributes":   COVERAGE_ATTRIBUTES,
+        "coverage_matrix": {
+            name: {a: v["attributes"].get(a, {}).get("has_data", False)
+                   for a in COVERAGE_ATTRIBUTES}
+            for name, v in vendors.items()
+        },
+        "vendor_count": len(vendors),
+        "vendors":      list(vendors.values()),
+    }
+
+
+@app.get("/api/vendor-coverage")
+async def get_vendor_coverage(origin: str = Query("usa")):
+    """Which vendor actually carries which grading data, per origin.
+
+    For each vendor: the carat/color/cut/clarity distribution over normalised
+    buckets, plus a `coverage_matrix` giving the headline yes/no per attribute
+    (e.g. the AUS vendor `gs` publishes no cut grade at all).
+    """
+    origin = origin.strip().lower()
+    if origin not in COVERAGE_ORIGINS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown origin '{origin}' — valid: {', '.join(sorted(COVERAGE_ORIGINS))}",
+        )
+    try:
+        data = _fetch_vendor_coverage(origin)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+    if not data["vendors"]:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no vendor coverage for '{origin}' — run vendor_coverage.py first",
+        )
+    return JSONResponse(content=data)
+
+
+# Region-prefixed aliases. Each dashboard's api() helper prepends its own
+# API_BASE ("/api/roa", "/api/uk", "/api/rog"), so give every region the route
+# it can reach without special-casing the base — same handler, fixed origin.
+@app.get("/api/roa/vendor-coverage")
+async def roa_vendor_coverage():
+    return await get_vendor_coverage(origin="aus")
+
+
+@app.get("/api/uk/vendor-coverage")
+async def uk_vendor_coverage():
+    return await get_vendor_coverage(origin="uk")
+
+
+@app.get("/api/rog/vendor-coverage")
+async def rog_vendor_coverage():
+    return await get_vendor_coverage(origin="germany")
+
+
+# ============================================================================
+# Daily internet usage — how much each scraper downloaded, per day.
+# Recorded by bandwidth.py inside the scraper processes and loaded into the
+# shared "bandwidth_usage" table by each region's loader.
+# ============================================================================
+def _human_bytes_short(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024 or unit == "TB":
+            return f"{int(n)} B" if unit == "B" else f"{n:,.1f} {unit}"
+        n /= 1024
+    return f"{n:,.1f} TB"
+
+
+def _live_bandwidth_rows(origin: str, days: int) -> list[dict]:
+    """
+    Usage from the on-disk records the scrapers are writing right now.
+
+    The DB table is only refreshed when a region's loader runs, which is the
+    last step of the pipeline — so mid-run there is nothing in it yet. When the
+    API shares a filesystem with the scrapers we can read their live files and
+    show the current run immediately. Absent or unreadable files are not an
+    error; that is simply the deployed case where the API runs elsewhere.
+    """
+    try:
+        import bandwidth
+    except Exception:
+        return []
+    try:
+        rows = bandwidth.daily_usage(None if origin == "all" else origin)
+    except Exception:
+        return []
+
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    return [r for r in rows if r.get("day", "") >= cutoff]
+
+
+def _fetch_bandwidth(origin: str, days: int) -> dict:
+    """Daily totals plus a per-scraper split for the trailing `days` days."""
+    where = '"day" >= CURRENT_DATE - %s::int'
+    args: list[Any] = [days]
+    if origin != "all":
+        where += ' AND "origin" = %s'
+        args.append(origin)
+
+    sql = (
+        'SELECT "day", "origin", "scraper", "endpoint", "runs", "requests", '
+        '"bytes_down", "bytes_up", "responses_without_length" '
+        f'FROM "bandwidth_usage" WHERE {where} '
+        'ORDER BY "day", "origin", "scraper"'
+    )
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, args)
+            db_rows = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        # Table absent (or missing the endpoint column) until a loader has run
+        # once — live files may still have something, so don't fail the request.
+        db_rows = []
+
+    # Merge live over stored. A day still held on disk is the same day the
+    # loader would replace wholesale on its next upload, so the local numbers
+    # are the fresher truth for it — keying on (day, origin, scraper, endpoint)
+    # means an in-progress run supersedes its own earlier snapshot, never doubles.
+    def _key(r):
+        return (str(_jsonify_value(r["day"])), r["origin"], r["scraper"],
+                r.get("endpoint") or "(unknown)")
+
+    merged: dict[tuple, dict] = {_key(r): r for r in db_rows}
+    live_keys = set()
+    for r in _live_bandwidth_rows(origin, days):
+        k = _key(r)
+        merged[k] = r
+        live_keys.add(k)
+
+    raw = [merged[k] for k in sorted(merged)]
+
+    daily: dict[str, dict] = {}
+    per_scraper: dict[str, dict] = {}
+    totals = {"requests": 0, "bytes_down": 0, "bytes_up": 0,
+              "responses_without_length": 0}
+
+    per_endpoint: dict[tuple[str, str], dict] = {}
+    scraper_days: dict[str, set] = {}
+
+    for r in raw:
+        day = str(_jsonify_value(r["day"]))
+        down = int(r.get("bytes_down") or 0)
+        up = int(r.get("bytes_up") or 0)
+        reqs = int(r.get("requests") or 0)
+        nolen = int(r.get("responses_without_length") or 0)
+        scraper = r["scraper"]
+        endpoint = r.get("endpoint") or "(unknown)"
+
+        d = daily.setdefault(day, {
+            "day": day, "requests": 0, "bytes_down": 0, "bytes_up": 0,
+            "scrapers": {},
+        })
+        d["requests"] += reqs
+        d["bytes_down"] += down
+        d["bytes_up"] += up
+        # Several endpoint rows share a scraper — accumulate, don't overwrite.
+        ds = d["scrapers"].setdefault(scraper, {
+            "origin": r["origin"], "requests": 0, "bytes_down": 0, "bytes_up": 0,
+        })
+        ds["requests"] += reqs
+        ds["bytes_down"] += down
+        ds["bytes_up"] += up
+
+        s = per_scraper.setdefault(scraper, {
+            "scraper": scraper, "origin": r["origin"],
+            "requests": 0, "bytes_down": 0, "bytes_up": 0, "days": 0,
+        })
+        s["requests"] += reqs
+        s["bytes_down"] += down
+        s["bytes_up"] += up
+        scraper_days.setdefault(scraper, set()).add(day)
+
+        e = per_endpoint.setdefault((scraper, endpoint), {
+            "endpoint": endpoint, "scraper": scraper, "origin": r["origin"],
+            "requests": 0, "bytes_down": 0, "bytes_up": 0,
+        })
+        e["requests"] += reqs
+        e["bytes_down"] += down
+        e["bytes_up"] += up
+
+        totals["requests"] += reqs
+        totals["bytes_down"] += down
+        totals["bytes_up"] += up
+        totals["responses_without_length"] += nolen
+
+    daily_list = [daily[k] for k in sorted(daily)]
+    for d in daily_list:
+        d["bytes_down_pretty"] = _human_bytes_short(d["bytes_down"])
+
+    scrapers = sorted(per_scraper.values(), key=lambda s: -s["bytes_down"])
+    for s in scrapers:
+        s["days"] = len(scraper_days.get(s["scraper"], ()))
+        s["bytes_down_pretty"] = _human_bytes_short(s["bytes_down"])
+
+    endpoints = sorted(per_endpoint.values(), key=lambda e: -e["bytes_down"])
+    for e in endpoints:
+        # The headline number for "what does one call cost".
+        e["avg_bytes_per_call"] = (
+            e["bytes_down"] // e["requests"] if e["requests"] else 0
+        )
+        e["bytes_down_pretty"] = _human_bytes_short(e["bytes_down"])
+        e["avg_per_call_pretty"] = _human_bytes_short(e["avg_bytes_per_call"])
+
+    n_days = len(daily_list)
+    return {
+        "origin": origin,
+        "days_requested": days,
+        "days_with_data": n_days,
+        "totals": {
+            **totals,
+            "bytes_down_pretty": _human_bytes_short(totals["bytes_down"]),
+            "bytes_up_pretty": _human_bytes_short(totals["bytes_up"]),
+            "avg_per_day": totals["bytes_down"] // n_days if n_days else 0,
+            "avg_per_day_pretty": _human_bytes_short(
+                totals["bytes_down"] / n_days if n_days else 0
+            ),
+        },
+        # Chunked/compressed responses carry no Content-Length, so their bytes
+        # are counted decompressed. Surfaced so the UI can say so rather than
+        # implying the figure is exact.
+        "estimated_from_body": totals["responses_without_length"],
+        # How many (day, scraper) rows came from files a scraper is still
+        # writing, rather than from the database.
+        "live_rows": len(live_keys),
+        "daily": daily_list,
+        "scrapers": scrapers,
+        "scraper_names": [s["scraper"] for s in scrapers],
+        "endpoints": endpoints,
+    }
+
+
+@app.get("/api/bandwidth")
+async def get_bandwidth(
+    origin: str = Query("usa"),
+    days: int = Query(30, ge=1, le=365),
+):
+    """Daily download volume per scraper. `origin=all` spans every region."""
+    origin = origin.strip().lower()
+    if origin != "all" and origin not in COVERAGE_ORIGINS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown origin '{origin}' — valid: all, "
+                   f"{', '.join(sorted(COVERAGE_ORIGINS))}",
+        )
+    try:
+        return JSONResponse(content=_fetch_bandwidth(origin, days))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/roa/bandwidth")
+async def roa_bandwidth(days: int = Query(30, ge=1, le=365)):
+    return await get_bandwidth(origin="aus", days=days)
+
+
+@app.get("/api/uk/bandwidth")
+async def uk_bandwidth(days: int = Query(30, ge=1, le=365)):
+    return await get_bandwidth(origin="uk", days=days)
+
+
+@app.get("/api/rog/bandwidth")
+async def rog_bandwidth(days: int = Query(30, ge=1, le=365)):
+    return await get_bandwidth(origin="germany", days=days)
+
+
+# ============================================================================
 # Pages
 # ============================================================================
 
@@ -639,6 +963,20 @@ async def serve_select():
         raise HTTPException(status_code=404, detail="select.html not found")
     return HTMLResponse(
         content=SELECT_PAGE.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/dashboard/usage", response_class=HTMLResponse)
+async def serve_dashboard_usage():
+    """Standalone internet-usage dashboard. Region-agnostic — it reads
+    /api/bandwidth directly and can show all four regions at once, so it lives
+    beside select.html rather than in any one region's static folder."""
+    html_path = STATIC_DIR / "usage.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="usage.html not found")
+    return HTMLResponse(
+        content=html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -1330,77 +1668,10 @@ async def get_diamond_status():
     return JSONResponse(content=data)
 
 
-@app.get("/api/status/history")
-async def get_status_history(limit: int = Query(52, ge=1, le=520)):
-    """Trend data: one row per pipeline run (never truncated), oldest -> newest.
-    Powers a match-rate / vendor-total / dataset-count chart over time."""
-    try:
-        return JSONResponse(content={
-            "history": _fetch_status_history("diamond_status_history", limit)
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
-
-
-@app.get("/api/anomalies")
-async def get_price_anomalies(
-    days: int = Query(14, ge=2, le=180),
-    compare_mode: str = Query("window", pattern="^(window|prev)$"),
-    dataset: str = Query("compare_all", pattern="^(compare_all|compare_partial|compare)$"),
-    z: float = Query(3.5, ge=1.0, le=20.0),
-    min_pct: float = Query(5.0, ge=0.0, le=100.0),
-    min_segment_stones: int = Query(20, ge=1, le=10000),
-    vendor: str | None = Query(None),
-    direction: str = Query("all", pattern="^(all|up|down)$"),
-    limit: int = Query(300, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
-    refresh: int = Query(0, ge=0, le=1),
-):
-    """Unusual price moves across the trailing `days`-day Parquet snapshot
-    archive (history/usa/…), written by snapshot_history.py before each run
-    truncates the live tables.
-
-    Detection is a robust z-score (median/MAD) over each vendor's own
-    distribution of non-zero moves for the compared span — see price_anomaly.py.
-    The heavy work is cached on the snapshot files' signature, so repeat calls
-    are free until the next pipeline run.
-    """
-    try:
-        from price_anomaly import detect_price_anomalies
-    except ImportError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"price_anomaly module unavailable ({e}) — pandas/pyarrow required",
-        )
-
-    try:
-        result = detect_price_anomalies(
-            region="usa",
-            dataset=dataset,
-            days=days,
-            compare_mode=compare_mode,
-            z_thresh=z,
-            min_pct=min_pct,
-            min_segment_stones=min_segment_stones,
-            use_cache=not refresh,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"anomaly detection failed: {e}")
-
-    rows = result.get("anomalies", [])
-    if vendor:
-        rows = [r for r in rows if r["vendor"] == vendor]
-    if direction != "all":
-        rows = [r for r in rows if r["direction"] == direction]
-
-    # Slice the (already ranked) list rather than shipping thousands of rows to
-    # the browser; the counts in `summary`/`vendors` stay unfiltered totals.
-    payload = {k: v for k, v in result.items() if k != "anomalies"}
-    payload["anomalies"] = rows[offset: offset + limit]
-    payload["filtered_total"] = len(rows)
-    payload["offset"] = offset
-    payload["limit"] = limit
-    return JSONResponse(content=payload)
+# NOTE: /api/status/history and /api/anomalies used to live here. Both were
+# USA-only features and have been removed along with price_anomaly.py and the
+# USA loader's snapshot calls. The other three regions still expose their own
+# /status/history routes via _fetch_status_history().
 
 
 # Vendor key -> the "vendor" label written into file_status.json by diamond_compare.py
@@ -2458,9 +2729,14 @@ def _roa_table_row_count(table: str) -> int:
 
 def _fetch_roa_status() -> dict | None:
     sql = 'SELECT * FROM "roa_diamond_status" ORDER BY "id" DESC LIMIT 1'
-    with _get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        r = cur.fetchone()
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            r = cur.fetchone()
+    except Exception:
+        # Table absent until the ROA loader has run at least once. Report that
+        # as "no data" (404, like the other regions) instead of a 500 traceback.
+        return None
     if not r:
         return None
 
