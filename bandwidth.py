@@ -50,6 +50,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -61,6 +62,20 @@ BANDWIDTH_DIR = REPO_ROOT / "bandwidth"
 # hours, so we checkpoint rather than only writing at exit — a killed process
 # (VPN rotation, Ctrl-C, crash) still leaves its usage on disk.
 FLUSH_SECONDS = 30
+
+# How often a running scraper pushes its usage into the "bandwidth_usage"
+# Postgres table, so the deployed dashboard shows a run while it is still
+# going instead of only after the pipeline's loader finishes.
+#
+# The deployed API cannot read the local bandwidth/ files — it runs on another
+# host — so this table is the only way those numbers reach it.
+#
+# Half an hour: frequent enough that the live page tracks a run in progress,
+# rare enough to be a negligible write load (~40 rows per upload).
+#
+# Override with BANDWIDTH_UPLOAD_MINUTES; 0 disables in-scraper uploading
+# entirely, leaving the region loader to upload at the end of the pipeline.
+UPLOAD_MINUTES = int(os.environ.get("BANDWIDTH_UPLOAD_MINUTES", "30"))
 
 # Local JSON is pruned after this many days; the Postgres table keeps the full
 # history, so nothing is actually lost.
@@ -93,6 +108,7 @@ _current: tuple[str, str] | None = None   # (origin, scraper) being attributed
 _installed = False
 _flusher: threading.Timer | None = None
 _started_at: str | None = None
+_last_upload = 0.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -329,13 +345,18 @@ def track(scraper: str | None = None, origin: str | None = None) -> None:
     _current = (origin or det_origin, scraper or det_scraper)
 
     if not _installed:
+        global _last_upload
         stacks = _install_all()
         _installed = True
         _started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        atexit.register(flush)
+        _last_upload = time.time()      # first push one interval from now
+        atexit.register(_on_exit)
         _schedule_flush()
+        every = (f"every {UPLOAD_MINUTES} min" if UPLOAD_MINUTES > 0
+                 else "disabled (loader uploads at end of pipeline)")
         print(f"[bandwidth] tracking {_current[0]}/{_current[1]} "
-              f"via {', '.join(stacks) or 'no HTTP stack found'}")
+              f"via {', '.join(stacks) or 'no HTTP stack found'} "
+              f"| db upload {every}")
 
 
 def _schedule_flush() -> None:
@@ -347,7 +368,48 @@ def _schedule_flush() -> None:
 
 def _tick() -> None:
     flush()
+    maybe_upload()
     _schedule_flush()
+
+
+def _on_exit() -> None:
+    """Final checkpoint: write the files, then push the run's totals so the
+    deployed dashboard ends up with the complete picture even if the interval
+    hadn't come round again."""
+    flush()
+    maybe_upload(force=True)
+
+
+def maybe_upload(force: bool = False) -> None:
+    """
+    Push this origin's usage into the "bandwidth_usage" table.
+
+    Uploads the whole origin (every scraper's files), not just this process's,
+    so whichever scraper's timer fires writes a complete, current picture for
+    the region. The delete+insert runs in one transaction, so concurrent
+    scrapers can interleave without leaving a partial state behind.
+
+    Never raises: a database hiccup must not disturb a scrape in progress.
+    """
+    global _last_upload
+    if UPLOAD_MINUTES <= 0 or _current is None:
+        return
+    now = time.time()
+    if not force and now - _last_upload < UPLOAD_MINUTES * 60:
+        return
+    _last_upload = now
+
+    origin = _current[0]
+    try:
+        conn = _connect()
+        try:
+            with conn.cursor() as cur:
+                upload_origin_bandwidth(cur, origin)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[bandwidth] db upload skipped ({type(e).__name__}: {e})")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

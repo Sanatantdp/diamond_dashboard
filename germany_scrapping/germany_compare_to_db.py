@@ -12,7 +12,7 @@ served back to the dashboard under "EUR" key names.
 Tables managed
 --------------
 - rog_compare_common    from compare.json           (rows matched by all 3 vendors)
-- rog_compare_all       from compare_all.json        (every ROG diamond)
+  (rog_compare_all is deliberately NOT loaded — see truncate_tables)
 - rog_compare_partial   from compare_partial.json    (rows matched by 2+ vendors)
 - rog_diamond_status    from diamond_status.json     (1 snapshot row per import)
 
@@ -174,7 +174,6 @@ def ensure_table(cur: PgCursor, table: str, columns: list[tuple[str, str]],
 def truncate_tables(cur: PgCursor) -> None:
     tables = [
         "rog_compare_common",
-        "rog_compare_all",
         "rog_compare_partial",
         "rog_diamond_status",
     ]
@@ -182,6 +181,13 @@ def truncate_tables(cur: PgCursor) -> None:
     for table in tables:
         cur.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
         print(f'  truncated "{table}"')
+
+    # rog_compare_all is no longer loaded — the Germany dashboard never reads
+    # it, and at ~220K rows it was the largest table in the database. The data
+    # is not lost: snapshot_history.py archives compare_all.json to Parquet on
+    # every run. Dropped rather than truncated so the storage is released.
+    cur.execute('DROP TABLE IF EXISTS "rog_compare_all"')
+    print('  dropped "rog_compare_all" (unused — served from the Parquet archive)')
 
 
 def load_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[str], list[tuple]]:
@@ -250,7 +256,6 @@ def _parse_rog_status_row(status_path: Path) -> tuple | None:
 def upload_all(cur: PgCursor) -> dict[str, int]:
     # Step 1 – ensure tables exist
     ensure_table(cur, "rog_compare_common",  ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
-    ensure_table(cur, "rog_compare_all",     ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table(cur, "rog_compare_partial", ROG_COMPARE_COLUMNS, ["certificate_number", "shape"])
     ensure_table(cur, "rog_diamond_status",  ROG_STATUS_COLUMNS,  ["generated_at"])
     snapshot_history.ensure_status_history_table(cur, "rog_diamond_status_history", ROG_STATUS_COLUMNS)
@@ -271,7 +276,6 @@ def upload_all(cur: PgCursor) -> dict[str, int]:
     counts: dict[str, int] = {}
     for table, filename in [
         ("rog_compare_common",  "compare.json"),
-        ("rog_compare_all",     "compare_all.json"),
         ("rog_compare_partial", "compare_partial.json"),
     ]:
         path = COMPARE_DIR / filename
@@ -317,7 +321,7 @@ def main() -> None:
 
     # Guard: if ALL main compare files are missing, abort before touching the DB.
     # Without this, the script would truncate all tables to empty and exit 0.
-    main_files = ["compare.json", "compare_all.json", "compare_partial.json"]
+    main_files = ["compare.json", "compare_partial.json"]
     present = [f for f in main_files if (COMPARE_DIR / f).exists()]
     if not present:
         raise SystemExit(

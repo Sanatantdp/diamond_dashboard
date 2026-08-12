@@ -1086,9 +1086,10 @@ ROG_DB_TO_JSON = {
 }
 
 ROG_FILENAME_TO_TABLE = {
+    # rog_compare_all is intentionally absent: nothing in the Germany
+    # dashboard read it, and the loader no longer creates the table.
     "compare.json":         "rog_compare_common",
     "compare_partial.json": "rog_compare_partial",
-    "compare_all.json":     "rog_compare_all",
 }
 ROG_ALLOWED_TABLES = set(ROG_FILENAME_TO_TABLE.values())
 
@@ -1360,7 +1361,7 @@ async def rog_health():
             cur.fetchone()
             db_ok = True
             for table in ("rog_compare_common", "rog_compare_partial",
-                          "rog_compare_all", "rog_diamond_status"):
+                          "rog_diamond_status"):
                 try:
                     cur.execute(f'SELECT COUNT(*) AS c FROM "{table}"')
                     row = cur.fetchone()
@@ -1468,7 +1469,11 @@ async def rog_vendor_common_summary():
         )
         try:
             with _get_conn() as conn, conn.cursor() as cur:
-                cur.execute(f'SELECT COUNT(*) AS c FROM "rog_compare_all" {where}')
+                # Reads compare_partial, not compare_all: the WHERE clause
+                # requires the vendor to have a price, so every matching row is
+                # by definition matched by >=1 vendor and therefore present in
+                # compare_partial. Same reasoning as the UK endpoint above.
+                cur.execute(f'SELECT COUNT(*) AS c FROM "rog_compare_partial" {where}')
                 row = cur.fetchone()
                 vendors[name] = {"rows": int(row["c"]) if row else 0}
         except Exception:
@@ -1488,7 +1493,7 @@ async def rog_vendor_common_rows(vendor: str, request: Request):
     ]
     try:
         return JSONResponse(content=_fetch_rog_rows_paginated(
-            "rog_compare_all", _params_dict(request), extra_clauses=extra
+            "rog_compare_partial", _params_dict(request), extra_clauses=extra
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
@@ -1496,7 +1501,10 @@ async def rog_vendor_common_rows(vendor: str, request: Request):
 
 @app.get("/api/rog/vendor-overlap")
 async def rog_vendor_overlap(request: Request):
-    """Diamonds whose certificate appears across novita, 77diamonds, and renesim (paginated)."""
+    """Diamonds whose certificate appears across novita, 77diamonds, and renesim (paginated).
+    Reads compare_common, not compare_all: the WHERE clause requires ALL three
+    vendor prices present, which is exactly rog_compare_common's "matched by all
+    3 vendors" criterion (see diamond_compare.py's _all_matched)."""
     extra = [
         clause
         for col in ROG_VENDOR_PRICE_COL.values()
@@ -1504,7 +1512,7 @@ async def rog_vendor_overlap(request: Request):
     ]
     try:
         return JSONResponse(content=_fetch_rog_rows_paginated(
-            "rog_compare_all", _params_dict(request), extra_clauses=extra
+            "rog_compare_common", _params_dict(request), extra_clauses=extra
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
