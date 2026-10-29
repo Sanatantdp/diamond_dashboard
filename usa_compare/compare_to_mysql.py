@@ -31,6 +31,7 @@ scheduler.py and any external automation that calls it by path.
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 from pathlib import Path
@@ -107,6 +108,7 @@ COMPARE_KEY_MAP = {
     "loose-grown vs PC %":     "lg_vs_pc_pct",
     "loose-grown Link":        "lg_link",
     "brilliance Price USD":    "brilliance_price_usd",
+    "loose-grown -30% USD":    "lg_minus_30_usd",
     "brilliance -30% USD":     "brilliance_minus_30_usd",
     "brilliance vs PC USD":    "brilliance_vs_pc_usd",
     "brilliance vs PC %":      "brilliance_vs_pc_pct",
@@ -116,7 +118,14 @@ COMPARE_KEY_MAP = {
     "friendly vs PC %":        "friendly_vs_pc_pct",
     "friendly Link":           "friendly_link",
     "PC Price USD":            "pc_price_usd",
+    "PC -30% USD":             "pc_minus_30_usd",
 }
+
+# NOTE: the "-30%" in the discount keys above (and in BR_VS_LG_KEY_MAP) is a
+# template, not a fixed value. diamond_compare.py names these columns after
+# the real discount (e.g. "brilliance -25% USD", "PC -50% USD"), and
+# load_compare_rows() matches them with any percentage. The *_minus_30_usd DB
+# column names are legacy and simply hold "the discounted price".
 
 BR_VS_LG_COLUMNS = [
     ("diamond_id",            "VARCHAR(64)"),
@@ -168,6 +177,12 @@ STATUS_COLUMNS = [
     ("lg_file_date",           "DATETIME"),
     ("brilliance_file_date",   "DATETIME"),
     ("friendly_file_date",     "DATETIME"),
+    # Real discount per vendor as "% off" (0 = none), for dashboard labels.
+    ("pc_discount_pct",        "DECIMAL(6,2)"),
+    ("lg_discount_pct",        "DECIMAL(6,2)"),
+    ("brilliance_discount_pct", "DECIMAL(6,2)"),
+    ("friendly_discount_pct",  "DECIMAL(6,2)"),
+    ("pc_discount_threshold",  "DECIMAL(12,2)"),
 ]
 
 
@@ -249,11 +264,29 @@ def load_compare_rows(json_path: Path, key_map: dict[str, str]) -> tuple[list[st
         raise ValueError(f"{json_path.name} is not a JSON list")
 
     db_cols = list(key_map.values())
+    present = set()
+    for item in data:
+        present.update(item.keys())
+    src_keys = [_resolve_json_key(k, present) for k in key_map.keys()]
     rows = []
     for item in data:
-        row = tuple(item.get(json_key) for json_key in key_map.keys())
+        row = tuple(item.get(json_key) for json_key in src_keys)
         rows.append(row)
     return db_cols, rows
+
+
+def _resolve_json_key(template: str, present: set) -> str:
+    """Map a key-map entry to the key actually in the JSON. Discount keys are
+    written with "-30%" as a placeholder; match them against whatever
+    percentage diamond_compare.py used (e.g. "brilliance -25% USD")."""
+    if template in present or "-30%" not in template:
+        return template
+    head, tail = template.split("-30%", 1)
+    pattern = re.compile(re.escape(head) + r"-\d+(?:\.\d+)?%" + re.escape(tail) + "$")
+    for key in sorted(present):
+        if pattern.match(key):
+            return key
+    return template
 
 
 def insert_rows(cur: PgCursor, table: str, db_cols: list[str], rows: list[tuple]) -> int:
@@ -283,6 +316,7 @@ def _parse_status_row(path: Path) -> tuple | None:
     lg_stats     = pc_vs.get("loose-grown", {}) or {}
     br_stats     = pc_vs.get("brilliance", {}) or {}
     fr_stats     = pc_vs.get("friendly", {}) or {}
+    disc_pct     = s.get("discounts_pct", {}) or {}
 
     return (
         s.get("generated_at"),
@@ -304,6 +338,11 @@ def _parse_status_row(path: Path) -> tuple | None:
         file_dates.get("loose-grown"),
         file_dates.get("brilliance"),
         file_dates.get("friendly"),
+        disc_pct.get("PC"),
+        disc_pct.get("loose-grown"),
+        disc_pct.get("brilliance"),
+        disc_pct.get("friendly"),
+        s.get("pc_discount_threshold"),
     )
 
 

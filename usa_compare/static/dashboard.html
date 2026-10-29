@@ -1139,12 +1139,12 @@
                 <th onclick="sortModal('color')">Color</th>
                 <th onclick="sortModal('clarity')">Clarity</th>
                 <th onclick="sortModal('cut')">Cut</th>
-                <th onclick="sortModal('caratWeight')">Carat</th>
-                <th onclick="sortModal('loose-grown Price USD')">LG Price</th>
-                <th onclick="sortModal('brilliance Price USD')">BR Price</th>
-                <th onclick="sortModal('brilliance -30% USD')">BR -30%</th>
-                <th onclick="sortModal('BR -30% vs LG USD')">BR-30% vs LG $</th>
-                <th onclick="sortModal('BR -30% vs LG %')">BR-30% vs LG %</th>
+                <th onclick="sortModal('carat_weight')">Carat</th>
+                <th onclick="sortModal('lg_price_usd')">LG Price</th>
+                <th onclick="sortModal('brilliance_price_usd')">BR Price</th>
+                <th onclick="sortModal('brilliance_minus_30_usd')" class="disc-label" data-vendor="brilliance" data-tpl="BR {d}">BR -30%</th>
+                <th onclick="sortModal('br_minus_30_vs_lg_usd')" class="disc-label" data-vendor="brilliance" data-tpl="BR{d} vs LG $">BR-30% vs LG $</th>
+                <th onclick="sortModal('br_minus_30_vs_lg_pct')" class="disc-label" data-vendor="brilliance" data-tpl="BR{d} vs LG %">BR-30% vs LG %</th>
               </tr>
             </thead>
             <tbody id="modalTableBody"></tbody>
@@ -1409,10 +1409,10 @@
               <th>Cut</th>
               <th onclick="sortTable('carat_weight')">Carat</th>
               <th onclick="sortTable('pc_price_usd')">PC Price</th>
-              <th>PC -40%</th>
+              <th onclick="sortTable('pc_minus_30_usd')" class="disc-label" data-vendor="PC" data-tpl="PC {d}">PC -50%</th>
               <th onclick="sortTable('lg_price_usd')">LG Price</th>
               <th onclick="sortTable('brilliance_price_usd')">Brilliance Price</th>
-              <th onclick="sortTable('brilliance_minus_30_usd')">Brilliance -30%</th>
+              <th onclick="sortTable('brilliance_minus_30_usd')" class="disc-label" data-vendor="brilliance" data-tpl="Brilliance {d}">Brilliance -25%</th>
               <th onclick="sortTable('friendly_price_usd')">Friendly Price</th>
               <th onclick="sortTable('lg_vs_pc_usd')">LG vs PC $</th>
               <th onclick="sortTable('lg_vs_pc_pct')">LG vs PC %</th>
@@ -1446,6 +1446,11 @@
       const PAGE_SIZE = 20;
       const BR_PAGE_SIZE = 25;
       let currentDataset = "compare.json";   // selected file (drives /api/data/*)
+      // "% off" per vendor and the PC full-price threshold. Overwritten from
+      // /api/status (discounts_pct) on load; these defaults only matter for
+      // data imported before the pipeline started reporting discounts.
+      let DISCOUNTS_PCT = { PC: 50, "loose-grown": 30, brilliance: 25, friendly: 0 };
+      let PC_DISCOUNT_THRESHOLD = 400;
       let pageRows = [];                     // current page of rows
       let pageTotal = 0;                     // server-reported total for current filters
       let datasetTotal = 0;                  // unfiltered total of currentDataset
@@ -1509,7 +1514,7 @@
           label: "Brilliance",
           color: "#60a5fa",
           priceCol: "brilliance Price USD",
-          bucketPriceCol: "brilliance -30% USD",
+          bucketPriceCol: "brilliance Discount USD",
           linkCol: "brilliance Link",
           pctPattern: /brilliance/i,
         },
@@ -2057,10 +2062,10 @@
             return `<tr>
             <td class="cert">${String(r["certificate_number"] ?? "—")}<span class="cert-links">${certLinks(r)}</span></td>
             <td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td>
-            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(r["PC Price USD"] != null ? r["PC Price USD"] * 0.60 : null)}</td>
+            <td class="${pcCls}">${fmtUSD(r["PC Price USD"])}</td><td class="${pcCls}">${fmtUSD(pcDiscountPrice(r))}</td>
             <td class="price">${fmtUSD(r["loose-grown Price USD"])}</td>
             <td class="price">${fmtUSD(r["brilliance Price USD"])}</td>
-            <td class="price">${fmtUSD(r["brilliance -30% USD"])}</td>
+            <td class="price">${fmtUSD(r["brilliance Discount USD"])}</td>
             <td class="price">${fmtUSD(r["friendly Price USD"])}</td>
             <td class="${diffCls(lgD)}">${fmtDiff(lgD)}</td><td class="${pctClass(lgP)}">${fmtPct(lgP)}</td>
             <td class="${diffCls(brD)}">${fmtDiff(brD)}</td><td class="${pctClass(brP)}">${fmtPct(brP)}</td>
@@ -2292,12 +2297,12 @@
                   ? "—"
                   : ca;
               const brLgD =
-                r["BR -30% vs LG USD"] != null
-                  ? Number(r["BR -30% vs LG USD"])
+                r["BR Discount vs LG USD"] != null
+                  ? Number(r["BR Discount vs LG USD"])
                   : null;
               const brLgP =
-                r["BR -30% vs LG %"] != null
-                  ? Number(r["BR -30% vs LG %"])
+                r["BR Discount vs LG %"] != null
+                  ? Number(r["BR Discount vs LG %"])
                   : null;
               const diffCls =
                 brLgD === null
@@ -2307,7 +2312,7 @@
                     : brLgD < 0
                       ? "pct-neg"
                       : "pct-zero";
-              return `<tr><td class="cert">${cert}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance -30% USD"])}</td><td class="${diffCls}">${brLgD === null ? "—" : (brLgD >= 0 ? "+" : "") + fmtUSD(brLgD)}</td><td class="${pctClass(brLgP)}">${fmtPct(brLgP)}</td></tr>`;
+              return `<tr><td class="cert">${cert}</td><td class="attr">${sh}</td><td class="attr">${co}</td><td class="attr">${cl}</td><td class="attr">${cu}</td><td class="attr">${caD}</td><td class="price">${fmtUSD(r["loose-grown Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Price USD"])}</td><td class="price">${fmtUSD(r["brilliance Discount USD"])}</td><td class="${diffCls}">${brLgD === null ? "—" : (brLgD >= 0 ? "+" : "") + fmtUSD(brLgD)}</td><td class="${pctClass(brLgP)}">${fmtPct(brLgP)}</td></tr>`;
             })
             .join("");
         }
@@ -2327,12 +2332,44 @@
         document.getElementById("modalPagination").innerHTML = pages;
       }
 
+      // Discount labels / PC discounted price
+      function discLabel(vendor) {
+        const d = Number(DISCOUNTS_PCT[vendor]);
+        return d > 0 ? `-${+d.toFixed(2)}%` : "(no disc.)";
+      }
+      function applyDiscountLabels() {
+        document.querySelectorAll(".disc-label").forEach((th) => {
+          th.textContent = th.dataset.tpl.replace("{d}", discLabel(th.dataset.vendor));
+        });
+      }
+      function applyDiscountInfo(s) {
+        const d = (s && s.discounts_pct) || {};
+        for (const k of Object.keys(d)) {
+          if (d[k] !== null && d[k] !== undefined) DISCOUNTS_PCT[k] = Number(d[k]);
+        }
+        if (s && s.pc_discount_threshold != null)
+          PC_DISCOUNT_THRESHOLD = Number(s.pc_discount_threshold);
+        applyDiscountLabels();
+      }
+      // PC discounted price as computed by the pipeline ("PC Discount USD":
+      // full price at or below the threshold, discounted above it). Falls back
+      // to the same rule client-side for rows imported before that column.
+      function pcDiscountPrice(r) {
+        if (r["PC Discount USD"] != null) return r["PC Discount USD"];
+        const p = r["PC Price USD"];
+        if (p == null) return null;
+        const n = Number(p);
+        if (n <= PC_DISCOUNT_THRESHOLD) return n;
+        return Math.round(n * (1 - (Number(DISCOUNTS_PCT.PC) || 0) / 100));
+      }
+
       // Stats
       async function loadStats() {
         const panel = document.getElementById("statsPanel");
         panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted);opacity:.6"><div class="stats-card-title">Loading stats…</div></div>`;
         try {
           const s = await api("GET", "/api/status");
+          applyDiscountInfo(s);
           renderStats(s);
         } catch (e) {
           panel.innerHTML = `<div class="stats-card" style="--card-color:var(--muted)"><div class="stats-card-title" style="color:var(--muted)">No stats yet</div><div class="stats-card-sub" style="margin-top:6px">Run <strong style="color:var(--accent)">⚙ Run Compare</strong> to generate statistics</div></div>`;

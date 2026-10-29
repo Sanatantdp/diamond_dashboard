@@ -213,7 +213,7 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
             merged[price_col] = pd.to_numeric(merged[price_col], errors="coerce").round(0)
             merged[disc_col]  = (merged[price_col] * disc).round(0)
 
-    # Add BR -30% vs LG price comparison
+    # Add BR -<disc>% vs LG price comparison (label follows the real discount)
     br_disc      = discounts.get("brilliance", 0.70)
     br_label     = f"-{round((1 - br_disc) * 100)}%"
     br_disc_col  = f"brilliance {br_label} USD"
@@ -221,9 +221,11 @@ def build_br_vs_lg(loaded: dict, discounts: dict) -> int:
     if br_disc_col in merged.columns and lg_price_col in merged.columns:
         br_vals = pd.to_numeric(merged[br_disc_col], errors="coerce").replace(0, float("nan"))
         lg_vals = pd.to_numeric(merged[lg_price_col], errors="coerce").replace(0, float("nan"))
-        merged["BR -30% vs LG USD"] = (br_vals - lg_vals).round(0)
-        merged["BR -30% vs LG %"]   = ((br_vals - lg_vals) / lg_vals * 100).round(2)
-        log.info(f"Added BR -30% vs LG comparison  ({merged['BR -30% vs LG %'].notna().sum():,} valid rows)")
+        br_vs_usd = f"BR {br_label} vs LG USD"
+        br_vs_pct = f"BR {br_label} vs LG %"
+        merged[br_vs_usd] = (br_vals - lg_vals).round(0)
+        merged[br_vs_pct] = ((br_vals - lg_vals) / lg_vals * 100).round(2)
+        log.info(f"Added BR {br_label} vs LG comparison  ({merged[br_vs_pct].notna().sum():,} valid rows)")
 
     # Drop all PC-related columns
     pc_cols_to_drop = (
@@ -313,6 +315,13 @@ def _save_diamond_status(combined: pd.DataFrame, loaded: dict, discounts: dict,
             "br_vs_lg":   br_vs_lg_count,
         },
         "file_dates":   _collect_vendor_file_dates(),
+        # Real discount per vendor as "% off" (0 = no discount), so the
+        # dashboard can label columns instead of hardcoding -30% / -40%.
+        "discounts_pct": {
+            name: (round((1 - d) * 100, 2) if d < 1.0 else 0)
+            for name, d in discounts.items()
+        },
+        "pc_discount_threshold": float(get_env("PC_DISCOUNT_THRESHOLD", "400")),
     }
 
     with open(DIAMOND_STATUS_JSON, "w", encoding="utf-8") as f:
@@ -326,8 +335,8 @@ def load_vendors_from_env():
     # price. Brilliance keeps its -30% since that reflects a real discount
     # code applied at checkout.
     vendor_defaults = [
-        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "price", "default_disc": "1.0",  "link_col": "sku",   "link_builder": _lg_link},
-        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.70", "link_col": "alias", "link_builder": _brilliance_link},
+        {"name": "loose-grown", "env_csv": "LOOSE_GROWN_CSV",  "env_cert": "LOOSE_GROWN_CERT_COL",  "env_price": "LOOSE_GROWN_PRICE_COL",  "env_disc": "LOOSE_GROWN_DISCOUNT",  "default_csv": "loosegrowndiamond.csv",    "default_cert": "certificate_no","default_price": "price", "default_disc": "0.70",  "link_col": "sku",   "link_builder": _lg_link},
+        {"name": "brilliance",  "env_csv": "BRILLIANCE_CSV",   "env_cert": "BRILLIANCE_CERT_COL",   "env_price": "BRILLIANCE_PRICE_COL",   "env_disc": "BRILLIANCE_DISCOUNT",   "default_csv": "brilliance_diamonds.csv", "default_cert": "reportNumber", "default_price": "price", "default_disc": "0.75", "link_col": "alias", "link_builder": _brilliance_link},
         {"name": "friendly",    "env_csv": "FRIENDLY_CSV",     "env_cert": "FRIENDLY_CERT_COL",     "env_price": "FRIENDLY_PRICE_COL",     "env_disc": "FRIENDLY_DISCOUNT",     "default_csv": "friendlydiamond.csv",     "default_cert": "certificate_no", "default_price": "price", "default_disc": "1.0",  "link_col": "slug",  "link_builder": _friendly_link},
     ]
 
@@ -345,7 +354,7 @@ def load_vendors_from_env():
 
     PC_csv_name = get_env("PC_CSV", "precious_carbon.csv")
     PC_csv      = os.path.join(DIAMOND_FILES_DIR, PC_csv_name)
-    PC_discount = float(get_env("PC_DISCOUNT", "0.60"))
+    PC_discount = float(get_env("PC_DISCOUNT", "0.50"))
     return vendors, PC_csv, PC_discount
 
 

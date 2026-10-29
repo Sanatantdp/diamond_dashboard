@@ -138,11 +138,12 @@ COMPARE_DB_TO_JSON = {
     "cut":                     "cut",
     "carat_weight":            "caratWeight",
     "lg_price_usd":            "loose-grown Price USD",
+    "lg_minus_30_usd":         "loose-grown Discount USD",
     "lg_vs_pc_usd":            "loose-grown vs PC USD",
     "lg_vs_pc_pct":            "loose-grown vs PC %",
     "lg_link":                 "loose-grown Link",
     "brilliance_price_usd":    "brilliance Price USD",
-    "brilliance_minus_30_usd": "brilliance -30% USD",
+    "brilliance_minus_30_usd": "brilliance Discount USD",
     "brilliance_vs_pc_usd":    "brilliance vs PC USD",
     "brilliance_vs_pc_pct":    "brilliance vs PC %",
     "brilliance_link":         "brilliance Link",
@@ -151,7 +152,11 @@ COMPARE_DB_TO_JSON = {
     "friendly_vs_pc_pct":      "friendly vs PC %",
     "friendly_link":           "friendly Link",
     "pc_price_usd":            "PC Price USD",
+    "pc_minus_30_usd":         "PC Discount USD",
 }
+# NOTE: *_minus_30_usd DB columns hold the discounted price at whatever
+# discount diamond_compare.py used (no longer always 30%). They are exposed
+# as "<vendor> Discount USD"; the real % comes from /api/status discounts_pct.
 
 BR_VS_LG_DB_TO_JSON = {
     "diamond_id":              "diamond_id",
@@ -162,10 +167,10 @@ BR_VS_LG_DB_TO_JSON = {
     "clarity":                 "clarity",
     "lg_price_usd":            "loose-grown Price USD",
     "brilliance_price_usd":    "brilliance Price USD",
-    "lg_minus_30_usd":         "loose-grown -30% USD",
-    "brilliance_minus_30_usd": "brilliance -30% USD",
-    "br_minus_30_vs_lg_usd":   "BR -30% vs LG USD",
-    "br_minus_30_vs_lg_pct":   "BR -30% vs LG %",
+    "lg_minus_30_usd":         "loose-grown Discount USD",
+    "brilliance_minus_30_usd": "brilliance Discount USD",
+    "br_minus_30_vs_lg_usd":   "BR Discount vs LG USD",
+    "br_minus_30_vs_lg_pct":   "BR Discount vs LG %",
 }
 
 # vendor key -> { price_col, minus30_col, pct_col }. "minus30_col" is the
@@ -588,6 +593,15 @@ def _fetch_status() -> dict | None:
             "brilliance":  _jsonify_value(r.get("brilliance_file_date")),
             "friendly":    _jsonify_value(r.get("friendly_file_date")),
         },
+        # "% off" per vendor (0 = none); None for rows imported before these
+        # columns existed — the dashboard falls back to its defaults then.
+        "discounts_pct": {
+            "PC":          _jsonify_value(r.get("pc_discount_pct")),
+            "loose-grown": _jsonify_value(r.get("lg_discount_pct")),
+            "brilliance":  _jsonify_value(r.get("brilliance_discount_pct")),
+            "friendly":    _jsonify_value(r.get("friendly_discount_pct")),
+        },
+        "pc_discount_threshold": _jsonify_value(r.get("pc_discount_threshold")),
     }
 
 
