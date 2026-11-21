@@ -24,7 +24,13 @@ from starlette.responses import Response
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "usa_compare" / "static"
 COMPARE_DIR = BASE_DIR / "compare" / "usa"
-COMPARE_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    COMPARE_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Read-only filesystem (e.g. serverless/Vercel). This dir is only written by
+    # the scraping/compare endpoints, which don't run in that environment; the
+    # read-only dashboard + API read from PostgreSQL, so importing must not fail.
+    pass
 DIAMOND_FILES_DIR = BASE_DIR / "diamond_files" / "usa"
 FILE_STATUS_JSON = DIAMOND_FILES_DIR / "file_status.json"
 
