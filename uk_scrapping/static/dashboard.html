@@ -439,54 +439,6 @@
         <div class="empty-state" style="grid-column:1/-1"><div class="icon">💎</div><h3>No data loaded</h3></div>
       </div>
 
-      <!-- PRICE TRENDS CHART -->
-      <style>
-        .trends-card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:18px 20px 20px;margin-bottom:12px;position:relative}
-        .trends-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:6px}
-        .trends-sub{color:var(--muted);font-size:12px;margin-top:2px}
-        .trends-controls{display:flex;gap:8px;align-items:center}
-        .trends-toggle{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:8px;overflow:hidden}
-        .trends-toggle button{background:transparent;color:var(--muted);border:0;padding:5px 10px;font-size:12px;cursor:pointer}
-        .trends-toggle button.active{background:rgba(255,255,255,.10);color:var(--text)}
-        .trends-tablebtn{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}
-        .trends-tablebtn.active{background:rgba(255,255,255,.10);color:var(--text)}
-        .trends-plot{position:relative;width:100%}
-        .trends-plot svg{width:100%;height:auto;display:block}
-        .trends-empty{color:var(--muted);text-align:center;padding:34px 10px;font-size:13px}
-        .trends-tip{position:absolute;pointer-events:none;background:rgba(10,10,16,.96);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--text);transform:translate(-50%,0);white-space:nowrap;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .08s}
-        .trends-tip .d{color:var(--muted);margin-bottom:4px;font-size:11px}
-        .trends-tip .row{display:flex;align-items:center;gap:7px;line-height:1.5}
-        .trends-tip .sw{width:9px;height:9px;border-radius:2px;flex:none}
-        .trends-tip .v{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;padding-left:14px}
-        .trends-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
-        .trends-leg{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text)}
-        .trends-leg .sw{width:11px;height:11px;border-radius:3px;flex:none}
-        .trends-leg .lv{color:var(--muted);font-variant-numeric:tabular-nums}
-        .trends-table{margin-top:14px;overflow-x:auto}
-        .trends-table table{border-collapse:collapse;width:100%;font-size:12px}
-        .trends-table th,.trends-table td{border-bottom:1px solid rgba(255,255,255,.07);padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-        .trends-table th:first-child,.trends-table td:first-child{text-align:left}
-        .trends-table thead th{color:var(--muted);font-weight:600}
-      </style>
-      <div class="trends-card" id="priceTrendsCard">
-        <div class="trends-head">
-          <div>
-            <div class="section-title" style="margin:0">📈 Price Trends</div>
-            <div class="trends-sub" id="trendsSub">Average price per vendor over time · hover a point for detail</div>
-          </div>
-          <div class="trends-controls">
-            <div class="trends-toggle" id="trendsMetricToggle">
-              <button data-metric="avg_price" class="active" onclick="setTrendsMetric('avg_price')">Avg price</button>
-              <button data-metric="price_per_carat" onclick="setTrendsMetric('price_per_carat')">Per carat</button>
-            </div>
-            <button class="trends-tablebtn" id="trendsTableBtn" onclick="toggleTrendsTable()">Table</button>
-          </div>
-        </div>
-        <div id="priceTrendsPlot" class="trends-plot"><div class="trends-empty">Loading price trends…</div></div>
-        <div id="priceTrendsLegend" class="trends-legend"></div>
-        <div id="priceTrendsTable" class="trends-table" style="display:none"></div>
-      </div>
-
       <!-- PRICE RANGE + CERTIFICATE FILTERS -->
       <div class="filter-card">
         <div class="filter-card-title">Filters</div>
@@ -1361,7 +1313,6 @@
         try {
           const health = await api("GET", "/health");
           loadStats();
-          loadPriceTrends();
           checkHistoryUpdate();
 
           if (health.default_dataset) {
@@ -1386,99 +1337,6 @@
           toast("API not reachable — run: uvicorn main:app --reload", "error", 5400);
         }
       }
-      // ── Price Trends chart ───────────────────────────────────────────────
-      const TRENDS_PATH = "/price-trends";
-      const TRENDS_COLORS = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#9085e9"];
-      let trendsData = null, trendsMetric = "avg_price", trendsTableOpen = false;
-
-      function trendsCur(code){return code==="GBP"?"£":code==="EUR"?"€":"$";}
-      function trendsFmt(v,cur){return v==null?"—":cur+Math.round(v).toLocaleString();}
-
-      async function loadPriceTrends(){
-        try { trendsData = await api("GET", TRENDS_PATH); }
-        catch(e){
-          const host=document.getElementById("priceTrendsPlot");
-          if(host) host.innerHTML='<div class="trends-empty">Could not load price trends.</div>';
-          return;
-        }
-        renderTrendsChart();
-      }
-      function setTrendsMetric(m){
-        trendsMetric=m;
-        document.querySelectorAll("#trendsMetricToggle button").forEach(b=>b.classList.toggle("active",b.dataset.metric===m));
-        renderTrendsChart();
-      }
-      function toggleTrendsTable(){
-        trendsTableOpen=!trendsTableOpen;
-        document.getElementById("trendsTableBtn").classList.toggle("active",trendsTableOpen);
-        document.getElementById("priceTrendsTable").style.display=trendsTableOpen?"block":"none";
-      }
-      function renderTrendsChart(){
-        const host=document.getElementById("priceTrendsPlot");
-        const legend=document.getElementById("priceTrendsLegend");
-        const tableHost=document.getElementById("priceTrendsTable");
-        const sub=document.getElementById("trendsSub");
-        if(!host) return;
-        const d=trendsData;
-        if(!d||!d.series||!d.series.length||!d.dates||!d.dates.length){
-          host.innerHTML='<div class="trends-empty">No price history yet. Trends build up as the weekly pipeline records snapshots.</div>';
-          legend.innerHTML=""; if(tableHost) tableHost.innerHTML=""; return;
-        }
-        const cur=trendsCur(d.currency), dates=d.dates, n=dates.length;
-        const metricLabel=trendsMetric==="price_per_carat"?"Price per carat":"Average price";
-        if(sub) sub.textContent=`${metricLabel} per vendor over time · ${d.currency||""}`+(n<2?" — one snapshot so far; lines appear as more accumulate":" · hover for detail");
-        const series=d.series.map((s,i)=>({vendor:s.vendor,color:TRENDS_COLORS[i%TRENDS_COLORS.length],vals:s[trendsMetric]||[],count:s.diamond_count||[]}));
-        const allv=series.flatMap(s=>s.vals).filter(v=>v!=null);
-        if(!allv.length){host.innerHTML='<div class="trends-empty">No numeric data for this metric.</div>';legend.innerHTML="";return;}
-        let min=Math.min(...allv),max=Math.max(...allv);
-        if(min===max){min*=0.9;max=max*1.1||1;}
-        const padv=(max-min)*0.15||1, ymin=Math.max(0,min-padv), ymax=max+padv;
-        const W=780,H=330,L=60,R=120,T=18,Bm=40;
-        const ix=i=> n<=1 ? L+(W-L-R)/2 : L+i*(W-L-R)/(n-1);
-        const iy=v=> T+(ymax-v)/(ymax-ymin)*(H-T-Bm);
-        const ticks=4; let g="";
-        for(let t=0;t<=ticks;t++){
-          const val=ymin+(ymax-ymin)*t/ticks, y=iy(val);
-          g+=`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}" stroke="#2c2c2a" stroke-width="1"/>`;
-          g+=`<text x="${L-8}" y="${(y+4).toFixed(1)}" text-anchor="end" fill="#898781" font-size="11">${cur}${Math.round(val).toLocaleString()}</text>`;
-        }
-        for(let i=0;i<n;i++) g+=`<text x="${ix(i).toFixed(1)}" y="${H-Bm+22}" text-anchor="middle" fill="#898781" font-size="11">${dates[i].slice(5)}</text>`;
-        g+=`<line x1="${L}" y1="${iy(ymin).toFixed(1)}" x2="${W-R}" y2="${iy(ymin).toFixed(1)}" stroke="#383835" stroke-width="1"/>`;
-        series.forEach(s=>{
-          const pts=[]; s.vals.forEach((v,i)=>{if(v!=null)pts.push([ix(i),iy(v)]);});
-          if(pts.length>1){
-            const dp=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
-            g+=`<path d="${dp}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-          }
-          pts.forEach(p=>{g+=`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${s.color}" stroke="var(--card)" stroke-width="2"/>`;});
-          let last=-1; s.vals.forEach((v,i)=>{if(v!=null)last=i;});
-          if(last>=0){const y=iy(s.vals[last]); g+=`<circle cx="${W-R+14}" cy="${y.toFixed(1)}" r="3.5" fill="${s.color}"/><text x="${W-R+22}" y="${(y+4).toFixed(1)}" fill="#c3c2b7" font-size="11">${s.vendor}</text>`;}
-        });
-        g+=`<line id="trendsCross" x1="0" y1="${T}" x2="0" y2="${H-Bm}" stroke="rgba(255,255,255,.22)" stroke-width="1" style="opacity:0"/>`;
-        for(let i=0;i<n;i++){
-          const seg=n<=1?(W-L-R):(W-L-R)/(n-1), x0=n<=1?L:ix(i)-seg/2;
-          g+=`<rect x="${Math.max(L,x0).toFixed(1)}" y="${T}" width="${Math.max(1,seg).toFixed(1)}" height="${H-T-Bm}" fill="transparent" data-i="${i}" class="trends-band"/>`;
-        }
-        host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Price trends line chart">${g}</svg><div class="trends-tip" id="trendsTip"></div>`;
-        const tip=document.getElementById("trendsTip"), cross=host.querySelector("#trendsCross");
-        host.querySelectorAll(".trends-band").forEach(band=>{
-          band.addEventListener("mouseenter",()=>{
-            const i=+band.dataset.i, x=ix(i);
-            cross.setAttribute("x1",x); cross.setAttribute("x2",x); cross.style.opacity="1";
-            const rows=series.map(s=>`<div class="row"><span class="sw" style="background:${s.color}"></span><span>${s.vendor}</span><span class="v">${trendsFmt(s.vals[i],cur)}</span></div>`).join("");
-            const c=series[0]&&series[0].count&&series[0].count[i]!=null?`<div class="d">${dates[i]} · ${Number(series[0].count[i]).toLocaleString()} matched</div>`:`<div class="d">${dates[i]}</div>`;
-            tip.innerHTML=c+rows; tip.style.left=(x/W*100)+"%"; tip.style.top="2px"; tip.style.opacity="1";
-          });
-          band.addEventListener("mouseleave",()=>{cross.style.opacity="0";tip.style.opacity="0";});
-        });
-        legend.innerHTML=series.map(s=>{let last=-1;s.vals.forEach((v,i)=>{if(v!=null)last=i;});const lv=last>=0?trendsFmt(s.vals[last],cur):"—";return `<div class="trends-leg"><span class="sw" style="background:${s.color}"></span>${s.vendor} <span class="lv">${lv}</span></div>`;}).join("");
-        if(tableHost){
-          const th=`<tr><th>Vendor</th>${dates.map(dt=>`<th>${dt}</th>`).join("")}</tr>`;
-          const tb=series.map(s=>`<tr><td>${s.vendor}</td>${s.vals.map(v=>`<td>${trendsFmt(v,cur)}</td>`).join("")}</tr>`).join("");
-          tableHost.innerHTML=`<table><thead>${th}</thead><tbody>${tb}</tbody></table>`;
-        }
-      }
-
       startDashboard();
     </script>
   </body>
