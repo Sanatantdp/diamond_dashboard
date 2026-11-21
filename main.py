@@ -2806,6 +2806,71 @@ async def roa_run_compare():
 
 
 # ============================================================================
+# Price trends — per-vendor average price over time, from the `price_trends`
+# table (backfilled from the Parquet archive by price_trends_backfill.py and
+# kept current by snapshot_history.py). Read-only; works on serverless since it
+# reads PostgreSQL, not the local Parquet files. Shape is chart-ready:
+#   {region, currency, dates:[...], series:[{vendor, avg_price:[], ...}]}
+# ============================================================================
+def _fetch_price_trends(region: str) -> dict:
+    sql = (
+        'SELECT snapshot_date, vendor, currency, avg_price, median_price, '
+        '       diamond_count, price_per_carat '
+        'FROM "price_trends" WHERE region = %s '
+        'ORDER BY snapshot_date, vendor'
+    )
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, [region])
+        raw = [dict(r) for r in cur.fetchall()]
+
+    dates = sorted({_jsonify_value(r["snapshot_date"]) for r in raw})
+    currency = raw[0]["currency"] if raw else None
+    by_vendor: dict[str, dict] = {}
+    for r in raw:
+        d = _jsonify_value(r["snapshot_date"])
+        by_vendor.setdefault(r["vendor"], {})[d] = r
+
+    series = []
+    for vendor in sorted(by_vendor):
+        pts = by_vendor[vendor]
+        series.append({
+            "vendor":          vendor,
+            "avg_price":       [_jsonify_value(pts[d]["avg_price"]) if d in pts else None for d in dates],
+            "median_price":    [_jsonify_value(pts[d]["median_price"]) if d in pts else None for d in dates],
+            "price_per_carat": [_jsonify_value(pts[d]["price_per_carat"]) if d in pts else None for d in dates],
+            "diamond_count":   [pts[d]["diamond_count"] if d in pts else None for d in dates],
+        })
+    return {"region": region, "currency": currency, "dates": dates, "series": series}
+
+
+@app.get("/api/price-trends")
+async def get_price_trends_usa():
+    """USA per-vendor average price over time (USD)."""
+    try:
+        return JSONResponse(content=_fetch_price_trends("usa"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/uk/price-trends")
+async def get_price_trends_uk():
+    """UK per-vendor average price over time (GBP)."""
+    try:
+        return JSONResponse(content=_fetch_price_trends("uk"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+@app.get("/api/rog/price-trends")
+async def get_price_trends_rog():
+    """Germany per-vendor average price over time (EUR)."""
+    try:
+        return JSONResponse(content=_fetch_price_trends("germany"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {e}")
+
+
+# ============================================================================
 # Local dev entrypoint
 # ============================================================================
 if __name__ == "__main__":
