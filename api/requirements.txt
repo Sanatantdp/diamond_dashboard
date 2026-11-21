@@ -1,0 +1,10 @@
+# Slim dependency set for the Vercel serverless viewer.
+# Only what main.py imports at runtime — NOT the full scraping stack
+# (selenium / pandas / pyautogui / etc. live in the repo-root requirements.txt
+# and run on your scraping host, not on Vercel).
+fastapi==0.135.1
+starlette==0.52.1
+pydantic==2.12.5
+pydantic_core==2.41.5
+psycopg2-binary==2.9.10
+python-dotenv==1.2.2

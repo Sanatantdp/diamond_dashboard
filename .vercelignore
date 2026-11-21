@@ -1,0 +1,32 @@
+# Keep the Vercel upload small and clean (mainly matters for `vercel` CLI deploys,
+# which would otherwise upload your local virtualenv and scraped data).
+# Git-integration deploys already ignore anything not committed.
+
+# Virtualenvs
+diamond_env/
+env/
+venv/
+.venv/
+
+# Scraped data, snapshots, compare output, logs — the viewer reads Neon, not disk
+diamond_files/
+diamond_files_backup/
+compare/
+history/
+logs/
+status/
+scheduler.log
+*.log
+*.csv
+
+# VPN / rotation assets (scraping-only)
+vpnbook/
+
+# Archives & caches
+*.zip
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets — set these in the Vercel dashboard (Project → Settings → Environment Variables)
+.env

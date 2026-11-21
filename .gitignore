@@ -10,3 +10,7 @@ __pycache__/
 *.json*
 vpnbook/
 scheduler.log
+
+# Vercel deploy config (kept even though *.json* is ignored above)
+!vercel.json
+.vercel

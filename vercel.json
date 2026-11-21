@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "main.py",
+          "usa_compare/static/**",
+          "uk_scrapping/static/**",
+          "aus_scrapping/static/**",
+          "germany_scrapping/static/**"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "api/index.py" }
+  ]
+}
