@@ -1292,6 +1292,53 @@
         </div>
       </div>
 
+      <!-- COMPETITIVE PRICE POSITION -->
+      <style>
+        .pp-card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:18px 20px 20px;margin-bottom:12px}
+        .pp-sub{color:var(--muted);font-size:12px;margin-top:2px}
+        .pp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0 18px}
+        .pp-kpi{background:var(--surface);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 14px}
+        .pp-kpi .v{font-size:23px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1}
+        .pp-kpi .l{font-size:11px;color:var(--muted);margin-top:4px}
+        .pp-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:20px}
+        @media(max-width:880px){.pp-grid{grid-template-columns:1fr}}
+        .pp-label{font-size:12px;color:var(--text);font-weight:600;margin-bottom:12px}
+        .pp-hint{color:var(--muted);font-weight:400}
+        .pp-row{margin-bottom:13px}
+        .pp-row-top{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:5px}
+        .pp-row-top .nm{color:var(--text);display:flex;align-items:center;gap:7px}
+        .pp-row-top .nm .sw{width:9px;height:9px;border-radius:2px;flex:none}
+        .pp-row-top .mt{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+        .pp-bar{height:8px;border-radius:5px;background:rgba(255,255,255,.07);overflow:hidden}
+        .pp-bar>i{display:block;height:100%;border-radius:5px}
+        .pp-gaps{overflow-x:auto}
+        .pp-gaps table{border-collapse:collapse;width:100%;font-size:12px}
+        .pp-gaps th,.pp-gaps td{border-bottom:1px solid rgba(255,255,255,.07);padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .pp-gaps th:first-child,.pp-gaps td:first-child,.pp-gaps th:nth-child(2),.pp-gaps td:nth-child(2){text-align:left}
+        .pp-gaps thead th{color:var(--muted);font-weight:600}
+        .pp-gaps a{color:var(--accent);text-decoration:none}
+        .pp-gaps a:hover{text-decoration:underline}
+        .pp-gaps .gap{color:var(--red);font-weight:700}
+        .pp-empty{color:var(--muted);text-align:center;padding:24px;font-size:13px}
+      </style>
+      <div class="pp-card" id="pricePositionCard">
+        <div>
+          <div class="section-title" style="margin:0">🎯 Competitive Price Position</div>
+          <div class="pp-sub" id="ppSub">How you compare on price across matched diamonds</div>
+        </div>
+        <div class="pp-kpis" id="ppKpis"><div class="pp-empty">Loading…</div></div>
+        <div class="pp-grid">
+          <div>
+            <div class="pp-label">Who undercuts you</div>
+            <div id="ppBoard"></div>
+          </div>
+          <div>
+            <div class="pp-label">Biggest undercuts <span class="pp-hint">· your repricing hit-list</span></div>
+            <div id="ppGaps" class="pp-gaps"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- PRICE RANGE + CERTIFICATE FILTERS -->
       <div class="filter-card">
         <div class="filter-card-title">Filters</div>
@@ -2432,6 +2479,7 @@
         try {
           const health = await api("GET", "/api/health");
           loadStats();
+          loadPricePosition();
           if (health.default_dataset) {
             currentDataset = "compare.json";
             showLoading("Loading paginated data from PostgreSQL…");
@@ -2467,6 +2515,48 @@
           );
         }
       }
+      // ── Competitive Price Position ───────────────────────────────────────
+      const PP_PATH = "/api/price-position";
+      const PP_COLORS = ["#3987e5","#d95926","#199e70","#c98500","#d55181"];
+      let ppData = null;
+      function ppFmt(v,c){return v==null?"—":c+Math.round(v).toLocaleString();}
+      function ppEsc(s){return String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
+      async function loadPricePosition(){
+        try { ppData = await api("GET", PP_PATH); }
+        catch(e){ const h=document.getElementById("ppKpis"); if(h) h.innerHTML='<div class="pp-empty">Could not load price position.</div>'; return; }
+        renderPricePosition();
+      }
+      function renderPricePosition(){
+        const d=ppData; if(!d) return;
+        const cur=d.cur||"$", kp=d.kpis||{};
+        const kpis=document.getElementById("ppKpis"), board=document.getElementById("ppBoard"),
+              gapsEl=document.getElementById("ppGaps"), sub=document.getElementById("ppSub");
+        if(sub) sub.textContent=`How ${d.base_name} compares across ${(kp.matched||0).toLocaleString()} matched diamonds · ${d.currency}`;
+        if(kpis) kpis.innerHTML=[
+          ["Matched diamonds",(kp.matched||0).toLocaleString()],
+          [`${d.base_name} is cheapest`, kp.you_cheapest_pct==null?"—":kp.you_cheapest_pct+"%"],
+          ["Avg gap when beaten", ppFmt(kp.avg_gap_when_beaten,cur)],
+          ["Biggest single gap", ppFmt(kp.biggest_gap,cur)],
+        ].map(([l,v])=>`<div class="pp-kpi"><div class="v">${v}</div><div class="l">${ppEsc(l)}</div></div>`).join("");
+        const bd=d.scoreboard||[];
+        if(board) board.innerHTML = bd.length ? bd.map((s,i)=>{
+          const col=PP_COLORS[i%PP_COLORS.length];
+          return `<div class="pp-row"><div class="pp-row-top"><span class="nm"><span class="sw" style="background:${col}"></span>${ppEsc(s.vendor)}</span><span class="mt">${s.beats_pct}% cheaper · avg ${ppFmt(s.avg_undercut,cur)}</span></div><div class="pp-bar"><i style="width:${Math.max(1,Math.min(100,s.beats_pct))}%;background:${col}"></i></div></div>`;
+        }).join("") : '<div class="pp-empty">No competitor data.</div>';
+        const gaps=d.gaps||[];
+        if(gapsEl){
+          if(!gaps.length){ gapsEl.innerHTML='<div class="pp-empty">No undercuts — you\'re cheapest everywhere.</div>'; }
+          else {
+            const rows=gaps.map(g=>{
+              const cert=g.link?`<a href="${ppEsc(g.link)}" target="_blank" rel="noopener">${ppEsc(g.cert)}</a>`:ppEsc(g.cert);
+              const dia=`${ppEsc(g.shape||"")}${g.carat?" "+g.carat+"ct":""}`.trim();
+              return `<tr><td>${cert}</td><td>${dia}</td><td>${ppFmt(g.base_price,cur)}</td><td>${ppEsc(g.cheapest_vendor)} ${ppFmt(g.cheapest_price,cur)}</td><td class="gap">-${ppFmt(g.gap,cur)}</td></tr>`;
+            }).join("");
+            gapsEl.innerHTML=`<table><thead><tr><th>Cert</th><th>Diamond</th><th>${d.base_name}</th><th>Cheapest rival</th><th>Gap</th></tr></thead><tbody>${rows}</tbody></table>`;
+          }
+        }
+      }
+
       startDashboard();
     </script>
   </body>
